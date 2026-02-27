@@ -1,0 +1,1956 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZapGPT — WhatsApp AI Automation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════════════════════ */
+:root {
+  --bg:          #080b0f;
+  --bg2:         #0d1117;
+  --surface:     #111620;
+  --surface2:    #161d2a;
+  --surface3:    #1c2535;
+  --border:      #1e2a3a;
+  --border2:     #263347;
+  --green:       #00d46a;
+  --green-dim:   #00a853;
+  --green-glow:  rgba(0, 212, 106, 0.12);
+  --green-soft:  rgba(0, 212, 106, 0.08);
+  --text:        #e8edf5;
+  --text-muted:  #7b8fa6;
+  --text-dim:    #3d506a;
+  --red:         #f05060;
+  --yellow:      #f0b340;
+  --blue:        #4080f0;
+  --r:           10px;
+  --r-sm:        7px;
+  --r-lg:        16px;
+  --font-head:   'Syne', sans-serif;
+  --font-body:   'Outfit', sans-serif;
+  --shadow:      0 4px 24px rgba(0,0,0,0.4);
+  --shadow-lg:   0 8px 48px rgba(0,0,0,0.6);
+}
+
+/* ═══════════════════════════════════════════════════════
+   RESET & BASE
+═══════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.5;
+}
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+h1,h2,h3,h4,h5 { font-family: var(--font-head); line-height: 1.1; }
+a { text-decoration: none; }
+button { font-family: var(--font-body); cursor: pointer; border: none; outline: none; }
+input, select, textarea { font-family: var(--font-body); outline: none; }
+
+/* ═══════════════════════════════════════════════════════
+   LAYOUT / PAGES
+═══════════════════════════════════════════════════════ */
+.page { display: none; min-height: 100vh; }
+.page.active { display: block; }
+#dashboard.active { display: flex; }
+
+/* ═══════════════════════════════════════════════════════
+   BACKGROUND EFFECTS
+═══════════════════════════════════════════════════════ */
+.bg-grid {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(0,212,106,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,106,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+.bg-glow {
+  position: fixed; pointer-events: none; z-index: 0; border-radius: 50%;
+  background: radial-gradient(circle, rgba(0,212,106,0.08) 0%, transparent 70%);
+  width: 700px; height: 700px;
+  top: -200px; right: -200px;
+  animation: glow-drift 12s ease-in-out infinite;
+}
+.bg-glow-2 {
+  position: fixed; pointer-events: none; z-index: 0; border-radius: 50%;
+  background: radial-gradient(circle, rgba(64,128,240,0.05) 0%, transparent 70%);
+  width: 500px; height: 500px;
+  bottom: -100px; left: -100px;
+  animation: glow-drift 16s ease-in-out infinite reverse;
+}
+@keyframes glow-drift {
+  0%,100% { transform: translate(0,0); }
+  33% { transform: translate(-40px, 60px); }
+  66% { transform: translate(30px, -30px); }
+}
+
+/* ═══════════════════════════════════════════════════════
+   COMPONENTS — BUTTONS
+═══════════════════════════════════════════════════════ */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 18px; border-radius: var(--r-sm);
+  font-size: 14px; font-weight: 500;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn-lg { padding: 13px 26px; font-size: 15px; font-weight: 600; }
+
+.btn-primary {
+  background: var(--green); color: #000; font-weight: 600;
+  box-shadow: 0 0 18px rgba(0,212,106,0.25);
+}
+.btn-primary:hover {
+  background: #00f07a;
+  box-shadow: 0 0 28px rgba(0,212,106,0.45);
+  transform: translateY(-1px);
+}
+.btn-primary:active { transform: translateY(0); }
+
+.btn-ghost {
+  background: transparent; color: var(--text-muted);
+  border: 1px solid var(--border2);
+}
+.btn-ghost:hover { background: var(--surface2); color: var(--text); border-color: var(--border2); }
+
+.btn-surface {
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-surface:hover { background: var(--surface3); border-color: var(--border2); }
+
+.btn-danger { background: var(--red); color: #fff; }
+.btn-danger:hover { background: #e04050; transform: translateY(-1px); }
+
+.btn-full { width: 100%; justify-content: center; }
+
+.btn[disabled], .btn.loading {
+  opacity: 0.5; cursor: not-allowed;
+  transform: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   COMPONENTS — FORM
+═══════════════════════════════════════════════════════ */
+.form-group { margin-bottom: 18px; }
+.form-group:last-child { margin-bottom: 0; }
+
+label.field-label {
+  display: block; margin-bottom: 7px;
+  font-size: 12px; font-weight: 600;
+  color: var(--text-muted); letter-spacing: 0.5px; text-transform: uppercase;
+}
+
+.field {
+  width: 100%; padding: 11px 14px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); color: var(--text); font-size: 14px;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.field:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(0,212,106,0.1);
+}
+.field::placeholder { color: var(--text-dim); }
+select.field {
+  cursor: pointer; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237b8fa6' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center;
+  padding-right: 32px;
+}
+textarea.field { resize: vertical; line-height: 1.6; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+/* ═══════════════════════════════════════════════════════
+   COMPONENTS — BADGES & STATUS
+═══════════════════════════════════════════════════════ */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 100px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.2px;
+}
+.badge-green {
+  background: rgba(0,212,106,0.1); color: #00e872;
+  border: 1px solid rgba(0,212,106,0.2);
+}
+.badge-green::before { content: '●'; font-size: 7px; animation: pulse 2s infinite; }
+.badge-red {
+  background: rgba(240,80,96,0.1); color: #f07080;
+  border: 1px solid rgba(240,80,96,0.2);
+}
+.badge-red::before { content: '●'; font-size: 7px; }
+.badge-yellow {
+  background: rgba(240,179,64,0.1); color: #f0c060;
+  border: 1px solid rgba(240,179,64,0.2);
+}
+.badge-yellow::before { content: '●'; font-size: 7px; }
+
+.plan-pill {
+  display: inline-flex; padding: 3px 9px; border-radius: 5px;
+  font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+}
+.plan-pill.starter { background: rgba(123,143,166,0.12); color: var(--text-muted); border: 1px solid rgba(123,143,166,0.2); }
+.plan-pill.pro { background: rgba(0,212,106,0.1); color: #00e872; border: 1px solid rgba(0,212,106,0.2); }
+.plan-pill.enterprise { background: rgba(240,179,64,0.1); color: #f0c060; border: 1px solid rgba(240,179,64,0.2); }
+
+/* ═══════════════════════════════════════════════════════
+   COMPONENTS — CARDS
+═══════════════════════════════════════════════════════ */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden;
+}
+.card-header {
+  padding: 18px 22px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.card-header h3 { font-size: 14px; font-weight: 600; }
+.card-body { padding: 22px; }
+
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 20px 22px;
+  transition: border-color 0.2s;
+}
+.stat-card:hover { border-color: var(--border2); }
+.stat-card-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.stat-card-value { font-family: var(--font-head); font-size: 30px; font-weight: 800; letter-spacing: -1px; margin-bottom: 6px; }
+.stat-card-meta { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+.stat-card-meta.up { color: var(--green); }
+
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+
+/* ═══════════════════════════════════════════════════════
+   COMPONENTS — TABLE
+═══════════════════════════════════════════════════════ */
+.table { width: 100%; border-collapse: collapse; }
+.table th {
+  padding: 11px 20px; text-align: left;
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--text-dim); border-bottom: 1px solid var(--border);
+}
+.table td {
+  padding: 15px 20px; font-size: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.025);
+  color: var(--text);
+}
+.table tr:last-child td { border-bottom: none; }
+.table tbody tr { transition: background 0.12s; }
+.table tbody tr:hover td { background: rgba(255,255,255,0.018); }
+
+/* ═══════════════════════════════════════════════════════
+   COMPONENTS — TOGGLE
+═══════════════════════════════════════════════════════ */
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.toggle-row:last-child { border-bottom: none; }
+.toggle-info label { font-size: 14px; font-weight: 500; display: block; margin-bottom: 2px; }
+.toggle-info small { font-size: 12px; color: var(--text-muted); }
+.toggle { position: relative; width: 42px; height: 23px; flex-shrink: 0; }
+.toggle input { display: none; }
+.toggle-track {
+  position: absolute; inset: 0; background: var(--border2);
+  border-radius: 12px; cursor: pointer; transition: background 0.2s;
+}
+.toggle-track::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 17px; height: 17px; background: #fff;
+  border-radius: 50%; transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.toggle input:checked + .toggle-track { background: var(--green); }
+.toggle input:checked + .toggle-track::after { transform: translateX(19px); }
+
+/* ═══════════════════════════════════════════════════════
+   COMPONENTS — MODAL
+═══════════════════════════════════════════════════════ */
+.overlay {
+  display: none; position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.65); backdrop-filter: blur(6px);
+  align-items: center; justify-content: center; padding: 20px;
+}
+.overlay.open { display: flex; }
+.modal {
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 18px; padding: 32px; width: 100%; max-width: 480px;
+  box-shadow: var(--shadow-lg);
+  animation: modal-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.modal-lg { max-width: 560px; }
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.94) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.modal-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+.modal-subtitle { font-size: 14px; color: var(--text-muted); margin-bottom: 26px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+
+/* ═══════════════════════════════════════════════════════
+   COMPONENTS — TOAST
+═══════════════════════════════════════════════════════ */
+#toasts {
+  position: fixed; bottom: 24px; right: 24px; z-index: 1000;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.toast {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 16px; border-radius: var(--r);
+  background: var(--surface3); border: 1px solid var(--border2);
+  font-size: 13px; min-width: 280px; max-width: 380px;
+  box-shadow: var(--shadow); animation: toast-slide 0.3s ease;
+}
+@keyframes toast-slide {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.toast-icon { font-size: 16px; flex-shrink: 0; }
+.toast.success { border-left: 3px solid var(--green); }
+.toast.error   { border-left: 3px solid var(--red); }
+.toast.info    { border-left: 3px solid var(--blue); }
+.toast.warning { border-left: 3px solid var(--yellow); }
+
+/* ═══════════════════════════════════════════════════════
+   COMPONENTS — TABS
+═══════════════════════════════════════════════════════ */
+.tabs {
+  display: flex; gap: 2px; padding: 3px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-sm); width: fit-content; margin-bottom: 22px;
+}
+.tab-btn {
+  padding: 7px 16px; border-radius: 5px;
+  font-size: 13px; font-weight: 500; color: var(--text-muted);
+  background: transparent; transition: all 0.15s;
+}
+.tab-btn.active { background: var(--bg2); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* ═══════════════════════════════════════════════════════
+   COMPONENTS — EMPTY STATE
+═══════════════════════════════════════════════════════ */
+.empty {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 64px 24px; text-align: center;
+  color: var(--text-dim);
+}
+.empty-icon { font-size: 44px; margin-bottom: 16px; opacity: 0.4; }
+.empty h3 { font-size: 15px; color: var(--text-muted); margin-bottom: 6px; }
+.empty p { font-size: 13px; line-height: 1.6; }
+
+/* ═══════════════════════════════════════════════════════
+   COMPONENTS — SPINNER
+═══════════════════════════════════════════════════════ */
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid rgba(255,255,255,0.15);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ═══════════════════════════════════════════════════════
+   ANIMATIONS
+═══════════════════════════════════════════════════════ */
+@keyframes pulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════════════════════════════════════════════════════
+   ██ LANDING PAGE
+═══════════════════════════════════════════════════════ */
+#landing { background: var(--bg); }
+
+/* nav */
+.l-nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 48px;
+  background: rgba(8,11,15,0.85); backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.logo {
+  font-family: var(--font-head); font-size: 20px; font-weight: 800;
+  display: flex; align-items: center; gap: 9px; cursor: pointer; color: var(--text);
+}
+.logo-dot {
+  width: 8px; height: 8px; background: var(--green);
+  border-radius: 50%; box-shadow: 0 0 10px var(--green);
+  animation: pulse 2.5s ease infinite;
+}
+.l-nav-links { display: flex; gap: 32px; list-style: none; }
+.l-nav-links a { font-size: 14px; color: var(--text-muted); transition: color 0.15s; }
+.l-nav-links a:hover { color: var(--text); }
+.l-nav-right { display: flex; gap: 10px; align-items: center; }
+
+/* hero */
+.l-hero {
+  position: relative; z-index: 1;
+  min-height: 100vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 130px 48px 100px; text-align: center;
+}
+.hero-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 16px; border-radius: 100px; margin-bottom: 32px;
+  background: rgba(0,212,106,0.08); border: 1px solid rgba(0,212,106,0.2);
+  color: #00e872; font-size: 13px; font-weight: 500;
+  animation: fade-up 0.5s ease both;
+}
+.l-hero h1 {
+  font-size: clamp(52px, 9vw, 92px); font-weight: 800; letter-spacing: -3px;
+  max-width: 900px; color: var(--text);
+  animation: fade-up 0.5s 0.07s ease both;
+}
+.l-hero h1 em {
+  font-style: normal; color: var(--green);
+  position: relative; display: inline-block;
+}
+.l-hero h1 em::after {
+  content: ''; position: absolute; bottom: -6px; left: 0; right: 0;
+  height: 3px; background: linear-gradient(90deg, var(--green), transparent);
+  border-radius: 2px;
+}
+.l-hero p {
+  margin-top: 28px; font-size: 17px; color: var(--text-muted);
+  max-width: 520px; line-height: 1.75;
+  animation: fade-up 0.5s 0.14s ease both;
+}
+.hero-actions {
+  display: flex; gap: 14px; margin-top: 42px;
+  animation: fade-up 0.5s 0.21s ease both;
+}
+.hero-stats {
+  margin-top: 80px; padding-top: 40px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 64px;
+  animation: fade-up 0.5s 0.28s ease both;
+}
+.h-stat-val {
+  font-family: var(--font-head); font-size: 30px; font-weight: 800; letter-spacing: -1px;
+}
+.h-stat-label { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+
+/* sections */
+.l-section { position: relative; z-index: 1; max-width: 1160px; margin: 0 auto; padding: 100px 48px; }
+.section-tag {
+  display: inline-block; font-size: 11px; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase; color: var(--green); margin-bottom: 14px;
+}
+.section-h { font-size: 38px; font-weight: 800; letter-spacing: -1.5px; max-width: 480px; line-height: 1.1; }
+.section-sep { height: 1px; background: linear-gradient(90deg, transparent, var(--border), transparent); }
+
+/* features grid */
+.feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 56px; }
+.feat-card {
+  padding: 26px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); transition: all 0.25s;
+}
+.feat-card:hover { border-color: rgba(0,212,106,0.25); transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
+.feat-icon {
+  width: 38px; height: 38px; border-radius: var(--r-sm); margin-bottom: 16px;
+  background: var(--green-soft); border: 1px solid rgba(0,212,106,0.15);
+  display: flex; align-items: center; justify-content: center; font-size: 17px;
+}
+.feat-card h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+.feat-card p { font-size: 13px; color: var(--text-muted); line-height: 1.65; }
+
+/* pricing */
+.price-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 56px; }
+.price-card {
+  padding: 30px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); position: relative; transition: all 0.25s;
+}
+.price-card.pop {
+  border-color: var(--green);
+  background: linear-gradient(160deg, rgba(0,212,106,0.07) 0%, var(--surface) 100%);
+  box-shadow: 0 0 50px rgba(0,212,106,0.1);
+}
+.price-card.pop::before {
+  content: 'POPULAR'; position: absolute; top: -1px; right: 20px;
+  background: var(--green); color: #000;
+  font-size: 9px; font-weight: 800; letter-spacing: 1.5px;
+  padding: 4px 10px; border-radius: 0 0 7px 7px;
+}
+.price-plan { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 14px; }
+.price-amount { font-family: var(--font-head); font-size: 46px; font-weight: 800; letter-spacing: -2px; margin-bottom: 4px; }
+.price-amount sub { font-size: 15px; font-weight: 400; color: var(--text-muted); letter-spacing: 0; vertical-align: baseline; }
+.price-features { list-style: none; margin: 24px 0 28px; display: flex; flex-direction: column; gap: 10px; }
+.price-features li { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 9px; }
+.price-features li::before { content: '✓'; color: var(--green); font-weight: 700; font-size: 12px; flex-shrink: 0; }
+
+/* CTA */
+.l-cta {
+  position: relative; z-index: 1;
+  padding: 100px 48px; text-align: center;
+}
+.cta-box {
+  max-width: 660px; margin: 0 auto; padding: 60px 48px;
+  background: linear-gradient(135deg, rgba(0,212,106,0.07), rgba(0,212,106,0.02));
+  border: 1px solid rgba(0,212,106,0.18); border-radius: 20px;
+}
+.cta-box h2 { font-size: 38px; font-weight: 800; letter-spacing: -1.5px; margin-bottom: 14px; }
+.cta-box p { color: var(--text-muted); font-size: 15px; margin-bottom: 32px; }
+
+/* footer */
+.l-footer {
+  padding: 40px 48px; border-top: 1px solid var(--border);
+  text-align: center; font-size: 13px; color: var(--text-dim);
+}
+.l-footer a { color: var(--green); }
+
+/* ═══════════════════════════════════════════════════════
+   ██ AUTH PAGES
+═══════════════════════════════════════════════════════ */
+#login, #register {
+  display: none; min-height: 100vh;
+  background: var(--bg);
+}
+#login.active, #register.active { display: flex; align-items: center; justify-content: center; padding: 40px; }
+
+.auth-wrap { position: relative; z-index: 1; width: 100%; max-width: 420px; }
+.auth-wrap.wide { max-width: 480px; }
+.auth-brand { margin-bottom: 36px; cursor: pointer; }
+.auth-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 18px; padding: 36px;
+}
+.auth-card h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+.auth-card .sub { font-size: 14px; color: var(--text-muted); margin-bottom: 28px; }
+.auth-footer { margin-top: 20px; text-align: center; font-size: 14px; color: var(--text-muted); }
+.auth-footer a { color: var(--green); font-weight: 500; cursor: pointer; }
+.divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 20px 0; color: var(--text-dim); font-size: 12px;
+}
+.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* ═══════════════════════════════════════════════════════
+   ██ DASHBOARD
+═══════════════════════════════════════════════════════ */
+#dashboard { background: var(--bg); }
+
+/* Sidebar */
+.sidebar {
+  width: 232px; flex-shrink: 0;
+  background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+}
+.sb-brand {
+  padding: 0 18px 20px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  height: 62px; display: flex; align-items: center; flex-shrink: 0;
+}
+.sb-nav { flex: 1; padding: 10px 8px; display: flex; flex-direction: column; gap: 1px; overflow-y: auto; }
+.nav-link {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 12px; border-radius: var(--r-sm);
+  font-size: 13px; font-weight: 500; color: var(--text-muted);
+  cursor: pointer; transition: all 0.13s; border: none; background: none; width: 100%; text-align: left;
+}
+.nav-link:hover { background: var(--surface2); color: var(--text); }
+.nav-link.active {
+  background: var(--green-soft); color: #00e872;
+  border: 1px solid rgba(0,212,106,0.15);
+}
+.nav-link .ni { font-size: 15px; width: 18px; text-align: center; flex-shrink: 0; }
+.sb-footer { padding: 8px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.sb-user {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: var(--r-sm);
+  cursor: pointer; transition: background 0.13s;
+}
+.sb-user:hover { background: var(--surface2); }
+.avatar {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--green), #007a3d);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: #000;
+}
+.sb-user-info { flex: 1; min-width: 0; }
+.sb-user-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-user-plan { font-size: 10px; color: var(--green); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 1px; }
+
+/* Main */
+.main { flex: 1; margin-left: 232px; display: flex; flex-direction: column; min-height: 100vh; }
+.topbar {
+  height: 62px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 28px; border-bottom: 1px solid var(--border);
+  background: var(--bg); position: sticky; top: 0; z-index: 40; flex-shrink: 0;
+}
+.topbar-title { font-size: 18px; font-weight: 700; }
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.content { padding: 28px; flex: 1; }
+
+/* Views */
+.view { display: none; }
+.view.active { display: block; }
+
+/* Conversation item */
+.conv-row {
+  display: flex; align-items: center; gap: 13px;
+  padding: 13px 20px; cursor: pointer; transition: background 0.12s;
+  border-bottom: 1px solid rgba(255,255,255,0.025);
+}
+.conv-row:hover { background: rgba(255,255,255,0.018); }
+.conv-row:last-child { border-bottom: none; }
+.conv-avatar {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  background: var(--surface3); display: flex; align-items: center; justify-content: center; font-size: 15px;
+}
+.conv-body { flex: 1; min-width: 0; }
+.conv-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+.conv-preview { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-right { text-align: right; flex-shrink: 0; }
+.conv-time { font-size: 11px; color: var(--text-dim); }
+.conv-unread {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  background: var(--green); color: #000;
+  font-size: 9px; font-weight: 700; border-radius: 9px; margin-top: 4px;
+}
+
+/* QR code area */
+.qr-wrap {
+  width: 188px; height: 188px; margin: 16px auto;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r); display: flex; align-items: center; justify-content: center;
+  position: relative; overflow: hidden;
+}
+.qr-canvas { display: grid; grid-template-columns: repeat(11, 1fr); gap: 2px; padding: 12px; }
+.qr-cell { aspect-ratio: 1; border-radius: 1px; }
+.qr-scan-line {
+  position: absolute; left: 10px; right: 10px; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--green), transparent);
+  box-shadow: 0 0 8px var(--green);
+  animation: qr-scan 2.2s linear infinite;
+}
+@keyframes qr-scan {
+  0%  { top: 10%; }
+  100%{ top: 90%; }
+}
+
+/* Log box */
+.log-box {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 12px 14px;
+  height: 120px; overflow-y: auto;
+  font-family: 'Courier New', monospace; font-size: 11px; color: var(--text-muted); line-height: 1.7;
+}
+.log-success { color: var(--green); }
+.log-error   { color: var(--red); }
+.log-info    { color: #60a0f0; }
+
+/* Progress bar */
+.progress-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 8px; }
+.progress-fill  { height: 100%; background: var(--green); border-radius: 2px; transition: width 0.8s ease; }
+
+/* Model color tag */
+.model-tag { font-size: 11px; font-weight: 700; letter-spacing: 0.3px; }
+.model-gemini { color: #4080f0; }
+.model-gpt4   { color: #9060e0; }
+.model-gpt35  { color: #e09030; }
+
+/* Onboarding steps */
+.step-card {
+  padding: 18px 20px; background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r); transition: all 0.2s; flex: 1;
+}
+.step-card:hover { border-color: var(--border2); }
+.step-card.done { border-color: rgba(0,212,106,0.2); background: rgba(0,212,106,0.04); }
+.step-card.clickable { cursor: pointer; }
+.step-card.clickable:hover { border-color: rgba(0,212,106,0.3); }
+.step-num { font-size: 20px; margin-bottom: 8px; }
+.step-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.step-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.steps-row { display: flex; gap: 12px; }
+
+/* ═══════════════════════════════════════════════════════
+   UTILITIES
+═══════════════════════════════════════════════════════ */
+.flex { display: flex; }
+.flex-center { display: flex; align-items: center; }
+.flex-between { display: flex; align-items: center; justify-content: space-between; }
+.gap-2 { gap: 8px; }
+.gap-3 { gap: 12px; }
+.gap-4 { gap: 16px; }
+.mt-1 { margin-top: 4px; }
+.mt-2 { margin-top: 8px; }
+.mt-3 { margin-top: 12px; }
+.mt-4 { margin-top: 16px; }
+.mt-6 { margin-top: 24px; }
+.mb-4 { margin-bottom: 16px; }
+.mb-6 { margin-bottom: 24px; }
+.text-muted { color: var(--text-muted); }
+.text-dim { color: var(--text-dim); }
+.text-sm { font-size: 13px; }
+.text-xs { font-size: 11px; }
+.fw-600 { font-weight: 600; }
+.mono { font-family: 'Courier New', monospace; }
+
+/* ═══════════════════════════════════════════════════════
+   RESPONSIVE
+═══════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .l-nav { padding: 16px 20px; }
+  .l-nav-links { display: none; }
+  .l-hero { padding: 110px 20px 80px; }
+  .hero-stats { flex-wrap: wrap; gap: 32px; }
+  .feat-grid, .price-grid { grid-template-columns: 1fr; }
+  .stats-row { grid-template-columns: 1fr 1fr; }
+  .sidebar { transform: translateX(-100%); }
+  .main { margin-left: 0; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .steps-row { flex-direction: column; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── BACKGROUND EFFECTS ─────────────────────────────── -->
+<div class="bg-grid"></div>
+<div class="bg-glow"></div>
+<div class="bg-glow-2"></div>
+
+<!-- ── TOASTS ─────────────────────────────────────────── -->
+<div id="toasts"></div>
+
+<!-- ══════════════════════════════════════════════════════
+     LANDING PAGE
+══════════════════════════════════════════════════════ -->
+<div id="landing" class="page active">
+
+  <nav class="l-nav">
+    <div class="logo" onclick="UI.page('landing')">
+      <div class="logo-dot"></div> ZapGPT
+    </div>
+    <ul class="l-nav-links">
+      <li><a href="#features">Funcionalidades</a></li>
+      <li><a href="#pricing">Preços</a></li>
+      <li><a href="https://wa.me/5551981995600" target="_blank">Suporte</a></li>
+    </ul>
+    <div class="l-nav-right">
+      <button class="btn btn-ghost" onclick="UI.page('login')">Entrar</button>
+      <button class="btn btn-primary" onclick="UI.page('register')">Começar grátis</button>
+    </div>
+  </nav>
+
+  <section class="l-hero">
+    <div class="hero-pill">🤖 Integrado com GPT-4 e Gemini 2.0</div>
+    <h1>Automatize seu<br>WhatsApp com <em>IA</em></h1>
+    <p>Configure em minutos um assistente de IA no seu WhatsApp. Atenda clientes 24/7, humanize conversas e escale sem esforço.</p>
+    <div class="hero-actions">
+      <button class="btn btn-primary btn-lg" onclick="UI.page('register')">Criar conta grátis →</button>
+      <button class="btn btn-ghost btn-lg" onclick="Auth.demoLogin()">Ver demonstração</button>
+    </div>
+    <div class="hero-stats">
+      <div><div class="h-stat-val">12k+</div><div class="h-stat-label">Usuários ativos</div></div>
+      <div><div class="h-stat-val">4.8M</div><div class="h-stat-label">Mensagens/mês</div></div>
+      <div><div class="h-stat-val">99.9%</div><div class="h-stat-label">Uptime garantido</div></div>
+      <div><div class="h-stat-val">&lt;2s</div><div class="h-stat-label">Tempo de resposta</div></div>
+    </div>
+  </section>
+
+  <div class="section-sep"></div>
+
+  <section class="l-section" id="features">
+    <div class="section-tag">Funcionalidades</div>
+    <h2 class="section-h">Tudo que você precisa para automatizar</h2>
+    <div class="feat-grid">
+      <div class="feat-card"><div class="feat-icon">🤖</div><h3>GPT-4 & Gemini</h3><p>Escolha entre os melhores modelos do mercado com prompts personalizados por bot.</p></div>
+      <div class="feat-card"><div class="feat-icon">⚡</div><h3>Resposta instantânea</h3><p>Seu assistente responde em segundos, 24h por dia, 7 dias por semana.</p></div>
+      <div class="feat-card"><div class="feat-icon">🧠</div><h3>Memória de contexto</h3><p>A IA lembra toda a conversa e responde com coerência contínua.</p></div>
+      <div class="feat-card"><div class="feat-icon">📊</div><h3>Analytics em tempo real</h3><p>Métricas de mensagens, conversas ativas e uso de tokens no painel.</p></div>
+      <div class="feat-card"><div class="feat-icon">🔗</div><h3>Multi-contas</h3><p>Gerencie múltiplos números de WhatsApp em um único painel centralizado.</p></div>
+      <div class="feat-card"><div class="feat-icon">🛡️</div><h3>Segurança</h3><p>Autenticação JWT, hash de senhas bcrypt e rate limiting em todas as rotas.</p></div>
+    </div>
+  </section>
+
+  <div class="section-sep"></div>
+
+  <section class="l-section" id="pricing" style="text-align:center">
+    <div class="section-tag">Planos</div>
+    <h2 class="section-h" style="max-width:100%;margin:0 auto">Preço simples e transparente</h2>
+    <p class="mt-3 text-muted">Comece gratuitamente. Escale quando precisar.</p>
+    <div class="price-grid">
+      <div class="price-card" style="text-align:left">
+        <div class="price-plan">Starter</div>
+        <div class="price-amount">R$0<sub>/mês</sub></div>
+        <ul class="price-features">
+          <li>1 número de WhatsApp</li><li>500 mensagens/mês</li>
+          <li>GPT-3.5 ou Gemini</li><li>Suporte por email</li>
+        </ul>
+        <button class="btn btn-ghost btn-full" onclick="UI.page('register')">Começar grátis</button>
+      </div>
+      <div class="price-card pop" style="text-align:left">
+        <div class="price-plan">Pro</div>
+        <div class="price-amount">R$97<sub>/mês</sub></div>
+        <ul class="price-features">
+          <li>5 números de WhatsApp</li><li>Mensagens ilimitadas</li>
+          <li>GPT-4 & Gemini 2.0</li><li>Analytics avançado</li><li>Suporte prioritário</li>
+        </ul>
+        <button class="btn btn-primary btn-full" onclick="UI.page('register')">Assinar Pro</button>
+      </div>
+      <div class="price-card" style="text-align:left">
+        <div class="price-plan">Enterprise</div>
+        <div class="price-amount">Custom</div>
+        <ul class="price-features">
+          <li>Números ilimitados</li><li>SLA garantido</li>
+          <li>Integração via API</li><li>Gerente de conta</li>
+        </ul>
+        <button class="btn btn-ghost btn-full" onclick="toast('Entre em contato via WhatsApp!','info')">Falar com vendas</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="l-cta">
+    <div class="cta-box">
+      <div class="section-tag">Comece hoje</div>
+      <h2>Pronto para automatizar seu atendimento?</h2>
+      <p>Sem cartão de crédito. Configuração em menos de 5 minutos.</p>
+      <button class="btn btn-primary btn-lg" onclick="UI.page('register')">Criar conta grátis →</button>
+    </div>
+  </section>
+
+  <footer class="l-footer">
+    © 2024 ZapGPT &nbsp;·&nbsp; Feito por <a href="https://instagram.com/marcusdev_" target="_blank">Marcus Gonçalves</a>
+    &nbsp;·&nbsp; <a href="#">Privacidade</a> &nbsp;·&nbsp; <a href="#">Termos</a>
+  </footer>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     LOGIN
+══════════════════════════════════════════════════════ -->
+<div id="login" class="page">
+  <div class="bg-grid"></div>
+  <div class="auth-wrap" style="position:relative;z-index:1">
+    <div class="auth-brand" onclick="UI.page('landing')">
+      <div class="logo"><div class="logo-dot"></div>ZapGPT</div>
+    </div>
+    <div class="auth-card">
+      <h2>Bem-vindo de volta</h2>
+      <p class="sub">Entre na sua conta para continuar</p>
+      <div class="form-group">
+        <label class="field-label">Email</label>
+        <input class="field" type="email" id="l-email" placeholder="seu@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="field-label">Senha</label>
+        <input class="field" type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div class="flex-between mt-2 mb-4">
+        <span></span>
+        <a class="text-sm" style="color:var(--green);cursor:pointer">Esqueceu a senha?</a>
+      </div>
+      <button class="btn btn-primary btn-full btn-lg" id="loginBtn" onclick="Auth.login()">Entrar →</button>
+      <div class="divider">ou</div>
+      <button class="btn btn-surface btn-full" onclick="Auth.demoLogin()">🚀 Acessar demo sem cadastro</button>
+    </div>
+    <div class="auth-footer">Não tem conta? <a onclick="UI.page('register')">Criar agora grátis</a></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     REGISTER
+══════════════════════════════════════════════════════ -->
+<div id="register" class="page">
+  <div class="bg-grid"></div>
+  <div class="auth-wrap wide" style="position:relative;z-index:1">
+    <div class="auth-brand" onclick="UI.page('landing')">
+      <div class="logo"><div class="logo-dot"></div>ZapGPT</div>
+    </div>
+    <div class="auth-card">
+      <h2>Crie sua conta</h2>
+      <p class="sub">Configure seu assistente de IA em minutos</p>
+      <div class="grid-2">
+        <div class="form-group"><label class="field-label">Nome</label><input class="field" type="text" id="r-name" placeholder="Marcus"></div>
+        <div class="form-group"><label class="field-label">Sobrenome</label><input class="field" type="text" id="r-last" placeholder="Gonçalves"></div>
+      </div>
+      <div class="form-group"><label class="field-label">Email</label><input class="field" type="email" id="r-email" placeholder="seu@email.com"></div>
+      <div class="form-group"><label class="field-label">Senha</label><input class="field" type="password" id="r-pass" placeholder="Mínimo 8 caracteres"></div>
+      <div class="form-group">
+        <label class="field-label">Plano inicial</label>
+        <select class="field" id="r-plan">
+          <option value="starter">Starter — Grátis</option>
+          <option value="pro">Pro — R$97/mês</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-full btn-lg" id="registerBtn" onclick="Auth.register()">Criar conta grátis →</button>
+      <p class="text-xs text-dim mt-3" style="text-align:center;line-height:1.6">
+        Ao criar uma conta você concorda com nossos <a href="#" style="color:var(--green)">Termos de Uso</a> e <a href="#" style="color:var(--green)">Política de Privacidade</a>
+      </p>
+    </div>
+    <div class="auth-footer">Já tem conta? <a onclick="UI.page('login')">Entrar</a></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     DASHBOARD
+══════════════════════════════════════════════════════ -->
+<div id="dashboard" class="page">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sb-brand">
+      <div class="logo" style="font-size:18px" onclick="UI.page('landing')">
+        <div class="logo-dot"></div>ZapGPT
+      </div>
+    </div>
+    <nav class="sb-nav">
+      <button class="nav-link active" data-view="overview"  onclick="UI.view('overview',this)"><span class="ni">📊</span>Visão Geral</button>
+      <button class="nav-link"        data-view="bots"       onclick="UI.view('bots',this)"><span class="ni">🤖</span>Meus Bots</button>
+      <button class="nav-link"        data-view="convs"      onclick="UI.view('convs',this)"><span class="ni">💬</span>Conversas</button>
+      <button class="nav-link"        data-view="analytics"  onclick="UI.view('analytics',this)"><span class="ni">📈</span>Analytics</button>
+      <button class="nav-link"        data-view="settings"   onclick="UI.view('settings',this)"><span class="ni">⚙️</span>Configurações</button>
+      <button class="nav-link"        data-view="billing"    onclick="UI.view('billing',this)"><span class="ni">💳</span>Assinatura</button>
+    </nav>
+    <div class="sb-footer">
+      <div class="sb-user">
+        <div class="avatar" id="sbAvatar">U</div>
+        <div class="sb-user-info">
+          <div class="sb-user-name" id="sbName">Usuário</div>
+          <div class="sb-user-plan" id="sbPlan">Starter</div>
+        </div>
+      </div>
+      <button class="nav-link mt-1" style="color:var(--red)" onclick="Auth.logout()">
+        <span class="ni">🚪</span>Sair
+      </button>
+    </div>
+  </aside>
+
+  <!-- MAIN AREA -->
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title" id="viewTitle">Visão Geral</div>
+      <div class="topbar-right">
+        <button class="btn btn-ghost btn-sm" onclick="Dashboard.refresh()" title="Atualizar">↻</button>
+        <button class="btn btn-primary btn-sm" onclick="Modals.open('newBot')">+ Novo Bot</button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ────────────────── OVERVIEW ──────────────────── -->
+      <div id="view-overview" class="view active">
+
+        <div class="stats-row" id="statsRow">
+          <div class="stat-card"><div class="stat-card-label">Bots Ativos</div><div class="stat-card-value" id="s-bots">—</div><div class="stat-card-meta up" id="s-bots-meta">carregando...</div></div>
+          <div class="stat-card"><div class="stat-card-label">Mensagens</div><div class="stat-card-value" id="s-msgs">—</div><div class="stat-card-meta" id="s-msgs-meta">total</div></div>
+          <div class="stat-card"><div class="stat-card-label">Conversas</div><div class="stat-card-value" id="s-convs">—</div><div class="stat-card-meta">únicas</div></div>
+          <div class="stat-card"><div class="stat-card-label">Tokens Usados</div><div class="stat-card-value" id="s-tokens">—</div><div class="stat-card-meta">estimado</div></div>
+        </div>
+
+        <!-- Onboarding -->
+        <div class="steps-row mb-6" id="stepsRow">
+          <div class="step-card clickable" id="step1" onclick="Modals.open('newBot')">
+            <div class="step-num">1️⃣</div>
+            <div class="step-title">Criar um Bot</div>
+            <div class="step-desc">Configure sua IA com nome, modelo e prompt</div>
+          </div>
+          <div class="step-card" id="step2" style="opacity:0.45">
+            <div class="step-num">2️⃣</div>
+            <div class="step-title">Conectar WhatsApp</div>
+            <div class="step-desc">Escaneie o QR Code para vincular seu número</div>
+          </div>
+          <div class="step-card" id="step3" style="opacity:0.45">
+            <div class="step-num">3️⃣</div>
+            <div class="step-title">Receber mensagens</div>
+            <div class="step-desc">Seu bot responde automaticamente 24/7</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="card">
+            <div class="card-header"><h3>Bots Recentes</h3><button class="btn btn-ghost btn-sm" onclick="UI.view('bots')">Ver todos</button></div>
+            <div id="ov-bots"></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Últimas Conversas</h3><button class="btn btn-ghost btn-sm" onclick="UI.view('convs')">Ver todas</button></div>
+            <div id="ov-convs"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ────────────────── BOTS ──────────────────── -->
+      <div id="view-bots" class="view">
+        <div class="card" id="botsList"></div>
+      </div>
+
+      <!-- ────────────────── CONVERSATIONS ──────────────────── -->
+      <div id="view-convs" class="view">
+        <div class="card">
+          <div class="card-header">
+            <h3>Todas as conversas</h3>
+            <input class="field" type="text" placeholder="Buscar..." id="convSearch" oninput="Dashboard.filterConvs(this.value)" style="width:200px;padding:7px 12px;font-size:12px">
+          </div>
+          <div id="convsList"></div>
+        </div>
+      </div>
+
+      <!-- ────────────────── ANALYTICS ──────────────────── -->
+      <div id="view-analytics" class="view">
+        <div class="stats-row" id="analyticsStats">
+          <div class="stat-card"><div class="stat-card-label">Total Mensagens</div><div class="stat-card-value" id="an-total">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">Média Diária</div><div class="stat-card-value" id="an-avg">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">Conversas</div><div class="stat-card-value" id="an-convs">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">Tokens</div><div class="stat-card-value" id="an-tokens">—</div></div>
+        </div>
+        <div class="card">
+          <div class="empty">
+            <div class="empty-icon">📊</div>
+            <h3>Dados insuficientes</h3>
+            <p>Os gráficos serão exibidos após 7 dias de uso</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ────────────────── SETTINGS ──────────────────── -->
+      <div id="view-settings" class="view">
+        <div class="tabs">
+          <button class="tab-btn active" onclick="UI.tab('t-profile',this)">Perfil</button>
+          <button class="tab-btn" onclick="UI.tab('t-apikeys',this)">API Keys</button>
+          <button class="tab-btn" onclick="UI.tab('t-notif',this)">Notificações</button>
+        </div>
+
+        <div id="t-profile" class="tab-pane active" style="max-width:540px">
+          <div class="card">
+            <div class="card-header"><h3>Dados pessoais</h3></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+              <div class="grid-2">
+                <div class="form-group" style="margin:0"><label class="field-label">Nome</label><input class="field" id="sName" type="text"></div>
+                <div class="form-group" style="margin:0"><label class="field-label">Sobrenome</label><input class="field" id="sLastName" type="text"></div>
+              </div>
+              <div class="form-group" style="margin:0"><label class="field-label">Email</label><input class="field" id="sEmail" type="email"></div>
+              <div class="form-group" style="margin:0"><label class="field-label">Nova senha (opcional)</label><input class="field" type="password" placeholder="Deixe em branco para manter"></div>
+              <button class="btn btn-primary" style="width:fit-content" onclick="Settings.saveProfile()">Salvar alterações</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="t-apikeys" class="tab-pane" style="max-width:540px">
+          <div class="card">
+            <div class="card-header"><h3>Chaves de API</h3><span class="text-xs text-dim">Armazenadas com segurança</span></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+              <div class="form-group" style="margin:0">
+                <label class="field-label">OpenAI API Key</label>
+                <input class="field mono" id="sOpenAI" type="password" placeholder="sk-...">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="field-label">OpenAI Assistant ID</label>
+                <input class="field mono" id="sAssistant" type="text" placeholder="asst_...">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="field-label">Gemini API Key</label>
+                <input class="field mono" id="sGemini" type="password" placeholder="AIza...">
+              </div>
+              <button class="btn btn-primary" style="width:fit-content" onclick="Settings.saveApiKeys()">Salvar chaves</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="t-notif" class="tab-pane" style="max-width:540px">
+          <div class="card">
+            <div class="card-header"><h3>Notificações</h3></div>
+            <div class="card-body">
+              <div class="toggle-row">
+                <div class="toggle-info"><label>Email de novos usuários</label><small>Receba notificação quando um contato iniciar conversa</small></div>
+                <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info"><label>Alertas de erro</label><small>Notificação se o bot apresentar falhas</small></div>
+                <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info"><label>Relatório semanal</label><small>Resumo de performance toda segunda-feira</small></div>
+                <label class="toggle"><input type="checkbox"><span class="toggle-track"></span></label>
+              </div>
+              <button class="btn btn-primary mt-4" onclick="toast('Preferências salvas!','success')">Salvar preferências</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ────────────────── BILLING ──────────────────── -->
+      <div id="view-billing" class="view" style="max-width:660px">
+        <div class="card mb-4">
+          <div class="card-body">
+            <div class="flex-between mb-6">
+              <div>
+                <div class="text-xs text-dim mb-1">Plano atual</div>
+                <div style="font-family:var(--font-head);font-size:26px;font-weight:800" id="bilPlan">Starter</div>
+              </div>
+              <span class="plan-pill starter" id="bilPill">GRÁTIS</span>
+            </div>
+            <div>
+              <div class="flex-between text-xs text-muted mb-2">
+                <span>Mensagens usadas</span>
+                <span id="bilUsage">0 / 500</span>
+              </div>
+              <div class="progress-track"><div class="progress-fill" id="bilBar" style="width:0%"></div></div>
+            </div>
+            <button class="btn btn-primary mt-4" onclick="toast('Redirecionando para checkout...','info')">Fazer upgrade → Pro</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Histórico de faturas</h3></div>
+          <div class="empty"><div class="empty-icon">🧾</div><h3>Nenhuma fatura ainda</h3><p>Suas faturas aparecerão após a primeira cobrança</p></div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </main>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     MODALS
+══════════════════════════════════════════════════════ -->
+
+<!-- New Bot -->
+<div class="overlay" id="m-newBot">
+  <div class="modal modal-lg">
+    <div class="modal-title">Criar novo Bot</div>
+    <div class="modal-subtitle">Configure seu assistente de IA personalizado</div>
+    <div class="form-group"><label class="field-label">Nome do Bot</label><input class="field" id="bName" type="text" placeholder="Ex: Atendente Virtual"></div>
+    <div class="form-group">
+      <label class="field-label">Modelo de IA</label>
+      <select class="field" id="bModel">
+        <option value="gemini-2.0-flash">Gemini 2.0 Flash (Recomendado — usa sua Gemini Key)</option>
+        <option value="gpt-4">GPT-4 (usa sua OpenAI Key + Assistant)</option>
+        <option value="gpt-3.5-turbo">GPT-3.5 Turbo (usa sua OpenAI Key + Assistant)</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="field-label">Prompt de sistema</label><textarea class="field" id="bPrompt" rows="4" placeholder="Ex: Você é um atendente virtual da empresa XYZ. Responda sempre em português de forma educada e prestativa..."></textarea></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="Modals.close('newBot')">Cancelar</button>
+      <button class="btn btn-primary" id="createBotBtn" onclick="Bots.create()">Criar Bot →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Bot -->
+<div class="overlay" id="m-editBot">
+  <div class="modal modal-lg">
+    <div class="modal-title" id="eBotTitle">Editar Bot</div>
+    <div class="modal-subtitle" id="eBotMeta">—</div>
+    <div class="form-group"><label class="field-label">Prompt de sistema</label><textarea class="field" id="eBotPrompt" rows="5"></textarea></div>
+    <div style="padding:14px 0;border-top:1px solid var(--border)">
+      <div class="toggle-row" style="padding:0;border:none">
+        <div class="toggle-info"><label>Bot ativo</label><small>Quando ativo, o bot responde mensagens recebidas</small></div>
+        <label class="toggle"><input type="checkbox" id="eBotActive"><span class="toggle-track"></span></label>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" onclick="Bots.delete()">Excluir bot</button>
+      <button class="btn btn-ghost" onclick="Modals.close('editBot')">Fechar</button>
+      <button class="btn btn-primary" onclick="Bots.save()">Salvar →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Connect WhatsApp -->
+<div class="overlay" id="m-connect">
+  <div class="modal" style="max-width:380px;text-align:center">
+    <div class="modal-title">Conectar WhatsApp</div>
+    <div class="modal-subtitle">Abra o app → Dispositivos Conectados → Conectar</div>
+    <div class="qr-wrap">
+      <div class="qr-canvas" id="qrCanvas"></div>
+      <div class="qr-scan-line"></div>
+    </div>
+    <div class="text-sm text-muted mt-2 mb-3" id="qrStatus">Aguardando QR Code...</div>
+    <div class="log-box" id="connectLog"></div>
+    <div class="modal-actions" style="justify-content:center;margin-top:16px">
+      <button class="btn btn-ghost" onclick="Modals.close('connect')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════ -->
+<script>
+'use strict'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────────────────────────────
+
+const API_URL = window.location.origin + '/api'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+
+const State = {
+  token: null,
+  user: null,
+  bots: [],
+  conversations: [],
+  stats: null,
+  activeBotId: null,    // for edit modal
+  connectBotId: null,   // for connect modal
+  sseSource: null,      // EventSource for QR
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STORAGE
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Store = {
+  save() {
+    try {
+      if (State.token) localStorage.setItem('zapgpt_token', State.token)
+      if (State.user)  localStorage.setItem('zapgpt_user',  JSON.stringify(State.user))
+    } catch (_) {}
+  },
+  load() {
+    try {
+      State.token = localStorage.getItem('zapgpt_token')
+      const u = localStorage.getItem('zapgpt_user')
+      if (u) State.user = JSON.parse(u)
+    } catch (_) {}
+  },
+  clear() {
+    try {
+      localStorage.removeItem('zapgpt_token')
+      localStorage.removeItem('zapgpt_user')
+    } catch (_) {}
+    State.token = null
+    State.user  = null
+  },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API CLIENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Api = {
+  async request(method, path, body = null) {
+    const headers = { 'Content-Type': 'application/json' }
+    if (State.token) headers['Authorization'] = `Bearer ${State.token}`
+
+    const res = await fetch(API_URL + path, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    })
+
+    const json = await res.json().catch(() => ({ success: false, error: { message: 'Parse error' } }))
+
+    if (!res.ok) {
+      const msg = json?.error?.message ?? `HTTP ${res.status}`
+      throw new Error(msg)
+    }
+
+    return json.data ?? json
+  },
+
+  get:    (path)        => Api.request('GET', path),
+  post:   (path, body)  => Api.request('POST', path, body),
+  patch:  (path, body)  => Api.request('PATCH', path, body),
+  delete: (path)        => Api.request('DELETE', path),
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const UI = {
+  page(id) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
+    document.getElementById(id)?.classList.add('active')
+    window.scrollTo(0, 0)
+  },
+
+  view(id, el) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'))
+    document.getElementById(`view-${id}`)?.classList.add('active')
+    document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'))
+    if (el) el.classList.add('active')
+    else document.querySelector(`[data-view="${id}"]`)?.classList.add('active')
+
+    const titles = { overview:'Visão Geral', bots:'Meus Bots', convs:'Conversas',
+                     analytics:'Analytics', settings:'Configurações', billing:'Assinatura' }
+    document.getElementById('viewTitle').textContent = titles[id] ?? id
+
+    if (id === 'settings') Settings.load()
+    if (id === 'billing')  Billing.render()
+    if (id === 'analytics') Analytics.render()
+  },
+
+  tab(id, btn) {
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'))
+    document.getElementById(id)?.classList.add('active')
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
+    if (btn) btn.classList.add('active')
+  },
+
+  setLoading(btnId, loading) {
+    const btn = document.getElementById(btnId)
+    if (!btn) return
+    btn.disabled = loading
+    btn.classList.toggle('loading', loading)
+    if (loading) {
+      btn._orig = btn.innerHTML
+      btn.innerHTML = `<span class="spinner"></span>`
+    } else if (btn._orig) {
+      btn.innerHTML = btn._orig
+    }
+  },
+
+  el: (id) => document.getElementById(id),
+  val: (id) => document.getElementById(id)?.value?.trim() ?? '',
+  html: (id, h) => { const el = document.getElementById(id); if (el) el.innerHTML = h },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOAST
+// ─────────────────────────────────────────────────────────────────────────────
+
+function toast(msg, type = 'success') {
+  const icons = { success:'✅', error:'❌', info:'ℹ️', warning:'⚠️' }
+  const el = document.createElement('div')
+  el.className = `toast ${type}`
+  el.innerHTML = `<span class="toast-icon">${icons[type] ?? '💬'}</span><span>${msg}</span>`
+  document.getElementById('toasts').appendChild(el)
+  setTimeout(() => el.remove(), 4000)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODALS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Modals = {
+  open(id) {
+    document.getElementById(`m-${id}`)?.classList.add('open')
+    if (id === 'connect') Connect.start()
+  },
+  close(id) {
+    document.getElementById(`m-${id}`)?.classList.remove('open')
+    if (id === 'connect') Connect.cleanup()
+  },
+}
+
+// Close overlay on backdrop click
+document.querySelectorAll('.overlay').forEach(o =>
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open') })
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Auth = {
+  async login() {
+    const email = UI.val('l-email')
+    const password = UI.val('l-pass')
+    if (!email || !password) { toast('Preencha todos os campos', 'error'); return }
+
+    UI.setLoading('loginBtn', true)
+    try {
+      const data = await Api.post('/auth/login', { email, password })
+      State.token = data.token
+      State.user  = data.user
+      Store.save()
+      await Dashboard.enter()
+      toast(`Bem-vindo de volta, ${data.user.name}! 👋`, 'success')
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      UI.setLoading('loginBtn', false)
+    }
+  },
+
+  async register() {
+    const name     = UI.val('r-name')
+    const lastName = UI.val('r-last')
+    const email    = UI.val('r-email')
+    const password = UI.val('r-pass')
+    const plan     = UI.val('r-plan')
+
+    if (!name || !email || !password) { toast('Preencha todos os campos obrigatórios', 'error'); return }
+    if (password.length < 8) { toast('Senha deve ter pelo menos 8 caracteres', 'error'); return }
+
+    UI.setLoading('registerBtn', true)
+    try {
+      const data = await Api.post('/auth/register', { name, lastName, email, password, plan })
+      State.token = data.token
+      State.user  = data.user
+      Store.save()
+      await Dashboard.enter()
+      toast(`Conta criada! Bem-vindo, ${data.user.name}! 🎉`, 'success')
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      UI.setLoading('registerBtn', false)
+    }
+  },
+
+  async demoLogin() {
+    // Register + login a demo account server-side
+    const suffix = Date.now()
+    try {
+      const data = await Api.post('/auth/register', {
+        name: 'Demo', lastName: 'User',
+        email: `demo_${suffix}@zapgpt.com`,
+        password: 'demo1234', plan: 'pro',
+      })
+      State.token = data.token
+      State.user  = data.user
+      Store.save()
+      await Dashboard.enter()
+      toast('Modo demonstração ativado 🚀', 'info')
+    } catch (err) {
+      toast('Erro ao iniciar demo: ' + err.message, 'error')
+    }
+  },
+
+  logout() {
+    Connect.cleanup()
+    Store.clear()
+    State.bots = []
+    State.conversations = []
+    State.stats = null
+    UI.page('landing')
+    toast('Até logo! 👋', 'info')
+  },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DASHBOARD
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Dashboard = {
+  async enter() {
+    UI.page('dashboard')
+    UI.view('overview')
+    Dashboard.updateSidebar()
+    await Dashboard.refresh()
+  },
+
+  async refresh() {
+    try {
+      await Promise.all([
+        Dashboard.loadStats(),
+        Bots.load(),
+        Conversations.load(),
+      ])
+    } catch (err) {
+      console.error('Dashboard refresh error:', err)
+    }
+  },
+
+  async loadStats() {
+    try {
+      const stats = await Api.get('/users/me/stats')
+      State.stats = stats
+      UI.el('s-bots').textContent    = stats.activeBots
+      UI.el('s-msgs').textContent    = (stats.totalMessages).toLocaleString('pt-BR')
+      UI.el('s-convs').textContent   = stats.totalConversations
+      UI.el('s-tokens').textContent  = (stats.tokensUsed).toLocaleString('pt-BR')
+      UI.el('s-bots-meta').textContent = `${stats.totalBots} total`
+    } catch (_) {}
+  },
+
+  updateSidebar() {
+    const u = State.user
+    if (!u) return
+    UI.el('sbAvatar').textContent = u.name[0].toUpperCase()
+    UI.el('sbName').textContent   = `${u.name} ${u.lastName || ''}`
+    UI.el('sbPlan').textContent   = (u.plan ?? 'starter').toUpperCase()
+  },
+
+  filterConvs(query) {
+    const q = query.toLowerCase()
+    document.querySelectorAll('.conv-row').forEach(row => {
+      row.style.display = row.dataset.search?.includes(q) ? '' : 'none'
+    })
+  },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MODEL_META = {
+  'gemini-2.0-flash': { label: 'Gemini 2.0', cls: 'model-gemini' },
+  'gpt-4':            { label: 'GPT-4',       cls: 'model-gpt4' },
+  'gpt-3.5-turbo':    { label: 'GPT-3.5',     cls: 'model-gpt35' },
+}
+
+const Bots = {
+  async load() {
+    try {
+      State.bots = await Api.get('/bots')
+      Bots.render()
+      Bots.renderOverview()
+      Bots.updateSteps()
+    } catch (_) {}
+  },
+
+  render() {
+    const el = UI.el('botsList')
+    if (!el) return
+
+    if (State.bots.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">🤖</div><h3>Nenhum bot criado</h3><p>Clique em "+ Novo Bot" para criar seu assistente</p></div>`
+      return
+    }
+
+    const rows = State.bots.map(b => {
+      const m = MODEL_META[b.model] ?? { label: b.model, cls: '' }
+      return `
+        <tr>
+          <td>
+            <div class="flex-center gap-2">
+              <div style="width:7px;height:7px;border-radius:50%;background:${b.isConnected ? 'var(--green)' : 'var(--text-dim)'};${b.isConnected ? 'box-shadow:0 0 6px var(--green)' : ''}"></div>
+              <strong>${Bots.escape(b.name)}</strong>
+            </div>
+          </td>
+          <td><span class="model-tag ${m.cls}">${m.label}</span></td>
+          <td class="mono text-sm">${b.phone ? b.phone : '<span class="text-dim">Não conectado</span>'}</td>
+          <td><span class="badge ${b.isActive ? 'badge-green' : 'badge-red'}">${b.isActive ? 'Ativo' : 'Inativo'}</span></td>
+          <td class="text-muted">${b.messageCount.toLocaleString('pt-BR')}</td>
+          <td>
+            <div class="flex gap-2">
+              <button class="btn btn-ghost btn-sm" onclick="Connect.open('${b.id}')">📱 Conectar</button>
+              <button class="btn btn-ghost btn-sm" onclick="Bots.openEdit('${b.id}')">✏️ Editar</button>
+            </div>
+          </td>
+        </tr>
+      `
+    }).join('')
+
+    el.innerHTML = `
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Nome</th><th>Modelo</th><th>Número</th>
+            <th>Status</th><th>Mensagens</th><th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`
+  },
+
+  renderOverview() {
+    const el = UI.el('ov-bots')
+    if (!el) return
+    if (State.bots.length === 0) {
+      el.innerHTML = `<div class="empty" style="padding:32px"><div class="empty-icon" style="font-size:28px">🤖</div><h3>Nenhum bot ainda</h3></div>`
+      return
+    }
+    el.innerHTML = State.bots.slice(0, 4).map(b => {
+      const m = MODEL_META[b.model] ?? { label: b.model, cls: '' }
+      return `
+        <div class="conv-row">
+          <div class="conv-avatar" style="${b.isConnected ? 'background:var(--green-soft)' : ''}">🤖</div>
+          <div class="conv-body">
+            <div class="conv-name">${Bots.escape(b.name)}</div>
+            <div class="conv-preview"><span class="model-tag ${m.cls}">${m.label}</span> · ${b.messageCount} mensagens</div>
+          </div>
+          <span class="badge ${b.isActive ? 'badge-green' : 'badge-red'}">${b.isActive ? 'Ativo' : 'Off'}</span>
+        </div>`
+    }).join('')
+  },
+
+  updateSteps() {
+    const hasBots      = State.bots.length > 0
+    const hasConnected = State.bots.some(b => b.isConnected)
+    const hasMsgs      = State.bots.some(b => b.messageCount > 0)
+
+    if (hasBots) {
+      UI.el('step1')?.classList.add('done')
+      UI.el('step2').style.opacity = '1'
+    }
+    if (hasConnected) {
+      UI.el('step2')?.classList.add('done')
+      UI.el('step3').style.opacity = '1'
+    }
+    if (hasMsgs) {
+      UI.el('step3')?.classList.add('done')
+    }
+  },
+
+  async create() {
+    const name   = UI.val('bName')
+    const model  = UI.val('bModel')
+    const prompt = UI.val('bPrompt')
+
+    if (!name) { toast('Dê um nome ao bot', 'error'); return }
+    if (prompt.length < 10) { toast('O prompt deve ter pelo menos 10 caracteres', 'error'); return }
+
+    UI.setLoading('createBotBtn', true)
+    try {
+      const bot = await Api.post('/bots', { name, model, prompt })
+      State.bots.unshift(bot)
+      Modals.close('newBot')
+      UI.el('bName').value   = ''
+      UI.el('bPrompt').value = ''
+      Bots.render()
+      Bots.renderOverview()
+      Bots.updateSteps()
+      toast(`Bot "${name}" criado com sucesso! 🤖`, 'success')
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      UI.setLoading('createBotBtn', false)
+    }
+  },
+
+  openEdit(botId) {
+    const bot = State.bots.find(b => b.id === botId)
+    if (!bot) return
+    State.activeBotId = botId
+    const m = MODEL_META[bot.model] ?? { label: bot.model }
+    UI.el('eBotTitle').textContent    = bot.name
+    UI.el('eBotMeta').textContent     = `${m.label} · criado em ${new Date(bot.createdAt).toLocaleDateString('pt-BR')}`
+    UI.el('eBotPrompt').value         = bot.prompt
+    UI.el('eBotActive').checked       = bot.isActive
+    Modals.open('editBot')
+  },
+
+  async save() {
+    const id = State.activeBotId
+    if (!id) return
+    try {
+      const updated = await Api.patch(`/bots/${id}`, {
+        prompt:   UI.el('eBotPrompt').value,
+        isActive: UI.el('eBotActive').checked,
+      })
+      const idx = State.bots.findIndex(b => b.id === id)
+      if (idx >= 0) State.bots[idx] = updated
+      Modals.close('editBot')
+      Bots.render()
+      Bots.renderOverview()
+      Bots.updateSteps()
+      toast('Bot atualizado!', 'success')
+    } catch (err) {
+      toast(err.message, 'error')
+    }
+  },
+
+  async delete() {
+    const id = State.activeBotId
+    if (!id) return
+    const bot = State.bots.find(b => b.id === id)
+    if (!confirm(`Excluir o bot "${bot?.name}"? Esta ação não pode ser desfeita.`)) return
+
+    try {
+      await Api.delete(`/bots/${id}`)
+      State.bots = State.bots.filter(b => b.id !== id)
+      Modals.close('editBot')
+      Bots.render()
+      Bots.renderOverview()
+      toast(`Bot excluído`, 'info')
+    } catch (err) {
+      toast(err.message, 'error')
+    }
+  },
+
+  escape(str) {
+    return String(str).replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONVERSATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Conversations = {
+  async load() {
+    try {
+      State.conversations = await Api.get('/conversations')
+      Conversations.render()
+      Conversations.renderOverview()
+    } catch (_) {}
+  },
+
+  render() {
+    const el = UI.el('convsList')
+    if (!el) return
+    if (State.conversations.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">💬</div><h3>Nenhuma conversa</h3><p>As conversas aparecerão quando seu bot estiver ativo</p></div>`
+      return
+    }
+    el.innerHTML = State.conversations.map(c => {
+      const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })
+      return `
+        <div class="conv-row" data-search="${Bots.escape(c.contactName?.toLowerCase())} ${c.lastMessage?.toLowerCase()}" onclick="toast('Visualização de chat em breve!','info')">
+          <div class="conv-avatar">👤</div>
+          <div class="conv-body">
+            <div class="conv-name">${Bots.escape(c.contactName || c.contactPhone)}</div>
+            <div class="conv-preview">${Bots.escape(c.lastMessage)}</div>
+          </div>
+          <div class="conv-right">
+            <div class="conv-time">${time}</div>
+            ${c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''}
+          </div>
+        </div>`
+    }).join('')
+  },
+
+  renderOverview() {
+    const el = UI.el('ov-convs')
+    if (!el) return
+    if (State.conversations.length === 0) {
+      el.innerHTML = `<div class="empty" style="padding:32px"><div class="empty-icon" style="font-size:28px">💬</div><h3>Nenhuma conversa</h3></div>`
+      return
+    }
+    el.innerHTML = State.conversations.slice(0, 4).map(c => {
+      const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })
+      return `
+        <div class="conv-row" onclick="toast('Visualização de chat em breve!','info')">
+          <div class="conv-avatar">👤</div>
+          <div class="conv-body">
+            <div class="conv-name">${Bots.escape(c.contactName || c.contactPhone)}</div>
+            <div class="conv-preview">${Bots.escape(c.lastMessage)}</div>
+          </div>
+          <div class="conv-right">
+            <div class="conv-time">${time}</div>
+            ${c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''}
+          </div>
+        </div>`
+    }).join('')
+  },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONNECT WHATSAPP (SSE)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Connect = {
+  open(botId) {
+    State.connectBotId = botId
+    Modals.open('connect')
+  },
+
+  start() {
+    const botId = State.connectBotId
+    if (!botId) return
+
+    // Trigger connection start
+    Api.post(`/bots/${botId}/connect`).catch(() => {})
+
+    // Listen for QR + status via SSE
+    Connect.cleanup()
+    const url = `${API_URL}/bots/${botId}/events`
+    const source = new EventSource(url)
+    State.sseSource = source
+
+    Connect.log('Iniciando conexão...', 'info')
+
+    source.addEventListener('qr', (e) => {
+      const data = JSON.parse(e.data)
+      Connect.renderQR()
+      Connect.log('QR Code gerado. Escaneie com o WhatsApp!', 'success')
+      UI.el('qrStatus').textContent = 'Escaneie o QR Code acima'
+    })
+
+    source.addEventListener('status', (e) => {
+      const data = JSON.parse(e.data)
+      Connect.log(`Status: ${data.status}`, 'info')
+      if (data.status === 'inChat' || data.status === 'isLogged') {
+        Connect.log('✓ WhatsApp conectado com sucesso!', 'success')
+        UI.el('qrStatus').textContent = '✅ Conectado!'
+      }
+    })
+
+    source.addEventListener('bot', (e) => {
+      const updatedBot = JSON.parse(e.data)
+      const idx = State.bots.findIndex(b => b.id === updatedBot.id)
+      if (idx >= 0) State.bots[idx] = updatedBot
+      Bots.render()
+      Bots.renderOverview()
+      Bots.updateSteps()
+      if (updatedBot.isConnected) {
+        setTimeout(() => { Modals.close('connect'); toast('Bot conectado ao WhatsApp! 🟢', 'success') }, 1500)
+      }
+    })
+
+    source.onerror = () => {
+      Connect.log('Erro de conexão. Verifique o servidor.', 'error')
+    }
+  },
+
+  renderQR() {
+    const canvas = UI.el('qrCanvas')
+    if (!canvas) return
+    // Visual mock QR pattern
+    const cells = Array.from({ length: 121 }, (_, i) => {
+      const row = Math.floor(i / 11), col = i % 11
+      const isCornerTL = row < 3 && col < 3
+      const isCornerTR = row < 3 && col > 7
+      const isCornerBL = row > 7 && col < 3
+      const isFilled = isCornerTL || isCornerTR || isCornerBL || Math.random() > 0.55
+      return `<div class="qr-cell" style="background:${isFilled ? '#e8edf5' : 'transparent'}"></div>`
+    }).join('')
+    canvas.innerHTML = cells
+  },
+
+  log(msg, type = '') {
+    const box = UI.el('connectLog')
+    if (!box) return
+    const time = new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', second:'2-digit' })
+    const cls = type ? `log-${type}` : ''
+    box.innerHTML += `<div class="${cls}">[${time}] ${msg}</div>`
+    box.scrollTop = box.scrollHeight
+  },
+
+  cleanup() {
+    if (State.sseSource) {
+      State.sseSource.close()
+      State.sseSource = null
+    }
+  },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Settings = {
+  load() {
+    const u = State.user
+    if (!u) return
+    if (UI.el('sName'))     UI.el('sName').value     = u.name ?? ''
+    if (UI.el('sLastName')) UI.el('sLastName').value  = u.lastName ?? ''
+    if (UI.el('sEmail'))    UI.el('sEmail').value     = u.email ?? ''
+    // Load API keys
+    Api.get('/users/me').then(user => {
+      State.user = user
+      const keys = user.apiKeys ?? {}
+      if (UI.el('sOpenAI'))    UI.el('sOpenAI').value    = keys.openaiKey         ?? ''
+      if (UI.el('sAssistant')) UI.el('sAssistant').value = keys.openaiAssistantId ?? ''
+      if (UI.el('sGemini'))    UI.el('sGemini').value    = keys.geminiKey         ?? ''
+    }).catch(() => {})
+  },
+
+  async saveProfile() {
+    try {
+      const updated = await Api.patch('/users/me', {
+        name:     UI.val('sName'),
+        lastName: UI.val('sLastName'),
+      })
+      State.user = { ...State.user, ...updated }
+      Store.save()
+      Dashboard.updateSidebar()
+      toast('Perfil atualizado!', 'success')
+    } catch (err) {
+      toast(err.message, 'error')
+    }
+  },
+
+  async saveApiKeys() {
+    try {
+      await Api.patch('/users/me/api-keys', {
+        openaiKey:         UI.val('sOpenAI'),
+        openaiAssistantId: UI.val('sAssistant'),
+        geminiKey:         UI.val('sGemini'),
+      })
+      toast('Chaves de API salvas! 🔐', 'success')
+    } catch (err) {
+      toast(err.message, 'error')
+    }
+  },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ANALYTICS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Analytics = {
+  render() {
+    const s = State.stats
+    if (!s) return
+    UI.el('an-total').textContent  = s.totalMessages.toLocaleString('pt-BR')
+    UI.el('an-avg').textContent    = Math.floor(s.totalMessages / 7).toLocaleString('pt-BR')
+    UI.el('an-convs').textContent  = s.totalConversations
+    UI.el('an-tokens').textContent = s.tokensUsed.toLocaleString('pt-BR')
+  },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BILLING
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Billing = {
+  render() {
+    const u = State.user
+    if (!u) return
+    const plan = u.plan ?? 'starter'
+    const planLabels = { starter:'Starter', pro:'Pro', enterprise:'Enterprise' }
+    const planPills  = { starter:'GRÁTIS', pro:'PRO', enterprise:'ENTERPRISE' }
+    const limits     = { starter: 500, pro: Infinity, enterprise: Infinity }
+    const msgs       = State.stats?.totalMessages ?? 0
+    const limit      = limits[plan] ?? 500
+
+    UI.el('bilPlan').textContent = planLabels[plan]
+    const pill = UI.el('bilPill')
+    pill.textContent  = planPills[plan]
+    pill.className    = `plan-pill ${plan}`
+
+    UI.el('bilUsage').textContent = `${msgs.toLocaleString('pt-BR')} / ${limit === Infinity ? '∞' : limit}`
+    UI.el('bilBar').style.width   = limit === Infinity ? '8%' : `${Math.min(100, (msgs/limit)*100)}%`
+  },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KEYBOARD SHORTCUTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.querySelectorAll('.overlay.open').forEach(o => o.classList.remove('open'))
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    // Cmd/Ctrl+Enter on login
+    if (document.getElementById('login').classList.contains('active')) Auth.login()
+    if (document.getElementById('register').classList.contains('active')) Auth.register()
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────────────────────────────────────
+
+;(async () => {
+  Store.load()
+
+  if (State.token && State.user) {
+    try {
+      // Verify token is still valid
+      const me = await Api.get('/auth/me')
+      State.user = me
+      Store.save()
+      await Dashboard.enter()
+    } catch (_) {
+      // Token expired — show landing
+      Store.clear()
+      UI.page('landing')
+    }
+  } else {
+    UI.page('landing')
+  }
+})()
+</script>
+</body>
+</html>
