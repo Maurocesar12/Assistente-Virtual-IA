@@ -29,12 +29,14 @@ authRouter.post('/register', validate(registerSchema), async (req, res, next) =>
   try {
     const { name, lastName, email, password, plan } = req.body
 
-    const existing = db.findUserByEmail(email)
+    // 1. ADICIONADO AWAIT
+    const existing = await db.findUserByEmail(email)
     if (existing) throw ApiError.conflict('Email already in use')
 
     const passwordHash = await hashPassword(password)
 
-    const user = db.createUser({
+    // 2. ADICIONADO AWAIT
+    const user = await db.createUser({
       name,
       lastName,
       email,
@@ -57,7 +59,8 @@ authRouter.post('/login', validate(loginSchema), async (req, res, next) => {
   try {
     const { email, password } = req.body
 
-    const user = db.findUserByEmail(email)
+    // 3. ADICIONADO AWAIT
+    const user = await db.findUserByEmail(email)
     if (!user) throw ApiError.unauthorized('Invalid credentials')
 
     const valid = await comparePassword(password, user.passwordHash)
@@ -73,9 +76,11 @@ authRouter.post('/login', validate(loginSchema), async (req, res, next) => {
 
 // ─── GET /auth/me ─────────────────────────────────────────────────────────────
 
-authRouter.get('/me', authenticate, (req, res, next) => {
+// 4. ADICIONADO ASYNC NA FUNÇÃO
+authRouter.get('/me', authenticate, async (req, res, next) => {
   try {
-    const user = db.findUserById(req.userId)
+    // 5. ADICIONADO AWAIT
+    const user = await db.findUserById(req.userId)
     if (!user) throw ApiError.notFound('User not found')
     return ok(res, sanitizeUser(user))
   } catch (err) {

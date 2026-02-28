@@ -6,14 +6,14 @@ const COMPLEX_PATTERN =
   /(http[s]?:\/\/[^\s]+)|(www\.[^\s]+)|([^\s]+@[^\s]+\.[^\s]+)|(["'].*?["'])|(\b\d+\.\s)|(\w+\.\w+)/g
 
 export function splitMessages(text: string): string[] {
-  const matches = text.match(COMPLEX_PATTERN) ?? []
+  const matches = (text.match(COMPLEX_PATTERN) ?? []) as string[]
   const PLACEHOLDER = 'PLACEHOLDER_'
   let idx = 0
 
   const withPlaceholders = text.replace(COMPLEX_PATTERN, () => `${PLACEHOLDER}${idx++}`)
 
   const splitPattern = /(?<!\b\d+\.\s)(?<!\w+\.\w+)[^.?!]+(?:[.?!]+["']?|$)/g
-  let parts = withPlaceholders.match(splitPattern) ?? [text]
+  let parts = (withPlaceholders.match(splitPattern) ?? [text]) as string[]
 
   if (matches.length > 0) {
     parts = parts.map((part) =>

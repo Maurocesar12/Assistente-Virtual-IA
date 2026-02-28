@@ -38,9 +38,9 @@ botsRouter.get('/', (req, res, next) => {
 
 // ─── GET /bots/:id ────────────────────────────────────────────────────────────
 
-botsRouter.get('/:id', (req, res, next) => {
+botsRouter.get('/:id', async (req, res, next) => {
   try {
-    const bot = db.findBotById(req.params.id)
+    const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
     return ok(res, bot)
   } catch (err) {
@@ -73,9 +73,9 @@ botsRouter.post('/', validate(createBotSchema), (req, res, next) => {
 
 // ─── PATCH /bots/:id ──────────────────────────────────────────────────────────
 
-botsRouter.patch('/:id', validate(updateBotSchema), (req, res, next) => {
+botsRouter.patch('/:id', validate(updateBotSchema), async (req, res, next) => {
   try {
-    const bot = db.findBotById(req.params.id)
+    const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
 
     const updated = db.updateBot(req.params.id, req.body)
@@ -181,12 +181,12 @@ botsRouter.get('/:id/events', (req, res, next) => {
 
 // ─── GET /bots/:id/conversations ──────────────────────────────────────────────
 
-botsRouter.get('/:id/conversations', (req, res, next) => {
+botsRouter.get('/:id/conversations', async (req, res, next) => {
   try {
-    const bot = db.findBotById(req.params.id)
+    const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
 
-    const conversations = db.findConversationsByBotId(bot.id)
+    const conversations = db.findConversationsByUserId(bot.id)
     return ok(res, conversations)
   } catch (err) {
     next(err)

@@ -56,7 +56,7 @@ export function createApp() {
 
   // ── Serve frontend ────────────────────────────────────────────────────────
 
-  const publicDir = path.join(__dirname, '..', 'public')
+  const publicDir = path.join(__dirname, '..', '/Front-End/public')
   app.use(express.static(publicDir))
 
   // SPA fallback — serve index.html for all non-API routes

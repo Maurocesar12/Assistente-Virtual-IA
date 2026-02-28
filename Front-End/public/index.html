@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZapGPT — WhatsApp AI Automation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+<!-- ── BACKGROUND EFFECTS ─────────────────────────────── -->
+<div class="bg-grid"></div>
+<div class="bg-glow"></div>
+<div class="bg-glow-2"></div>
+
+<!-- ── TOASTS ─────────────────────────────────────────── -->
+<div id="toasts"></div>
+
+<!-- ══════════════════════════════════════════════════════
+     LANDING PAGE
+══════════════════════════════════════════════════════ -->
+<div id="landing" class="page active">
+
+  <nav class="l-nav">
+    <div class="logo" onclick="UI.page('landing')">
+      <div class="logo-dot"></div> ZapGPT
+    </div>
+    <ul class="l-nav-links">
+      <li><a href="#features">Funcionalidades</a></li>
+      <li><a href="#pricing">Preços</a></li>
+      <li><a href="https://wa.me/" target="_blank">Suporte</a></li>
+    </ul>
+    <div class="l-nav-right">
+      <button class="btn btn-ghost" onclick="UI.page('login')">Entrar</button>
+      <button class="btn btn-primary" onclick="UI.page('register')">Começar grátis</button>
+    </div>
+  </nav>
+
+  <section class="l-hero">
+    <div class="hero-pill">🤖 Integrado com GPT-4 e Gemini 2.0</div>
+    <h1>Automatize seu<br>WhatsApp com <em>IA</em></h1>
+    <p>Configure em minutos um assistente de IA no seu WhatsApp. Atenda clientes 24/7, humanize conversas e escale sem esforço.</p>
+    <div class="hero-actions">
+      <button class="btn btn-primary btn-lg" onclick="UI.page('register')">Criar conta grátis →</button>
+      <button class="btn btn-ghost btn-lg" onclick="Auth.demoLogin()">Ver demonstração</button>
+    </div>
+    <div class="hero-stats">
+      <div><div class="h-stat-val">12k+</div><div class="h-stat-label">Usuários ativos</div></div>
+      <div><div class="h-stat-val">4.8M</div><div class="h-stat-label">Mensagens/mês</div></div>
+      <div><div class="h-stat-val">99.9%</div><div class="h-stat-label">Uptime garantido</div></div>
+      <div><div class="h-stat-val">&lt;2s</div><div class="h-stat-label">Tempo de resposta</div></div>
+    </div>
+  </section>
+
+  <div class="section-sep"></div>
+
+  <section class="l-section" id="features">
+    <div class="section-tag">Funcionalidades</div>
+    <h2 class="section-h">Tudo que você precisa para automatizar</h2>
+    <div class="feat-grid">
+      <div class="feat-card"><div class="feat-icon">🤖</div><h3>GPT-4 & Gemini</h3><p>Escolha entre os melhores modelos do mercado com prompts personalizados por bot.</p></div>
+      <div class="feat-card"><div class="feat-icon">⚡</div><h3>Resposta instantânea</h3><p>Seu assistente responde em segundos, 24h por dia, 7 dias por semana.</p></div>
+      <div class="feat-card"><div class="feat-icon">🧠</div><h3>Memória de contexto</h3><p>A IA lembra toda a conversa e responde com coerência contínua.</p></div>
+      <div class="feat-card"><div class="feat-icon">📊</div><h3>Analytics em tempo real</h3><p>Métricas de mensagens, conversas ativas e uso de tokens no painel.</p></div>
+      <div class="feat-card"><div class="feat-icon">🔗</div><h3>Multi-contas</h3><p>Gerencie múltiplos números de WhatsApp em um único painel centralizado.</p></div>
+      <div class="feat-card"><div class="feat-icon">🛡️</div><h3>Segurança</h3><p>Autenticação JWT, hash de senhas bcrypt e rate limiting em todas as rotas.</p></div>
+    </div>
+  </section>
+
+  <div class="section-sep"></div>
+
+  <section class="l-section" id="pricing" style="text-align:center">
+    <div class="section-tag">Planos</div>
+    <h2 class="section-h" style="max-width:100%;margin:0 auto">Preço simples e transparente</h2>
+    <p class="mt-3 text-muted">Comece gratuitamente. Escale quando precisar.</p>
+    <div class="price-grid">
+      <div class="price-card" style="text-align:left">
+        <div class="price-plan">Starter</div>
+        <div class="price-amount">R$0<sub>/mês</sub></div>
+        <ul class="price-features">
+          <li>1 número de WhatsApp</li><li>500 mensagens/mês</li>
+          <li>GPT-3.5 ou Gemini</li><li>Suporte por email</li>
+        </ul>
+        <button class="btn btn-ghost btn-full" onclick="UI.page('register')">Começar grátis</button>
+      </div>
+      <div class="price-card pop" style="text-align:left">
+        <div class="price-plan">Pro</div>
+        <div class="price-amount">R$97<sub>/mês</sub></div>
+        <ul class="price-features">
+          <li>5 números de WhatsApp</li><li>Mensagens ilimitadas</li>
+          <li>GPT-4 & Gemini 2.0</li><li>Analytics avançado</li><li>Suporte prioritário</li>
+        </ul>
+        <button class="btn btn-primary btn-full" onclick="UI.page('register')">Assinar Pro</button>
+      </div>
+      <div class="price-card" style="text-align:left">
+        <div class="price-plan">Enterprise</div>
+        <div class="price-amount">Custom</div>
+        <ul class="price-features">
+          <li>Números ilimitados</li><li>SLA garantido</li>
+          <li>Integração via API</li><li>Gerente de conta</li>
+        </ul>
+        <button class="btn btn-ghost btn-full" onclick="toast('Entre em contato via WhatsApp!','info')">Falar com vendas</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="l-cta">
+    <div class="cta-box">
+      <div class="section-tag">Comece hoje</div>
+      <h2>Pronto para automatizar seu atendimento?</h2>
+      <p>Sem cartão de crédito. Configuração em menos de 5 minutos.</p>
+      <button class="btn btn-primary btn-lg" onclick="UI.page('register')">Criar conta grátis →</button>
+    </div>
+  </section>
+
+  <footer class="l-footer">
+    © 2026 ZapGPT &nbsp;·&nbsp; Feito por MauroGuimaraes
+    &nbsp;·&nbsp; <a href="#">Privacidade</a> &nbsp;·&nbsp; <a href="#">Termos</a>
+  </footer>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     LOGIN
+══════════════════════════════════════════════════════ -->
+<div id="login" class="page">
+  <div class="bg-grid"></div>
+  <div class="auth-wrap" style="position:relative;z-index:1">
+    <div class="auth-brand" onclick="UI.page('landing')">
+      <div class="logo"><div class="logo-dot"></div>ZapGPT</div>
+    </div>
+    <div class="auth-card">
+      <h2>Bem-vindo de volta</h2>
+      <p class="sub">Entre na sua conta para continuar</p>
+      <div class="form-group">
+        <label class="field-label">Email</label>
+        <input class="field" type="email" id="l-email" placeholder="seu@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="field-label">Senha</label>
+        <input class="field" type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div class="flex-between mt-2 mb-4">
+        <span></span>
+        <a class="text-sm" style="color:var(--green);cursor:pointer">Esqueceu a senha?</a>
+      </div>
+      <button class="btn btn-primary btn-full btn-lg" id="loginBtn" onclick="Auth.login()">Entrar →</button>
+      <div class="divider">ou</div>
+      <button class="btn btn-surface btn-full" onclick="Auth.demoLogin()">🚀 Acessar demo sem cadastro</button>
+    </div>
+    <div class="auth-footer">Não tem conta? <a onclick="UI.page('register')">Criar agora grátis</a></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     REGISTER
+══════════════════════════════════════════════════════ -->
+<div id="register" class="page">
+  <div class="bg-grid"></div>
+  <div class="auth-wrap wide" style="position:relative;z-index:1">
+    <div class="auth-brand" onclick="UI.page('landing')">
+      <div class="logo"><div class="logo-dot"></div>ZapGPT</div>
+    </div>
+    <div class="auth-card">
+      <h2>Crie sua conta</h2>
+      <p class="sub">Configure seu assistente de IA em minutos</p>
+      <div class="grid-2">
+        <div class="form-group"><label class="field-label">Nome</label><input class="field" type="text" id="r-name" placeholder="Marcus"></div>
+        <div class="form-group"><label class="field-label">Sobrenome</label><input class="field" type="text" id="r-last" placeholder="Gonçalves"></div>
+      </div>
+      <div class="form-group"><label class="field-label">Email</label><input class="field" type="email" id="r-email" placeholder="seu@email.com"></div>
+      <div class="form-group"><label class="field-label">Senha</label><input class="field" type="password" id="r-pass" placeholder="Mínimo 8 caracteres"></div>
+      <div class="form-group">
+        <label class="field-label">Plano inicial</label>
+        <select class="field" id="r-plan">
+          <option value="starter">Starter — Grátis</option>
+          <option value="pro">Pro — R$97/mês</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-full btn-lg" id="registerBtn" onclick="Auth.register()">Criar conta grátis →</button>
+      <p class="text-xs text-dim mt-3" style="text-align:center;line-height:1.6">
+        Ao criar uma conta você concorda com nossos <a href="#" style="color:var(--green)">Termos de Uso</a> e <a href="#" style="color:var(--green)">Política de Privacidade</a>
+      </p>
+    </div>
+    <div class="auth-footer">Já tem conta? <a onclick="UI.page('login')">Entrar</a></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     DASHBOARD
+══════════════════════════════════════════════════════ -->
+<div id="dashboard" class="page">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sb-brand">
+      <div class="logo" style="font-size:18px" onclick="UI.page('landing')">
+        <div class="logo-dot"></div>ZapGPT
+      </div>
+    </div>
+    <nav class="sb-nav">
+      <button class="nav-link active" data-view="overview"  onclick="UI.view('overview',this)"><span class="ni">📊</span>Visão Geral</button>
+      <button class="nav-link"        data-view="bots"       onclick="UI.view('bots',this)"><span class="ni">🤖</span>Meus Bots</button>
+      <button class="nav-link"        data-view="convs"      onclick="UI.view('convs',this)"><span class="ni">💬</span>Conversas</button>
+      <button class="nav-link"        data-view="analytics"  onclick="UI.view('analytics',this)"><span class="ni">📈</span>Analytics</button>
+      <button class="nav-link"        data-view="settings"   onclick="UI.view('settings',this)"><span class="ni">⚙️</span>Configurações</button>
+      <button class="nav-link"        data-view="billing"    onclick="UI.view('billing',this)"><span class="ni">💳</span>Assinatura</button>
+    </nav>
+    <div class="sb-footer">
+      <div class="sb-user">
+        <div class="avatar" id="sbAvatar">U</div>
+        <div class="sb-user-info">
+          <div class="sb-user-name" id="sbName">Usuário</div>
+          <div class="sb-user-plan" id="sbPlan">Starter</div>
+        </div>
+      </div>
+      <button class="nav-link mt-1" style="color:var(--red)" onclick="Auth.logout()">
+        <span class="ni">🚪</span>Sair
+      </button>
+    </div>
+  </aside>
+
+  <!-- MAIN AREA -->
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title" id="viewTitle">Visão Geral</div>
+      <div class="topbar-right">
+        <button class="btn btn-ghost btn-sm" onclick="Dashboard.refresh()" title="Atualizar">↻</button>
+        <button class="btn btn-primary btn-sm" onclick="Modals.open('newBot')">+ Novo Bot</button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ────────────────── OVERVIEW ──────────────────── -->
+      <div id="view-overview" class="view active">
+
+        <div class="stats-row" id="statsRow">
+          <div class="stat-card"><div class="stat-card-label">Bots Ativos</div><div class="stat-card-value" id="s-bots">—</div><div class="stat-card-meta up" id="s-bots-meta">carregando...</div></div>
+          <div class="stat-card"><div class="stat-card-label">Mensagens</div><div class="stat-card-value" id="s-msgs">—</div><div class="stat-card-meta" id="s-msgs-meta">total</div></div>
+          <div class="stat-card"><div class="stat-card-label">Conversas</div><div class="stat-card-value" id="s-convs">—</div><div class="stat-card-meta">únicas</div></div>
+          <div class="stat-card"><div class="stat-card-label">Tokens Usados</div><div class="stat-card-value" id="s-tokens">—</div><div class="stat-card-meta">estimado</div></div>
+        </div>
+
+        <!-- Onboarding -->
+        <div class="steps-row mb-6" id="stepsRow">
+          <div class="step-card clickable" id="step1" onclick="Modals.open('newBot')">
+            <div class="step-num">1️⃣</div>
+            <div class="step-title">Criar um Bot</div>
+            <div class="step-desc">Configure sua IA com nome, modelo e prompt</div>
+          </div>
+          <div class="step-card" id="step2" style="opacity:0.45">
+            <div class="step-num">2️⃣</div>
+            <div class="step-title">Conectar WhatsApp</div>
+            <div class="step-desc">Escaneie o QR Code para vincular seu número</div>
+          </div>
+          <div class="step-card" id="step3" style="opacity:0.45">
+            <div class="step-num">3️⃣</div>
+            <div class="step-title">Receber mensagens</div>
+            <div class="step-desc">Seu bot responde automaticamente 24/7</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="card">
+            <div class="card-header"><h3>Bots Recentes</h3><button class="btn btn-ghost btn-sm" onclick="UI.view('bots')">Ver todos</button></div>
+            <div id="ov-bots"></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Últimas Conversas</h3><button class="btn btn-ghost btn-sm" onclick="UI.view('convs')">Ver todas</button></div>
+            <div id="ov-convs"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ────────────────── BOTS ──────────────────── -->
+      <div id="view-bots" class="view">
+        <div class="card" id="botsList"></div>
+      </div>
+
+      <!-- ────────────────── CONVERSATIONS ──────────────────── -->
+      <div id="view-convs" class="view">
+        <div class="card">
+          <div class="card-header">
+            <h3>Todas as conversas</h3>
+            <input class="field" type="text" placeholder="Buscar..." id="convSearch" oninput="Dashboard.filterConvs(this.value)" style="width:200px;padding:7px 12px;font-size:12px">
+          </div>
+          <div id="convsList"></div>
+        </div>
+      </div>
+
+      <!-- ────────────────── ANALYTICS ──────────────────── -->
+      <div id="view-analytics" class="view">
+        <div class="stats-row" id="analyticsStats">
+          <div class="stat-card"><div class="stat-card-label">Total Mensagens</div><div class="stat-card-value" id="an-total">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">Média Diária</div><div class="stat-card-value" id="an-avg">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">Conversas</div><div class="stat-card-value" id="an-convs">—</div></div>
+          <div class="stat-card"><div class="stat-card-label">Tokens</div><div class="stat-card-value" id="an-tokens">—</div></div>
+        </div>
+        <div class="card">
+          <div class="empty">
+            <div class="empty-icon">📊</div>
+            <h3>Dados insuficientes</h3>
+            <p>Os gráficos serão exibidos após 7 dias de uso</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ────────────────── SETTINGS ──────────────────── -->
+      <div id="view-settings" class="view">
+        <div class="tabs">
+          <button class="tab-btn active" onclick="UI.tab('t-profile',this)">Perfil</button>
+          <button class="tab-btn" onclick="UI.tab('t-apikeys',this)">API Keys</button>
+          <button class="tab-btn" onclick="UI.tab('t-notif',this)">Notificações</button>
+        </div>
+
+        <div id="t-profile" class="tab-pane active" style="max-width:540px">
+          <div class="card">
+            <div class="card-header"><h3>Dados pessoais</h3></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+              <div class="grid-2">
+                <div class="form-group" style="margin:0"><label class="field-label">Nome</label><input class="field" id="sName" type="text"></div>
+                <div class="form-group" style="margin:0"><label class="field-label">Sobrenome</label><input class="field" id="sLastName" type="text"></div>
+              </div>
+              <div class="form-group" style="margin:0"><label class="field-label">Email</label><input class="field" id="sEmail" type="email"></div>
+              <div class="form-group" style="margin:0"><label class="field-label">Nova senha (opcional)</label><input class="field" type="password" placeholder="Deixe em branco para manter"></div>
+              <button class="btn btn-primary" style="width:fit-content" onclick="Settings.saveProfile()">Salvar alterações</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="t-apikeys" class="tab-pane" style="max-width:540px">
+          <div class="card">
+            <div class="card-header"><h3>Chaves de API</h3><span class="text-xs text-dim">Armazenadas com segurança</span></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+              <div class="form-group" style="margin:0">
+                <label class="field-label">OpenAI API Key</label>
+                <input class="field mono" id="sOpenAI" type="password" placeholder="sk-...">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="field-label">OpenAI Assistant ID</label>
+                <input class="field mono" id="sAssistant" type="text" placeholder="asst_...">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="field-label">Gemini API Key</label>
+                <input class="field mono" id="sGemini" type="password" placeholder="AIza...">
+              </div>
+              <button class="btn btn-primary" style="width:fit-content" onclick="Settings.saveApiKeys()">Salvar chaves</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="t-notif" class="tab-pane" style="max-width:540px">
+          <div class="card">
+            <div class="card-header"><h3>Notificações</h3></div>
+            <div class="card-body">
+              <div class="toggle-row">
+                <div class="toggle-info"><label>Email de novos usuários</label><small>Receba notificação quando um contato iniciar conversa</small></div>
+                <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info"><label>Alertas de erro</label><small>Notificação se o bot apresentar falhas</small></div>
+                <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info"><label>Relatório semanal</label><small>Resumo de performance toda segunda-feira</small></div>
+                <label class="toggle"><input type="checkbox"><span class="toggle-track"></span></label>
+              </div>
+              <button class="btn btn-primary mt-4" onclick="toast('Preferências salvas!','success')">Salvar preferências</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ────────────────── BILLING ──────────────────── -->
+      <div id="view-billing" class="view" style="max-width:660px">
+        <div class="card mb-4">
+          <div class="card-body">
+            <div class="flex-between mb-6">
+              <div>
+                <div class="text-xs text-dim mb-1">Plano atual</div>
+                <div style="font-family:var(--font-head);font-size:26px;font-weight:800" id="bilPlan">Starter</div>
+              </div>
+              <span class="plan-pill starter" id="bilPill">GRÁTIS</span>
+            </div>
+            <div>
+              <div class="flex-between text-xs text-muted mb-2">
+                <span>Mensagens usadas</span>
+                <span id="bilUsage">0 / 500</span>
+              </div>
+              <div class="progress-track"><div class="progress-fill" id="bilBar" style="width:0%"></div></div>
+            </div>
+            <button class="btn btn-primary mt-4" onclick="toast('Redirecionando para checkout...','info')">Fazer upgrade → Pro</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Histórico de faturas</h3></div>
+          <div class="empty"><div class="empty-icon">🧾</div><h3>Nenhuma fatura ainda</h3><p>Suas faturas aparecerão após a primeira cobrança</p></div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </main>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     MODALS
+══════════════════════════════════════════════════════ -->
+
+<!-- New Bot -->
+<div class="overlay" id="m-newBot">
+  <div class="modal modal-lg">
+    <div class="modal-title">Criar novo Bot</div>
+    <div class="modal-subtitle">Configure seu assistente de IA personalizado</div>
+    <div class="form-group"><label class="field-label">Nome do Bot</label><input class="field" id="bName" type="text" placeholder="Ex: Atendente Virtual"></div>
+    <div class="form-group">
+      <label class="field-label">Modelo de IA</label>
+      <select class="field" id="bModel">
+        <option value="gemini-2.0-flash">Gemini 2.0 Flash (Recomendado — usa sua Gemini Key)</option>
+        <option value="gpt-4">GPT-4 (usa sua OpenAI Key + Assistant)</option>
+        <option value="gpt-3.5-turbo">GPT-3.5 Turbo (usa sua OpenAI Key + Assistant)</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="field-label">Prompt de sistema</label><textarea class="field" id="bPrompt" rows="4" placeholder="Ex: Você é um atendente virtual da empresa XYZ. Responda sempre em português de forma educada e prestativa..."></textarea></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="Modals.close('newBot')">Cancelar</button>
+      <button class="btn btn-primary" id="createBotBtn" onclick="Bots.create()">Criar Bot →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Bot -->
+<div class="overlay" id="m-editBot">
+  <div class="modal modal-lg">
+    <div class="modal-title" id="eBotTitle">Editar Bot</div>
+    <div class="modal-subtitle" id="eBotMeta">—</div>
+    <div class="form-group"><label class="field-label">Prompt de sistema</label><textarea class="field" id="eBotPrompt" rows="5"></textarea></div>
+    <div style="padding:14px 0;border-top:1px solid var(--border)">
+      <div class="toggle-row" style="padding:0;border:none">
+        <div class="toggle-info"><label>Bot ativo</label><small>Quando ativo, o bot responde mensagens recebidas</small></div>
+        <label class="toggle"><input type="checkbox" id="eBotActive"><span class="toggle-track"></span></label>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" onclick="Bots.delete()">Excluir bot</button>
+      <button class="btn btn-ghost" onclick="Modals.close('editBot')">Fechar</button>
+      <button class="btn btn-primary" onclick="Bots.save()">Salvar →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Connect WhatsApp -->
+<div class="overlay" id="m-connect">
+  <div class="modal" style="max-width:380px;text-align:center">
+    <div class="modal-title">Conectar WhatsApp</div>
+    <div class="modal-subtitle">Abra o app → Dispositivos Conectados → Conectar</div>
+    <div class="qr-wrap">
+      <div class="qr-canvas" id="qrCanvas"></div>
+      <div class="qr-scan-line"></div>
+    </div>
+    <div class="text-sm text-muted mt-2 mb-3" id="qrStatus">Aguardando QR Code...</div>
+    <div class="log-box" id="connectLog"></div>
+    <div class="modal-actions" style="justify-content:center;margin-top:16px">
+      <button class="btn btn-ghost" onclick="Modals.close('connect')">Fechar</button>
+    </div>
+  </div>
+</div>
+<script src="JS/main.js"></script>
+</body>
+</html>
