@@ -27,9 +27,9 @@ const updateBotSchema = z.object({
 
 // ─── GET /bots ────────────────────────────────────────────────────────────────
 
-botsRouter.get('/', (req, res, next) => {
+botsRouter.get('/', async (req, res, next) => {
   try {
-    const bots = db.findBotsByUserId(req.userId)
+    const bots = await db.findBotsByUserId(req.userId)  // ✅ await adicionado
     return ok(res, bots)
   } catch (err) {
     next(err)
@@ -40,7 +40,7 @@ botsRouter.get('/', (req, res, next) => {
 
 botsRouter.get('/:id', async (req, res, next) => {
   try {
-    const bot = await db.findBotById(req.params.id)
+    const bot = await db.findBotById(req.params.id)  // ✅ await adicionado
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
     return ok(res, bot)
   } catch (err) {
@@ -50,11 +50,11 @@ botsRouter.get('/:id', async (req, res, next) => {
 
 // ─── POST /bots ───────────────────────────────────────────────────────────────
 
-botsRouter.post('/', validate(createBotSchema), (req, res, next) => {
+botsRouter.post('/', validate(createBotSchema), async (req, res, next) => {  // ✅ async adicionado
   try {
     const { name, model, prompt } = req.body
 
-    const bot = db.createBot({
+    const bot = await db.createBot({  // ✅ await adicionado
       userId: req.userId,
       name,
       model,
@@ -75,10 +75,10 @@ botsRouter.post('/', validate(createBotSchema), (req, res, next) => {
 
 botsRouter.patch('/:id', validate(updateBotSchema), async (req, res, next) => {
   try {
-    const bot = await db.findBotById(req.params.id)
+    const bot = await db.findBotById(req.params.id)  // ✅ await já presente
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
 
-    const updated = db.updateBot(req.params.id, req.body)
+    const updated = await db.updateBot(req.params.id, req.body)  // ✅ await adicionado
     return ok(res, updated)
   } catch (err) {
     next(err)
@@ -89,15 +89,14 @@ botsRouter.patch('/:id', validate(updateBotSchema), async (req, res, next) => {
 
 botsRouter.delete('/:id', async (req, res, next) => {
   try {
-    const bot = db.findBotById(req.params.id)
+    const bot = await db.findBotById(req.params.id)  // ✅ await adicionado
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
 
-    // Stop WhatsApp session if running
     if (whatsappManager.isRunning(bot.id)) {
       await whatsappManager.stopSession(bot.id)
     }
 
-    db.deleteBot(bot.id)
+    await db.deleteBot(bot.id)  // ✅ await adicionado
     return noContent(res)
   } catch (err) {
     next(err)
@@ -108,14 +107,14 @@ botsRouter.delete('/:id', async (req, res, next) => {
 
 botsRouter.post('/:id/connect', async (req, res, next) => {
   try {
-    const bot = db.findBotById(req.params.id)
+    const bot = await db.findBotById(req.params.id)  // ✅ await adicionado
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
 
     if (whatsappManager.isRunning(bot.id)) {
       return ok(res, { message: 'Session already running', bot })
     }
 
-    // Start async — QR code is delivered via SSE
+    // Inicia de forma assíncrona — QR code chegará via SSE
     whatsappManager.startSession(bot).catch((err) => {
       console.error(`[Bots] Failed to start session for ${bot.id}:`, err)
       db.updateBot(bot.id, { isConnected: false, isActive: false })
@@ -131,11 +130,11 @@ botsRouter.post('/:id/connect', async (req, res, next) => {
 
 botsRouter.post('/:id/disconnect', async (req, res, next) => {
   try {
-    const bot = db.findBotById(req.params.id)
+    const bot = await db.findBotById(req.params.id)  // ✅ await adicionado
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
 
     await whatsappManager.stopSession(bot.id)
-    const updated = db.findBotById(bot.id)
+    const updated = await db.findBotById(bot.id)  // ✅ await adicionado
     return ok(res, updated)
   } catch (err) {
     next(err)
@@ -144,9 +143,9 @@ botsRouter.post('/:id/disconnect', async (req, res, next) => {
 
 // ─── GET /bots/:id/events (SSE) ───────────────────────────────────────────────
 
-botsRouter.get('/:id/events', (req, res, next) => {
+botsRouter.get('/:id/events', async (req, res, next) => {  // ✅ async adicionado
   try {
-    const bot = db.findBotById(req.params.id)
+    const bot = await db.findBotById(req.params.id)  // ✅ await adicionado
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
 
     res.setHeader('Content-Type', 'text/event-stream')
@@ -163,10 +162,10 @@ botsRouter.get('/:id/events', (req, res, next) => {
       sendEvent('qr', { qrBase64: e.qrBase64, qrAscii: e.qrAscii })
     })
 
-    const unsubSession = whatsappManager.onSessionUpdate((e) => {
+    const unsubSession = whatsappManager.onSessionUpdate(async (e) => {
       if (e.botId !== bot.id) return
       sendEvent('status', { status: e.status })
-      const updated = db.findBotById(bot.id)
+      const updated = await db.findBotById(bot.id)  // ✅ await adicionado
       if (updated) sendEvent('bot', updated)
     })
 
@@ -183,10 +182,10 @@ botsRouter.get('/:id/events', (req, res, next) => {
 
 botsRouter.get('/:id/conversations', async (req, res, next) => {
   try {
-    const bot = await db.findBotById(req.params.id)
+    const bot = await db.findBotById(req.params.id)  // ✅ await adicionado
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
 
-    const conversations = db.findConversationsByUserId(bot.id)
+    const conversations = await db.findConversationsByBotId(bot.id)  // ✅ método correto + await
     return ok(res, conversations)
   } catch (err) {
     next(err)

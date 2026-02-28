@@ -25,9 +25,9 @@ const updateApiKeysSchema = z.object({
 
 // ─── GET /users/me/stats ──────────────────────────────────────────────────────
 
-usersRouter.get('/me/stats', (req, res, next) => {
+usersRouter.get('/me/stats', async (req, res, next) => {  // ✅ async adicionado
   try {
-    const stats = db.getUserStats(req.userId)
+    const stats = await db.getUserStats(req.userId)  // ✅ await adicionado
     return ok(res, stats)
   } catch (err) {
     next(err)
@@ -36,9 +36,9 @@ usersRouter.get('/me/stats', (req, res, next) => {
 
 // ─── PATCH /users/me ──────────────────────────────────────────────────────────
 
-usersRouter.patch('/me', validate(updateProfileSchema), (req, res, next) => {
+usersRouter.patch('/me', validate(updateProfileSchema), async (req, res, next) => {  // ✅ async adicionado
   try {
-    const updated = db.updateUser(req.userId, req.body)
+    const updated = await db.updateUser(req.userId, req.body)  // ✅ await adicionado
     if (!updated) throw ApiError.notFound('User not found')
     return ok(res, sanitizeUser(updated))
   } catch (err) {
@@ -48,13 +48,13 @@ usersRouter.patch('/me', validate(updateProfileSchema), (req, res, next) => {
 
 // ─── PATCH /users/me/api-keys ─────────────────────────────────────────────────
 
-usersRouter.patch('/me/api-keys', validate(updateApiKeysSchema), (req, res, next) => {
+usersRouter.patch('/me/api-keys', validate(updateApiKeysSchema), async (req, res, next) => {  // ✅ async adicionado
   try {
-    const user = db.findUserById(req.userId)
+    const user = await db.findUserById(req.userId)  // ✅ await adicionado
     if (!user) throw ApiError.notFound('User not found')
 
     const updatedKeys = { ...user.apiKeys, ...req.body }
-    const updated = db.updateUser(req.userId, { apiKeys: updatedKeys })
+    const updated = await db.updateUser(req.userId, { apiKeys: updatedKeys })  // ✅ await adicionado
 
     return ok(res, { apiKeys: updated?.apiKeys })
   } catch (err) {

@@ -1,78 +1,86 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = "file:./dev.db"
+  provider = "sqlite"       // Troque para "postgresql" em produção
+  url      = env("DATABASE_URL")
 }
 
-// ─── Models baseados nas suas interfaces do database.ts ──────────────────────
+// ─── User ─────────────────────────────────────────────────────────────────────
 
 model User {
-  id           String   @id @default(uuid())
+  id           String   @id @default(cuid())
   name         String
   lastName     String
   email        String   @unique
   passwordHash String
   plan         String   @default("starter")
-  apiKeys      String?  // No SQLite guardamos o JSON como String
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  apiKeys      String   @default("{}")   // JSON serializado
 
-  // Relações
   bots          Bot[]
   conversations Conversation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
+// ─── Bot ──────────────────────────────────────────────────────────────────────
+
 model Bot {
-  id           String   @id @default(uuid())
+  id           String  @id @default(cuid())
   userId       String
   name         String
   model        String
   prompt       String
-  isActive     Boolean  @default(false)
-  isConnected  Boolean  @default(false)
+  isActive     Boolean @default(false)
+  isConnected  Boolean @default(false)
   phone        String?
-  sessionName  String
-  messageCount Int      @default(0)
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  sessionName  String  @unique
+  messageCount Int     @default(0)
 
-  // Relações
-  user          User           @relation(fields: [userId], references: [id])
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversations Conversation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-model Conversation {
-  id            String   @id @default(uuid())
-  botId         String
-  userId        String
-  contactName   String
-  contactPhone  String
-  lastMessage   String
-  lastMessageAt DateTime @default(now())
-  unreadCount   Int      @default(0)
-  messageCount  Int      @default(0)
+// ─── Conversation ─────────────────────────────────────────────────────────────
 
-  // Relações
+model Conversation {
+  id           String   @id @default(cuid())
+  botId        String
+  userId       String
+  contactName  String
+  contactPhone String
+  lastMessage  String
+  lastMessageAt DateTime
+  unreadCount  Int      @default(0)
+  messageCount Int      @default(0)
+
   bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]
 
-  // Garante que não teremos conversas duplicadas pro mesmo bot e número
+  // ✅ Índice único para o upsert funcionar
   @@unique([botId, contactPhone])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-model Message {
-  id             String   @id @default(uuid())
-  conversationId String
-  role           String   // 'user' | 'assistant'
-  content        String
-  createdAt      DateTime @default(now())
+// ─── Message ──────────────────────────────────────────────────────────────────
 
-  // Relação
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String   // "user" | "assistant"
+  content        String
+
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 }

@@ -39,12 +39,16 @@ export class WhatsAppManager {
 
   onQRCode(listener: QRListener) {
     this.qrListeners.push(listener)
-    return () => { this.qrListeners = this.qrListeners.filter((l) => l !== listener) }
+    return () => {
+      this.qrListeners = this.qrListeners.filter((l) => l !== listener)
+    }
   }
 
   onSessionUpdate(listener: SessionListener) {
     this.sessionListeners.push(listener)
-    return () => { this.sessionListeners = this.sessionListeners.filter((l) => l !== listener) }
+    return () => {
+      this.sessionListeners = this.sessionListeners.filter((l) => l !== listener)
+    }
   }
 
   // ── Start / stop ───────────────────────────────────────────────────────────
@@ -70,12 +74,17 @@ export class WhatsAppManager {
           l({ botId: bot.id, status })
         )
 
+        // ✅ Fire-and-forget com tratamento de erro (não pode usar await direto aqui)
         if (status === 'inChat' || status === 'isLogged') {
-          db.updateBot(bot.id, { isConnected: true, isActive: true })
+          db.updateBot(bot.id, { isConnected: true, isActive: true }).catch((err) =>
+            console.error('[WhatsApp] updateBot error:', err)
+          )
         }
 
         if (status === 'notLogged' || status === 'browserClose') {
-          db.updateBot(bot.id, { isConnected: false, isActive: false })
+          db.updateBot(bot.id, { isConnected: false, isActive: false }).catch((err) =>
+            console.error('[WhatsApp] updateBot error:', err)
+          )
         }
       },
       headless: 'new' as any,
@@ -99,7 +108,7 @@ export class WhatsAppManager {
     this.messageTimers.delete(botId)
     this.messageBuffers.delete(botId)
 
-    db.updateBot(botId, { isConnected: false, isActive: false })
+    await db.updateBot(botId, { isConnected: false, isActive: false })  // ✅ await adicionado
     console.log(`[WhatsApp] Session stopped for bot: ${botId}`)
   }
 
@@ -115,7 +124,8 @@ export class WhatsAppManager {
         message.type !== 'chat' ||
         message.isGroupMsg ||
         message.chatId === 'status@broadcast'
-      ) return
+      )
+        return
 
       const chatId = String(message.chatId)
       this.bufferMessage(bot, client, chatId, message.body ?? '', message.from)
@@ -129,12 +139,10 @@ export class WhatsAppManager {
     body: string,
     from: string
   ) {
-    // Append to buffer
     const buffer = this.messageBuffers.get(chatId) ?? []
     buffer.push(body)
     this.messageBuffers.set(chatId, buffer)
 
-    // Reset debounce timer
     const existing = this.messageTimers.get(chatId)
     if (existing) clearTimeout(existing)
 
@@ -142,7 +150,10 @@ export class WhatsAppManager {
       const combined = (this.messageBuffers.get(chatId) ?? []).join(' \n ')
       this.messageBuffers.delete(chatId)
       this.messageTimers.delete(chatId)
-      this.processMessage(bot, client, chatId, combined, from)
+      // ✅ processMessage é async — capturamos erros aqui
+      this.processMessage(bot, client, chatId, combined, from).catch((err) =>
+        console.error(`[Bot:${bot.name}] processMessage error:`, err)
+      )
     }, MESSAGE_BUFFER_TIMEOUT_MS)
 
     this.messageTimers.set(chatId, timer)
@@ -154,11 +165,14 @@ export class WhatsAppManager {
     chatId: string,
     message: string,
     from: string
-  ) {
+  ): Promise<void> {
     console.log(`[Bot:${bot.name}] Processing message from ${from}`)
 
-    const user = db.findUserById(bot.userId)
-    if (!user) return
+    const user = await db.findUserById(bot.userId)  // ✅ await adicionado
+    if (!user) {
+      console.error(`[Bot:${bot.name}] User ${bot.userId} not found`)
+      return
+    }
 
     let answer = ''
     let attempt = 0
@@ -176,23 +190,22 @@ export class WhatsAppManager {
       }
     }
 
-    // Persist conversation + messages
-    const conversation = db.upsertConversation({
+    // ✅ Todos os db calls agora aguardados corretamente
+    const conversation = await db.upsertConversation({
       botId: bot.id,
       userId: bot.userId,
       contactName: from,
       contactPhone: from,
       lastMessage: answer,
       lastMessageAt: new Date(),
-      unreadCount: 0,
+      unreadCount: 1,
       messageCount: 1,
     })
 
-    db.createMessage({ conversationId: conversation.id, role: 'user', content: message })
-    db.createMessage({ conversationId: conversation.id, role: 'assistant', content: answer })
-    db.updateBot(bot.id, { messageCount: bot.messageCount + 1 })
+    await db.createMessage({ conversationId: conversation.id, role: 'user', content: message })
+    await db.createMessage({ conversationId: conversation.id, role: 'assistant', content: answer })
+    await db.updateBot(bot.id, { messageCount: bot.messageCount + 1 })
 
-    // Send reply
     const chunks = splitMessages(answer)
     await sendMessagesWithDelay(client, chunks, from)
   }
@@ -205,7 +218,7 @@ export class WhatsAppManager {
   ): Promise<string> {
     if (bot.model === 'gemini-2.0-flash') {
       const key = apiKeys.geminiKey
-      if (!key) throw new Error('Gemini API key not configured')
+      if (!key) throw new Error('Gemini API key not configured. Configure em Configurações → API Keys.')
       return geminiManager.sendMessage(chatId, message, {
         apiKey: key,
         model: bot.model,
@@ -216,7 +229,9 @@ export class WhatsAppManager {
     // GPT variants
     const key = apiKeys.openaiKey
     const assistantId = apiKeys.openaiAssistantId
-    if (!key || !assistantId) throw new Error('OpenAI credentials not configured')
+    if (!key || !assistantId) {
+      throw new Error('OpenAI credentials not configured. Configure em Configurações → API Keys.')
+    }
     return openaiManager.sendMessage(chatId, message, { apiKey: key, assistantId })
   }
 }

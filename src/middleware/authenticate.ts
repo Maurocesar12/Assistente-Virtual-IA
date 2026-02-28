@@ -15,15 +15,15 @@ declare global {
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
-export function authenticate(req: Request, _res: Response, next: NextFunction) {
+export async function authenticate(req: Request, _res: Response, next: NextFunction) {  // ✅ async adicionado
   try {
     const authHeader = req.headers.authorization
-    if (!authHeader?.startsWith('Bearer')) throw ApiError.unauthorized('No token provided')
+    if (!authHeader?.startsWith('Bearer ')) throw ApiError.unauthorized('No token provided')  // ✅ espaço após Bearer
 
     const token = authHeader.slice(7)
     const payload = verifyToken(token)
 
-    const user = db.findUserById(payload.sub)
+    const user = await db.findUserById(payload.sub)  // ✅ await adicionado
     if (!user) throw ApiError.unauthorized('User not found')
 
     req.userId = user.id

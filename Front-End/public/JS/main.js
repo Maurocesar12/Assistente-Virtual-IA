@@ -4,7 +4,7 @@
 // CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_URL = window.location.origin + '/api';
+const API_URL = window.location.origin + '/api'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STATE
@@ -16,9 +16,9 @@ const State = {
   bots: [],
   conversations: [],
   stats: null,
-  activeBotId: null,    // for edit modal
-  connectBotId: null,   // for connect modal
-  sseSource: null,      // EventSource for QR
+  activeBotId: null,
+  connectBotId: null,
+  sseSource: null,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -64,20 +64,27 @@ const Api = {
       body: body ? JSON.stringify(body) : undefined,
     })
 
-    const json = await res.json().catch(() => ({ success: false, error: { message: 'Parse error' } }))
+    const json = await res.json().catch(() => ({
+      success: false,
+      error: { message: 'Erro ao processar resposta do servidor' },
+    }))
 
     if (!res.ok) {
-      const msg = json?.error?.message ?? `HTTP ${res.status}`
+      // ✅ Mostra detalhes de validação se disponíveis (erro 400)
+      const details = json?.error?.details
+      const msg = details
+        ? details.map(d => d.message).join(', ')
+        : json?.error?.message ?? `HTTP ${res.status}`
       throw new Error(msg)
     }
 
     return json.data ?? json
   },
 
-  get:    (path)        => Api.request('GET', path),
-  post:   (path, body)  => Api.request('POST', path, body),
-  patch:  (path, body)  => Api.request('PATCH', path, body),
-  delete: (path)        => Api.request('DELETE', path),
+  get:    (path)       => Api.request('GET', path),
+  post:   (path, body) => Api.request('POST', path, body),
+  patch:  (path, body) => Api.request('PATCH', path, body),
+  delete: (path)       => Api.request('DELETE', path),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,8 +105,14 @@ const UI = {
     if (el) el.classList.add('active')
     else document.querySelector(`[data-view="${id}"]`)?.classList.add('active')
 
-    const titles = { overview:'Visão Geral', bots:'Meus Bots', convs:'Conversas',
-                     analytics:'Analytics', settings:'Configurações', billing:'Assinatura' }
+    const titles = {
+      overview: 'Visão Geral',
+      bots: 'Meus Bots',
+      convs: 'Conversas',
+      analytics: 'Analytics',
+      settings: 'Configurações',
+      billing: 'Assinatura',
+    }
     document.getElementById('viewTitle').textContent = titles[id] ?? id
 
     if (id === 'settings') Settings.load()
@@ -124,11 +137,12 @@ const UI = {
       btn.innerHTML = `<span class="spinner"></span>`
     } else if (btn._orig) {
       btn.innerHTML = btn._orig
+      delete btn._orig
     }
   },
 
-  el: (id) => document.getElementById(id),
-  val: (id) => document.getElementById(id)?.value?.trim() ?? '',
+  el:   (id) => document.getElementById(id),
+  val:  (id) => document.getElementById(id)?.value?.trim() ?? '',
   html: (id, h) => { const el = document.getElementById(id); if (el) el.innerHTML = h },
 }
 
@@ -137,7 +151,7 @@ const UI = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function toast(msg, type = 'success') {
-  const icons = { success:'✅', error:'❌', info:'ℹ️', warning:'⚠️' }
+  const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' }
   const el = document.createElement('div')
   el.className = `toast ${type}`
   el.innerHTML = `<span class="toast-icon">${icons[type] ?? '💬'}</span><span>${msg}</span>`
@@ -160,7 +174,7 @@ const Modals = {
   },
 }
 
-// Close overlay on backdrop click
+// Fecha overlay ao clicar no fundo
 document.querySelectorAll('.overlay').forEach(o =>
   o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open') })
 )
@@ -171,7 +185,7 @@ document.querySelectorAll('.overlay').forEach(o =>
 
 const Auth = {
   async login() {
-    const email = UI.val('l-email')
+    const email    = UI.val('l-email')
     const password = UI.val('l-pass')
     if (!email || !password) { toast('Preencha todos os campos', 'error'); return }
 
@@ -216,7 +230,6 @@ const Auth = {
   },
 
   async demoLogin() {
-    // Register + login a demo account server-side
     const suffix = Date.now()
     try {
       const data = await Api.post('/auth/register', {
@@ -237,9 +250,9 @@ const Auth = {
   logout() {
     Connect.cleanup()
     Store.clear()
-    State.bots = []
+    State.bots          = []
     State.conversations = []
-    State.stats = null
+    State.stats         = null
     UI.page('landing')
     toast('Até logo! 👋', 'info')
   },
@@ -273,11 +286,11 @@ const Dashboard = {
     try {
       const stats = await Api.get('/users/me/stats')
       State.stats = stats
-      UI.el('s-bots').textContent    = stats.activeBots
-      UI.el('s-msgs').textContent    = (stats.totalMessages).toLocaleString('pt-BR')
-      UI.el('s-convs').textContent   = stats.totalConversations
-      UI.el('s-tokens').textContent  = (stats.tokensUsed).toLocaleString('pt-BR')
-      UI.el('s-bots-meta').textContent = `${stats.totalBots} total`
+      UI.el('s-bots').textContent       = stats.activeBots
+      UI.el('s-msgs').textContent       = stats.totalMessages.toLocaleString('pt-BR')
+      UI.el('s-convs').textContent      = stats.totalConversations
+      UI.el('s-tokens').textContent     = stats.tokensUsed.toLocaleString('pt-BR')
+      UI.el('s-bots-meta').textContent  = `${stats.totalBots} total`
     } catch (_) {}
   },
 
@@ -303,18 +316,22 @@ const Dashboard = {
 
 const MODEL_META = {
   'gemini-2.0-flash': { label: 'Gemini 2.0', cls: 'model-gemini' },
-  'gpt-4':            { label: 'GPT-4',       cls: 'model-gpt4' },
-  'gpt-3.5-turbo':    { label: 'GPT-3.5',     cls: 'model-gpt35' },
+  'gpt-4':            { label: 'GPT-4',       cls: 'model-gpt4'   },
+  'gpt-3.5-turbo':    { label: 'GPT-3.5',     cls: 'model-gpt35'  },
 }
 
 const Bots = {
   async load() {
     try {
-      State.bots = await Api.get('/bots')
+      const result = await Api.get('/bots')
+      // ✅ Garante que State.bots seja sempre um array
+      State.bots = Array.isArray(result) ? result : []
       Bots.render()
       Bots.renderOverview()
       Bots.updateSteps()
-    } catch (_) {}
+    } catch (_) {
+      State.bots = []
+    }
   },
 
   render() {
@@ -322,7 +339,12 @@ const Bots = {
     if (!el) return
 
     if (State.bots.length === 0) {
-      el.innerHTML = `<div class="empty"><div class="empty-icon">🤖</div><h3>Nenhum bot criado</h3><p>Clique em "+ Novo Bot" para criar seu assistente</p></div>`
+      el.innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">🤖</div>
+          <h3>Nenhum bot criado</h3>
+          <p>Clique em "+ Novo Bot" para criar seu assistente</p>
+        </div>`
       return
     }
 
@@ -332,22 +354,30 @@ const Bots = {
         <tr>
           <td>
             <div class="flex-center gap-2">
-              <div style="width:7px;height:7px;border-radius:50%;background:${b.isConnected ? 'var(--green)' : 'var(--text-dim)'};${b.isConnected ? 'box-shadow:0 0 6px var(--green)' : ''}"></div>
+              <div style="width:7px;height:7px;border-radius:50%;
+                background:${b.isConnected ? 'var(--green)' : 'var(--text-dim)'};
+                ${b.isConnected ? 'box-shadow:0 0 6px var(--green)' : ''}">
+              </div>
               <strong>${Bots.escape(b.name)}</strong>
             </div>
           </td>
           <td><span class="model-tag ${m.cls}">${m.label}</span></td>
-          <td class="mono text-sm">${b.phone ? b.phone : '<span class="text-dim">Não conectado</span>'}</td>
-          <td><span class="badge ${b.isActive ? 'badge-green' : 'badge-red'}">${b.isActive ? 'Ativo' : 'Inativo'}</span></td>
-          <td class="text-muted">${b.messageCount.toLocaleString('pt-BR')}</td>
+          <td class="mono text-sm">
+            ${b.phone ? b.phone : '<span class="text-dim">Não conectado</span>'}
+          </td>
+          <td>
+            <span class="badge ${b.isActive ? 'badge-green' : 'badge-red'}">
+              ${b.isActive ? 'Ativo' : 'Inativo'}
+            </span>
+          </td>
+          <td class="text-muted">${(b.messageCount ?? 0).toLocaleString('pt-BR')}</td>
           <td>
             <div class="flex gap-2">
               <button class="btn btn-ghost btn-sm" onclick="Connect.open('${b.id}')">📱 Conectar</button>
               <button class="btn btn-ghost btn-sm" onclick="Bots.openEdit('${b.id}')">✏️ Editar</button>
             </div>
           </td>
-        </tr>
-      `
+        </tr>`
     }).join('')
 
     el.innerHTML = `
@@ -365,10 +395,16 @@ const Bots = {
   renderOverview() {
     const el = UI.el('ov-bots')
     if (!el) return
-    if (State.bots.length === 0) {
-      el.innerHTML = `<div class="empty" style="padding:32px"><div class="empty-icon" style="font-size:28px">🤖</div><h3>Nenhum bot ainda</h3></div>`
+
+    if (!State.bots.length) {
+      el.innerHTML = `
+        <div class="empty" style="padding:32px">
+          <div class="empty-icon" style="font-size:28px">🤖</div>
+          <h3>Nenhum bot ainda</h3>
+        </div>`
       return
     }
+
     el.innerHTML = State.bots.slice(0, 4).map(b => {
       const m = MODEL_META[b.model] ?? { label: b.model, cls: '' }
       return `
@@ -376,9 +412,14 @@ const Bots = {
           <div class="conv-avatar" style="${b.isConnected ? 'background:var(--green-soft)' : ''}">🤖</div>
           <div class="conv-body">
             <div class="conv-name">${Bots.escape(b.name)}</div>
-            <div class="conv-preview"><span class="model-tag ${m.cls}">${m.label}</span> · ${b.messageCount} mensagens</div>
+            <div class="conv-preview">
+              <span class="model-tag ${m.cls}">${m.label}</span>
+              · ${(b.messageCount ?? 0).toLocaleString('pt-BR')} mensagens
+            </div>
           </div>
-          <span class="badge ${b.isActive ? 'badge-green' : 'badge-red'}">${b.isActive ? 'Ativo' : 'Off'}</span>
+          <span class="badge ${b.isActive ? 'badge-green' : 'badge-red'}">
+            ${b.isActive ? 'Ativo' : 'Off'}
+          </span>
         </div>`
     }).join('')
   },
@@ -390,42 +431,59 @@ const Bots = {
 
     if (hasBots) {
       UI.el('step1')?.classList.add('done')
-      UI.el('step2').style.opacity = '1'
+      const s2 = UI.el('step2')
+      if (s2) s2.style.opacity = '1'
     }
     if (hasConnected) {
       UI.el('step2')?.classList.add('done')
-      UI.el('step3').style.opacity = '1'
+      const s3 = UI.el('step3')
+      if (s3) s3.style.opacity = '1'
     }
     if (hasMsgs) {
       UI.el('step3')?.classList.add('done')
     }
   },
 
-async create() {
-  const name   = UI.val('bName')
-  const model  = UI.val('bModel')
-  const prompt = UI.val('bPrompt')
+  async create() {
+    const name   = UI.val('bName')
+    const model  = UI.val('bModel')
+    const prompt = UI.val('bPrompt')
 
-  if (!name) { toast('Dê um nome ao bot', 'error'); return }
-  
-  // ADICIONE ESTA LINHA DE SEGURANÇA AQUI:
-  if (!Array.isArray(State.bots)) State.bots = [];
+    // ✅ Validações front-end espelhando as regras do backend (Zod)
+    if (!name || name.length < 2) {
+      toast('O nome do bot deve ter pelo menos 2 caracteres', 'error')
+      return
+    }
+    if (!prompt || prompt.length < 10) {
+      toast('O prompt deve ter pelo menos 10 caracteres', 'error')
+      return
+    }
 
-  UI.setLoading('createBotBtn', true)
-  
-  try {
-    const bot = await Api.post('/bots', { name, model, prompt })
-    
-    // O erro acontece aqui porque State.bots não era uma lista
-    State.bots.unshift(bot) 
-    
-    Bots.render()
-    UI.modal('botModal', false)
-    toast('Bot criado com sucesso!')
-  } catch (err) {
-    toast(err.message, 'error')
-  } finally {
-    UI.setLoading('createBotBtn', false)
+    UI.setLoading('createBotBtn', true)
+    try {
+      const bot = await Api.post('/bots', { name, model, prompt })
+
+      // ✅ Garante que o array existe antes de inserir
+      if (!Array.isArray(State.bots)) State.bots = []
+      State.bots.unshift(bot)
+
+      // ✅ Fecha o modal correto (era UI.modal — função inexistente)
+      Modals.close('newBot')
+
+      // ✅ Limpa os campos do formulário
+      UI.el('bName').value   = ''
+      UI.el('bPrompt').value = ''
+
+      Bots.render()
+      Bots.renderOverview()
+      Bots.updateSteps()
+      Dashboard.loadStats()
+
+      toast(`Bot "${bot.name}" criado com sucesso! 🤖`, 'success')
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      UI.setLoading('createBotBtn', false)
     }
   },
 
@@ -434,10 +492,10 @@ async create() {
     if (!bot) return
     State.activeBotId = botId
     const m = MODEL_META[bot.model] ?? { label: bot.model }
-    UI.el('eBotTitle').textContent    = bot.name
-    UI.el('eBotMeta').textContent     = `${m.label} · criado em ${new Date(bot.createdAt).toLocaleDateString('pt-BR')}`
-    UI.el('eBotPrompt').value         = bot.prompt
-    UI.el('eBotActive').checked       = bot.isActive
+    UI.el('eBotTitle').textContent = bot.name
+    UI.el('eBotMeta').textContent  = `${m.label} · criado em ${new Date(bot.createdAt).toLocaleDateString('pt-BR')}`
+    UI.el('eBotPrompt').value      = bot.prompt
+    UI.el('eBotActive').checked    = bot.isActive
     Modals.open('editBot')
   },
 
@@ -462,7 +520,7 @@ async create() {
   },
 
   async delete() {
-    const id = State.activeBotId
+    const id  = State.activeBotId
     if (!id) return
     const bot = State.bots.find(b => b.id === id)
     if (!confirm(`Excluir o bot "${bot?.name}"? Esta ação não pode ser desfeita.`)) return
@@ -473,14 +531,14 @@ async create() {
       Modals.close('editBot')
       Bots.render()
       Bots.renderOverview()
-      toast(`Bot excluído`, 'info')
+      toast('Bot excluído', 'info')
     } catch (err) {
       toast(err.message, 'error')
     }
   },
 
   escape(str) {
-    return String(str).replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   },
 }
 
@@ -491,23 +549,33 @@ async create() {
 const Conversations = {
   async load() {
     try {
-      State.conversations = await Api.get('/conversations')
+      const result = await Api.get('/conversations')
+      State.conversations = Array.isArray(result) ? result : []
       Conversations.render()
       Conversations.renderOverview()
-    } catch (_) {}
+    } catch (_) {
+      State.conversations = []
+    }
   },
 
   render() {
     const el = UI.el('convsList')
     if (!el) return
-    if (State.conversations.length === 0) {
-      el.innerHTML = `<div class="empty"><div class="empty-icon">💬</div><h3>Nenhuma conversa</h3><p>As conversas aparecerão quando seu bot estiver ativo</p></div>`
+    if (!State.conversations.length) {
+      el.innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">💬</div>
+          <h3>Nenhuma conversa</h3>
+          <p>As conversas aparecerão quando seu bot estiver ativo</p>
+        </div>`
       return
     }
     el.innerHTML = State.conversations.map(c => {
-      const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })
+      const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
       return `
-        <div class="conv-row" data-search="${Bots.escape(c.contactName?.toLowerCase())} ${c.lastMessage?.toLowerCase()}" onclick="toast('Visualização de chat em breve!','info')">
+        <div class="conv-row"
+          data-search="${Bots.escape(c.contactName?.toLowerCase() ?? '')} ${Bots.escape(c.lastMessage?.toLowerCase() ?? '')}"
+          onclick="toast('Visualização de chat em breve!','info')">
           <div class="conv-avatar">👤</div>
           <div class="conv-body">
             <div class="conv-name">${Bots.escape(c.contactName || c.contactPhone)}</div>
@@ -524,12 +592,16 @@ const Conversations = {
   renderOverview() {
     const el = UI.el('ov-convs')
     if (!el) return
-    if (State.conversations.length === 0) {
-      el.innerHTML = `<div class="empty" style="padding:32px"><div class="empty-icon" style="font-size:28px">💬</div><h3>Nenhuma conversa</h3></div>`
+    if (!State.conversations.length) {
+      el.innerHTML = `
+        <div class="empty" style="padding:32px">
+          <div class="empty-icon" style="font-size:28px">💬</div>
+          <h3>Nenhuma conversa</h3>
+        </div>`
       return
     }
     el.innerHTML = State.conversations.slice(0, 4).map(c => {
-      const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })
+      const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
       return `
         <div class="conv-row" onclick="toast('Visualização de chat em breve!','info')">
           <div class="conv-avatar">👤</div>
@@ -560,19 +632,15 @@ const Connect = {
     const botId = State.connectBotId
     if (!botId) return
 
-    // Trigger connection start
     Api.post(`/bots/${botId}/connect`).catch(() => {})
 
-    // Listen for QR + status via SSE
     Connect.cleanup()
-    const url = `${API_URL}/bots/${botId}/events`
-    const source = new EventSource(url)
+    const source = new EventSource(`${API_URL}/bots/${botId}/events`)
     State.sseSource = source
 
     Connect.log('Iniciando conexão...', 'info')
 
-    source.addEventListener('qr', (e) => {
-      const data = JSON.parse(e.data)
+    source.addEventListener('qr', () => {
       Connect.renderQR()
       Connect.log('QR Code gerado. Escaneie com o WhatsApp!', 'success')
       UI.el('qrStatus').textContent = 'Escaneie o QR Code acima'
@@ -595,7 +663,10 @@ const Connect = {
       Bots.renderOverview()
       Bots.updateSteps()
       if (updatedBot.isConnected) {
-        setTimeout(() => { Modals.close('connect'); toast('Bot conectado ao WhatsApp! 🟢', 'success') }, 1500)
+        setTimeout(() => {
+          Modals.close('connect')
+          toast('Bot conectado ao WhatsApp! 🟢', 'success')
+        }, 1500)
       }
     })
 
@@ -607,13 +678,12 @@ const Connect = {
   renderQR() {
     const canvas = UI.el('qrCanvas')
     if (!canvas) return
-    // Visual mock QR pattern
     const cells = Array.from({ length: 121 }, (_, i) => {
       const row = Math.floor(i / 11), col = i % 11
       const isCornerTL = row < 3 && col < 3
       const isCornerTR = row < 3 && col > 7
       const isCornerBL = row > 7 && col < 3
-      const isFilled = isCornerTL || isCornerTR || isCornerBL || Math.random() > 0.55
+      const isFilled   = isCornerTL || isCornerTR || isCornerBL || Math.random() > 0.55
       return `<div class="qr-cell" style="background:${isFilled ? '#e8edf5' : 'transparent'}"></div>`
     }).join('')
     canvas.innerHTML = cells
@@ -622,9 +692,8 @@ const Connect = {
   log(msg, type = '') {
     const box = UI.el('connectLog')
     if (!box) return
-    const time = new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', second:'2-digit' })
-    const cls = type ? `log-${type}` : ''
-    box.innerHTML += `<div class="${cls}">[${time}] ${msg}</div>`
+    const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    box.innerHTML += `<div class="${type ? `log-${type}` : ''}">[${time}] ${msg}</div>`
     box.scrollTop = box.scrollHeight
   },
 
@@ -647,9 +716,10 @@ const Settings = {
     if (UI.el('sName'))     UI.el('sName').value     = u.name ?? ''
     if (UI.el('sLastName')) UI.el('sLastName').value  = u.lastName ?? ''
     if (UI.el('sEmail'))    UI.el('sEmail').value     = u.email ?? ''
-    // Load API keys
-    Api.get('/users/me').then(user => {
+
+    Api.get('/auth/me').then(user => {
       State.user = user
+      Store.save()
       const keys = user.apiKeys ?? {}
       if (UI.el('sOpenAI'))    UI.el('sOpenAI').value    = keys.openaiKey         ?? ''
       if (UI.el('sAssistant')) UI.el('sAssistant').value = keys.openaiAssistantId ?? ''
@@ -709,20 +779,20 @@ const Billing = {
   render() {
     const u = State.user
     if (!u) return
-    const plan = u.plan ?? 'starter'
-    const planLabels = { starter:'Starter', pro:'Pro', enterprise:'Enterprise' }
-    const planPills  = { starter:'GRÁTIS', pro:'PRO', enterprise:'ENTERPRISE' }
+    const plan       = u.plan ?? 'starter'
+    const planLabels = { starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' }
+    const planPills  = { starter: 'GRÁTIS',  pro: 'PRO', enterprise: 'ENTERPRISE' }
     const limits     = { starter: 500, pro: Infinity, enterprise: Infinity }
     const msgs       = State.stats?.totalMessages ?? 0
     const limit      = limits[plan] ?? 500
 
-    UI.el('bilPlan').textContent = planLabels[plan]
+    UI.el('bilPlan').textContent  = planLabels[plan]
     const pill = UI.el('bilPill')
-    pill.textContent  = planPills[plan]
-    pill.className    = `plan-pill ${plan}`
+    pill.textContent = planPills[plan]
+    pill.className   = `plan-pill ${plan}`
 
     UI.el('bilUsage').textContent = `${msgs.toLocaleString('pt-BR')} / ${limit === Infinity ? '∞' : limit}`
-    UI.el('bilBar').style.width   = limit === Infinity ? '8%' : `${Math.min(100, (msgs/limit)*100)}%`
+    UI.el('bilBar').style.width   = limit === Infinity ? '8%' : `${Math.min(100, (msgs / limit) * 100)}%`
   },
 }
 
@@ -731,10 +801,11 @@ const Billing = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') document.querySelectorAll('.overlay.open').forEach(o => o.classList.remove('open'))
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.overlay.open').forEach(o => o.classList.remove('open'))
+  }
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-    // Cmd/Ctrl+Enter on login
-    if (document.getElementById('login').classList.contains('active')) Auth.login()
+    if (document.getElementById('login').classList.contains('active'))    Auth.login()
     if (document.getElementById('register').classList.contains('active')) Auth.register()
   }
 })
@@ -748,13 +819,11 @@ document.addEventListener('keydown', e => {
 
   if (State.token && State.user) {
     try {
-      // Verify token is still valid
       const me = await Api.get('/auth/me')
       State.user = me
       Store.save()
       await Dashboard.enter()
     } catch (_) {
-      // Token expired — show landing
       Store.clear()
       UI.page('landing')
     }
