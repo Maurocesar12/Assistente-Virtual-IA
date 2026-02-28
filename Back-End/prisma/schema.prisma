@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = "file:./dev.db"
+}
+
+// ─── Models baseados nas suas interfaces do database.ts ──────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  lastName     String
+  email        String   @unique
+  passwordHash String
+  plan         String   @default("starter")
+  apiKeys      String?  // No SQLite guardamos o JSON como String
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relações
+  bots          Bot[]
+  conversations Conversation[]
+}
+
+model Bot {
+  id           String   @id @default(uuid())
+  userId       String
+  name         String
+  model        String
+  prompt       String
+  isActive     Boolean  @default(false)
+  isConnected  Boolean  @default(false)
+  phone        String?
+  sessionName  String
+  messageCount Int      @default(0)
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relações
+  user          User           @relation(fields: [userId], references: [id])
+  conversations Conversation[]
+}
+
+model Conversation {
+  id            String   @id @default(uuid())
+  botId         String
+  userId        String
+  contactName   String
+  contactPhone  String
+  lastMessage   String
+  lastMessageAt DateTime @default(now())
+  unreadCount   Int      @default(0)
+  messageCount  Int      @default(0)
+
+  // Relações
+  bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  // Garante que não teremos conversas duplicadas pro mesmo bot e número
+  @@unique([botId, contactPhone])
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  role           String   // 'user' | 'assistant'
+  content        String
+  createdAt      DateTime @default(now())
+
+  // Relação
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
