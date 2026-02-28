@@ -9,9 +9,9 @@ conversationsRouter.use(authenticate)
 
 // ─── GET /conversations ───────────────────────────────────────────────────────
 
-conversationsRouter.get('/', (req, res, next) => {
+conversationsRouter.get('/', async (req, res, next) => {  // ✅ async adicionado
   try {
-    const conversations = db.findConversationsByUserId(req.userId)
+    const conversations = await db.findConversationsByUserId(req.userId)  // ✅ await adicionado
     return ok(res, conversations)
   } catch (err) {
     next(err)
@@ -20,13 +20,13 @@ conversationsRouter.get('/', (req, res, next) => {
 
 // ─── GET /conversations/:id/messages ──────────────────────────────────────────
 
-conversationsRouter.get('/:id/messages', (req, res, next) => {
+conversationsRouter.get('/:id/messages', async (req, res, next) => {  // ✅ async adicionado
   try {
-    const conversations = db.findConversationsByUserId(req.userId)
+    const conversations = await db.findConversationsByUserId(req.userId)  // ✅ await adicionado
     const conversation = conversations.find((c) => c.id === req.params.id)
     if (!conversation) throw ApiError.notFound('Conversation not found')
 
-    const messages = db.findMessagesByConversationId(conversation.id)
+    const messages = await db.findMessagesByConversationId(conversation.id)  // ✅ await + método agora existe
     return ok(res, messages)
   } catch (err) {
     next(err)
