@@ -10,23 +10,17 @@
 </head>
 
 <body>
-<!-- ── BACKGROUND EFFECTS ─────────────────────────────── -->
 <div class="bg-grid"></div>
 <div class="bg-glow"></div>
 <div class="bg-glow-2"></div>
-
-<!-- ── TOASTS ─────────────────────────────────────────── -->
 <div id="toasts"></div>
 
 <!-- ══════════════════════════════════════════════════════
      LANDING PAGE
 ══════════════════════════════════════════════════════ -->
 <div id="landing" class="page active">
-
   <nav class="l-nav">
-    <div class="logo" onclick="UI.page('landing')">
-      <div class="logo-dot"></div> ZapGPT
-    </div>
+    <div class="logo" onclick="UI.page('landing')"><div class="logo-dot"></div> ZapGPT</div>
     <ul class="l-nav-links">
       <li><a href="#features">Funcionalidades</a></li>
       <li><a href="#pricing">Preços</a></li>
@@ -119,7 +113,6 @@
     © 2026 ZapGPT &nbsp;·&nbsp; Feito por MauroGuimaraes
     &nbsp;·&nbsp; <a href="#">Privacidade</a> &nbsp;·&nbsp; <a href="#">Termos</a>
   </footer>
-
 </div>
 
 <!-- ══════════════════════════════════════════════════════
@@ -144,13 +137,60 @@
       </div>
       <div class="flex-between mt-2 mb-4">
         <span></span>
-        <a class="text-sm" style="color:var(--green);cursor:pointer">Esqueceu a senha?</a>
+        <!-- ✅ Agora chama a página de recuperação -->
+        <a class="text-sm" style="color:var(--green);cursor:pointer" onclick="UI.page('forgot')">Esqueceu a senha?</a>
       </div>
       <button class="btn btn-primary btn-full btn-lg" id="loginBtn" onclick="Auth.login()">Entrar →</button>
       <div class="divider">ou</div>
       <button class="btn btn-surface btn-full" onclick="Auth.demoLogin()">🚀 Acessar demo sem cadastro</button>
     </div>
     <div class="auth-footer">Não tem conta? <a onclick="UI.page('register')">Criar agora grátis</a></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     FORGOT PASSWORD
+══════════════════════════════════════════════════════ -->
+<div id="forgot" class="page">
+  <div class="bg-grid"></div>
+  <div class="auth-wrap" style="position:relative;z-index:1">
+    <div class="auth-brand" onclick="UI.page('login')">
+      <div class="logo"><div class="logo-dot"></div>ZapGPT</div>
+    </div>
+    <div class="auth-card">
+      <h2>Recuperar acesso</h2>
+      <p class="sub">Enviaremos uma senha temporária para seu email</p>
+
+      <!-- Formulário -->
+      <div id="fp-form">
+        <div class="form-group">
+          <label class="field-label">Email da conta</label>
+          <input class="field" type="email" id="fp-email" placeholder="seu@email.com" autocomplete="email">
+        </div>
+        <button class="btn btn-primary btn-full btn-lg" id="forgotBtn" onclick="Auth.forgotPassword()">
+          Enviar senha temporária →
+        </button>
+        <p class="text-xs text-dim mt-3" style="text-align:center;line-height:1.6">
+          A senha expira em 15 minutos. Após o login, você deverá criar uma nova.
+        </p>
+      </div>
+
+      <!-- Sucesso -->
+      <div id="fp-success" style="display:none;text-align:center">
+        <div style="font-size:48px;margin-bottom:16px">📬</div>
+        <h3 style="font-size:18px;font-weight:700;margin-bottom:10px">Email enviado!</h3>
+        <p style="font-size:14px;color:var(--text-muted);line-height:1.7;margin-bottom:24px">
+          Se este email estiver cadastrado, você receberá a senha temporária em instantes.<br>
+          <strong style="color:var(--text)">Verifique também a pasta de spam.</strong>
+        </p>
+        <button class="btn btn-primary btn-full" onclick="UI.page('login')">
+          Ir para o login →
+        </button>
+      </div>
+    </div>
+    <div class="auth-footer">
+      Lembrou a senha? <a onclick="UI.page('login')">Entrar</a>
+    </div>
   </div>
 </div>
 
@@ -181,7 +221,7 @@
       </div>
       <button class="btn btn-primary btn-full btn-lg" id="registerBtn" onclick="Auth.register()">Criar conta grátis →</button>
       <p class="text-xs text-dim mt-3" style="text-align:center;line-height:1.6">
-        Ao criar uma conta você concorda com nossos <a href="#" style="color:var(--green)">Termos de Uso</a> e <a href="#" style="color:var(--green)">Política de Privacidade</a>
+        Ao criar uma conta você concorda com nossos <a href="#" style="color:var(--green)">Termos de Uso</a>
       </p>
     </div>
     <div class="auth-footer">Já tem conta? <a onclick="UI.page('login')">Entrar</a></div>
@@ -189,11 +229,14 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════
+     ✅ NOVA PÁGINA — ESQUECI A SENHA
+══════════════════════════════════════════════════════ -->
+
+<!-- ══════════════════════════════════════════════════════
      DASHBOARD
 ══════════════════════════════════════════════════════ -->
 <div id="dashboard" class="page">
 
-  <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sb-brand">
       <div class="logo" style="font-size:18px" onclick="UI.page('landing')">
@@ -222,7 +265,6 @@
     </div>
   </aside>
 
-  <!-- MAIN AREA -->
   <main class="main">
     <header class="topbar">
       <div class="topbar-title" id="viewTitle">Visão Geral</div>
@@ -234,35 +276,28 @@
 
     <div class="content">
 
-      <!-- ────────────────── OVERVIEW ──────────────────── -->
+      <!-- OVERVIEW -->
       <div id="view-overview" class="view active">
-
         <div class="stats-row" id="statsRow">
           <div class="stat-card"><div class="stat-card-label">Bots Ativos</div><div class="stat-card-value" id="s-bots">—</div><div class="stat-card-meta up" id="s-bots-meta">carregando...</div></div>
           <div class="stat-card"><div class="stat-card-label">Mensagens</div><div class="stat-card-value" id="s-msgs">—</div><div class="stat-card-meta" id="s-msgs-meta">total</div></div>
           <div class="stat-card"><div class="stat-card-label">Conversas</div><div class="stat-card-value" id="s-convs">—</div><div class="stat-card-meta">únicas</div></div>
           <div class="stat-card"><div class="stat-card-label">Tokens Usados</div><div class="stat-card-value" id="s-tokens">—</div><div class="stat-card-meta">estimado</div></div>
         </div>
-
-        <!-- Onboarding -->
         <div class="steps-row mb-6" id="stepsRow">
           <div class="step-card clickable" id="step1" onclick="Modals.open('newBot')">
-            <div class="step-num">1️⃣</div>
-            <div class="step-title">Criar um Bot</div>
+            <div class="step-num">1️⃣</div><div class="step-title">Criar um Bot</div>
             <div class="step-desc">Configure sua IA com nome, modelo e prompt</div>
           </div>
           <div class="step-card" id="step2" style="opacity:0.45">
-            <div class="step-num">2️⃣</div>
-            <div class="step-title">Conectar WhatsApp</div>
+            <div class="step-num">2️⃣</div><div class="step-title">Conectar WhatsApp</div>
             <div class="step-desc">Escaneie o QR Code para vincular seu número</div>
           </div>
           <div class="step-card" id="step3" style="opacity:0.45">
-            <div class="step-num">3️⃣</div>
-            <div class="step-title">Receber mensagens</div>
+            <div class="step-num">3️⃣</div><div class="step-title">Receber mensagens</div>
             <div class="step-desc">Seu bot responde automaticamente 24/7</div>
           </div>
         </div>
-
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           <div class="card">
             <div class="card-header"><h3>Bots Recentes</h3><button class="btn btn-ghost btn-sm" onclick="UI.view('bots')">Ver todos</button></div>
@@ -275,12 +310,12 @@
         </div>
       </div>
 
-      <!-- ────────────────── BOTS ──────────────────── -->
+      <!-- BOTS -->
       <div id="view-bots" class="view">
         <div class="card" id="botsList"></div>
       </div>
 
-      <!-- ────────────────── CONVERSATIONS ──────────────────── -->
+      <!-- CONVERSATIONS -->
       <div id="view-convs" class="view">
         <div class="card">
           <div class="card-header">
@@ -291,24 +326,20 @@
         </div>
       </div>
 
-      <!-- ────────────────── ANALYTICS ──────────────────── -->
+      <!-- ANALYTICS -->
       <div id="view-analytics" class="view">
-        <div class="stats-row" id="analyticsStats">
+        <div class="stats-row">
           <div class="stat-card"><div class="stat-card-label">Total Mensagens</div><div class="stat-card-value" id="an-total">—</div></div>
           <div class="stat-card"><div class="stat-card-label">Média Diária</div><div class="stat-card-value" id="an-avg">—</div></div>
           <div class="stat-card"><div class="stat-card-label">Conversas</div><div class="stat-card-value" id="an-convs">—</div></div>
           <div class="stat-card"><div class="stat-card-label">Tokens</div><div class="stat-card-value" id="an-tokens">—</div></div>
         </div>
         <div class="card">
-          <div class="empty">
-            <div class="empty-icon">📊</div>
-            <h3>Dados insuficientes</h3>
-            <p>Os gráficos serão exibidos após 7 dias de uso</p>
-          </div>
+          <div class="empty"><div class="empty-icon">📊</div><h3>Dados insuficientes</h3><p>Os gráficos serão exibidos após 7 dias de uso</p></div>
         </div>
       </div>
 
-      <!-- ────────────────── SETTINGS ──────────────────── -->
+      <!-- SETTINGS -->
       <div id="view-settings" class="view">
         <div class="tabs">
           <button class="tab-btn active" onclick="UI.tab('t-profile',this)">Perfil</button>
@@ -324,9 +355,33 @@
                 <div class="form-group" style="margin:0"><label class="field-label">Nome</label><input class="field" id="sName" type="text"></div>
                 <div class="form-group" style="margin:0"><label class="field-label">Sobrenome</label><input class="field" id="sLastName" type="text"></div>
               </div>
-              <div class="form-group" style="margin:0"><label class="field-label">Email</label><input class="field" id="sEmail" type="email"></div>
-              <div class="form-group" style="margin:0"><label class="field-label">Nova senha (opcional)</label><input class="field" type="password" placeholder="Deixe em branco para manter"></div>
+              <div class="form-group" style="margin:0"><label class="field-label">Email</label><input class="field" id="sEmail" type="email" disabled style="opacity:0.5;cursor:not-allowed"></div>
               <button class="btn btn-primary" style="width:fit-content" onclick="Settings.saveProfile()">Salvar alterações</button>
+            </div>
+          </div>
+
+          <!-- ✅ NOVO card de troca de senha -->
+          <div class="card" style="margin-top:16px;">
+            <div class="card-header">
+              <h3>Alterar senha</h3>
+              <span class="text-xs text-dim">Recomendado após usar senha temporária</span>
+            </div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+              <div class="form-group" style="margin:0">
+                <label class="field-label">Senha atual</label>
+                <input class="field" type="password" id="cp-current" placeholder="Sua senha atual ou temporária" autocomplete="current-password">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="field-label">Nova senha</label>
+                <input class="field" type="password" id="cp-new" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="field-label">Confirmar nova senha</label>
+                <input class="field" type="password" id="cp-confirm" placeholder="Repita a nova senha" autocomplete="new-password">
+              </div>
+              <button class="btn btn-primary" id="changePassBtn" style="width:fit-content" onclick="Settings.changePassword()">
+                Alterar senha
+              </button>
             </div>
           </div>
         </div>
@@ -335,18 +390,9 @@
           <div class="card">
             <div class="card-header"><h3>Chaves de API</h3><span class="text-xs text-dim">Armazenadas com segurança</span></div>
             <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
-              <div class="form-group" style="margin:0">
-                <label class="field-label">OpenAI API Key</label>
-                <input class="field mono" id="sOpenAI" type="password" placeholder="sk-...">
-              </div>
-              <div class="form-group" style="margin:0">
-                <label class="field-label">OpenAI Assistant ID</label>
-                <input class="field mono" id="sAssistant" type="text" placeholder="asst_...">
-              </div>
-              <div class="form-group" style="margin:0">
-                <label class="field-label">Gemini API Key</label>
-                <input class="field mono" id="sGemini" type="password" placeholder="AIza...">
-              </div>
+              <div class="form-group" style="margin:0"><label class="field-label">OpenAI API Key</label><input class="field mono" id="sOpenAI" type="password" placeholder="sk-..."></div>
+              <div class="form-group" style="margin:0"><label class="field-label">OpenAI Assistant ID</label><input class="field mono" id="sAssistant" type="text" placeholder="asst_..."></div>
+              <div class="form-group" style="margin:0"><label class="field-label">Gemini API Key</label><input class="field mono" id="sGemini" type="password" placeholder="AIza..."></div>
               <button class="btn btn-primary" style="width:fit-content" onclick="Settings.saveApiKeys()">Salvar chaves</button>
             </div>
           </div>
@@ -374,7 +420,7 @@
         </div>
       </div>
 
-      <!-- ────────────────── BILLING ──────────────────── -->
+      <!-- BILLING -->
       <div id="view-billing" class="view" style="max-width:660px">
         <div class="card mb-4">
           <div class="card-body">
@@ -386,10 +432,7 @@
               <span class="plan-pill starter" id="bilPill">GRÁTIS</span>
             </div>
             <div>
-              <div class="flex-between text-xs text-muted mb-2">
-                <span>Mensagens usadas</span>
-                <span id="bilUsage">0 / 500</span>
-              </div>
+              <div class="flex-between text-xs text-muted mb-2"><span>Mensagens usadas</span><span id="bilUsage">0 / 500</span></div>
               <div class="progress-track"><div class="progress-fill" id="bilBar" style="width:0%"></div></div>
             </div>
             <button class="btn btn-primary mt-4" onclick="toast('Redirecionando para checkout...','info')">Fazer upgrade → Pro</button>
@@ -401,7 +444,7 @@
         </div>
       </div>
 
-    </div><!-- /content -->
+    </div>
   </main>
 </div>
 
@@ -423,7 +466,7 @@
         <option value="gpt-3.5-turbo">GPT-3.5 Turbo (usa sua OpenAI Key + Assistant)</option>
       </select>
     </div>
-    <div class="form-group"><label class="field-label">Prompt de sistema</label><textarea class="field" id="bPrompt" rows="4" placeholder="Ex: Você é um atendente virtual da empresa XYZ. Responda sempre em português de forma educada e prestativa..."></textarea></div>
+    <div class="form-group"><label class="field-label">Prompt de sistema</label><textarea class="field" id="bPrompt" rows="4" placeholder="Ex: Você é um atendente virtual da empresa XYZ..."></textarea></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="Modals.close('newBot')">Cancelar</button>
       <button class="btn btn-primary" id="createBotBtn" onclick="Bots.create()">Criar Bot →</button>
@@ -467,6 +510,43 @@
     </div>
   </div>
 </div>
+
+<!-- Change Password (senha temporária) -->
+<div class="overlay" id="m-changePassword">
+  <div class="modal" style="max-width:440px">
+    <div style="width:48px;height:48px;background:rgba(0,212,106,0.1);border:1px solid rgba(0,212,106,0.2);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px">🔐</div>
+    <div class="modal-title">Defina sua nova senha</div>
+    <div class="modal-subtitle">
+      Você entrou com uma senha temporária.<br>
+      Crie uma senha permanente para continuar.
+    </div>
+    <div class="form-group">
+      <label class="field-label">Senha temporária (atual)</label>
+      <input class="field" type="password" id="cp-current" placeholder="A senha que você recebeu por email">
+    </div>
+    <div class="form-group">
+      <label class="field-label">Nova senha</label>
+      <input class="field" type="password" id="cp-new" placeholder="Mínimo 8 caracteres" oninput="Auth.checkPasswordStrength(this.value)">
+      <div id="cp-strength" style="margin-top:6px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+        <div id="cp-strength-bar" style="height:100%;width:0%;border-radius:2px;transition:all 0.3s"></div>
+      </div>
+      <div id="cp-strength-label" class="text-xs text-dim" style="margin-top:4px"></div>
+    </div>
+    <div class="form-group">
+      <label class="field-label">Confirmar nova senha</label>
+      <input class="field" type="password" id="cp-confirm" placeholder="Repita a nova senha">
+    </div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-primary btn-full btn-lg" id="changePassBtn" onclick="Auth.changePassword()">
+        Salvar nova senha →
+      </button>
+    </div>
+    <p class="text-xs text-dim mt-3" style="text-align:center;line-height:1.6">
+      Esta etapa é obrigatória por segurança. Após confirmar, sua senha temporária será invalidada.
+    </p>
+  </div>
+</div>
+
 <script src="JS/main.js"></script>
 </body>
 </html>

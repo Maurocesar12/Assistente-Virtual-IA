@@ -194,6 +194,10 @@ const Auth = {
       const data = await Api.post('/auth/login', { email, password })
       State.token = data.token
       State.user  = data.user
+      // Sinaliza se deve trocar senha (login com senha temporária)
+      if (data.mustChangePassword) {
+        State.user = { ...State.user, mustChangePassword: true }
+      }
       Store.save()
       await Dashboard.enter()
       toast(`Bem-vindo de volta, ${data.user.name}! 👋`, 'success')
@@ -247,6 +251,90 @@ const Auth = {
     }
   },
 
+  openForgot() {
+    // Reseta o estado ao abrir
+    const form    = UI.el('fp-form')
+    const success = UI.el('fp-success')
+    if (form)    form.style.display    = 'block'
+    if (success) success.style.display = 'none'
+    const input = UI.el('fp-email')
+    if (input) input.value = ''
+    UI.page('forgot')
+  },
+
+  checkPasswordStrength(value) {
+    const bar   = UI.el('cp-strength-bar')
+    const label = UI.el('cp-strength-label')
+    if (!bar || !label) return
+
+    let score = 0
+    if (value.length >= 8)              score++
+    if (value.length >= 12)             score++
+    if (/[A-Z]/.test(value))            score++
+    if (/[0-9]/.test(value))            score++
+    if (/[^A-Za-z0-9]/.test(value))     score++
+
+    const levels = [
+      { w: '20%', color: 'var(--red)',    text: 'Muito fraca' },
+      { w: '40%', color: 'var(--red)',    text: 'Fraca' },
+      { w: '60%', color: 'var(--yellow)', text: 'Razoável' },
+      { w: '80%', color: 'var(--yellow)', text: 'Boa' },
+      { w: '100%', color: 'var(--green)', text: 'Forte 💪' },
+    ]
+    const lvl = levels[Math.min(score, 4)]
+    bar.style.width      = value.length ? lvl.w : '0%'
+    bar.style.background = lvl.color
+    label.textContent    = value.length ? lvl.text : ''
+  },
+
+  // ── Esqueci a senha ──────────────────────────────────────────────────────
+
+  async forgotPassword() {
+    const email = UI.val('fp-email')
+    if (!email) { toast('Informe seu email', 'error'); return }
+
+    UI.setLoading('forgotBtn', true)
+    try {
+      await Api.post('/auth/forgot-password', { email })
+      // Mensagem genérica mesmo se email não existir (segurança)
+      UI.el('fp-success').style.display = 'block'
+      UI.el('fp-form').style.display    = 'none'
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      UI.setLoading('forgotBtn', false)
+    }
+  },
+
+  // ── Trocar senha (pós-login com senha temporária) ─────────────────────────
+
+  async changePassword() {
+    const current = UI.el('cp-current')?.value?.trim() ?? ''
+    const next    = UI.el('cp-new')?.value?.trim()     ?? ''
+    const confirm = UI.el('cp-confirm')?.value?.trim() ?? ''
+
+    if (!current || !next || !confirm) { toast('Preencha todos os campos', 'error'); return }
+    if (next.length < 8)  { toast('Nova senha deve ter pelo menos 8 caracteres', 'error'); return }
+    if (next !== confirm) { toast('As senhas não coincidem', 'error'); return }
+
+    UI.setLoading('changePassBtn', true)
+    try {
+      await Api.post('/auth/change-password', { currentPassword: current, newPassword: next })
+      State.user = { ...State.user, mustChangePassword: false }
+      Store.save()
+      Modals.close('changePassword')
+      toast('Senha alterada com sucesso! 🔐', 'success')
+      // Limpa campos
+      if (UI.el('cp-current')) UI.el('cp-current').value = ''
+      if (UI.el('cp-new'))     UI.el('cp-new').value     = ''
+      if (UI.el('cp-confirm')) UI.el('cp-confirm').value = ''
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      UI.setLoading('changePassBtn', false)
+    }
+  },
+
   logout() {
     Connect.cleanup()
     Store.clear()
@@ -268,6 +356,11 @@ const Dashboard = {
     UI.view('overview')
     Dashboard.updateSidebar()
     await Dashboard.refresh()
+
+    // Se logou com senha temporária, força troca imediata
+    if (State.user?.mustChangePassword) {
+      setTimeout(() => Modals.open('changePassword'), 500)
+    }
   },
 
   async refresh() {
