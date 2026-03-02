@@ -8,78 +8,84 @@ import { authenticate } from '../middleware/authenticate.js'
 
 export const authRouter = Router()
 
-// ─── Schemas ──────────────────────────────────────────────────────────────────
-
 const registerSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  lastName: z.string().min(2, 'Last name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  plan: z.enum(['starter', 'pro', 'enterprise']).default('starter'),
+  name:     z.string().min(2),
+  lastName: z.string().min(2),
+  email:    z.string().email(),
+  password: z.string().min(8),
+  plan:     z.enum(['starter', 'pro', 'enterprise']).default('starter'),
 })
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email:    z.string().email(),
   password: z.string().min(1),
 })
 
-// ─── POST /auth/register ──────────────────────────────────────────────────────
-
+// POST /auth/register
 authRouter.post('/register', validate(registerSchema), async (req, res, next) => {
   try {
     const { name, lastName, email, password, plan } = req.body
-
-    // 1. ADICIONADO AWAIT
     const existing = await db.findUserByEmail(email)
     if (existing) throw ApiError.conflict('Email already in use')
-
     const passwordHash = await hashPassword(password)
-
-    // 2. ADICIONADO AWAIT
-    const user = await db.createUser({
-      name,
-      lastName,
-      email,
-      passwordHash,
-      plan,
-      apiKeys: {},
-    })
-
+    const user = await db.createUser({ name, lastName, email, passwordHash, plan, apiKeys: {}, mustChangePassword: false })
     const token = signToken(user)
-
     return created(res, { user: sanitizeUser(user), token })
   } catch (err) {
     next(err)
   }
 })
 
-// ─── POST /auth/login ─────────────────────────────────────────────────────────
-
+// POST /auth/login
+// Também verifica se existe token de reset válido para a senha informada (senha temporária)
 authRouter.post('/login', validate(loginSchema), async (req, res, next) => {
   try {
     const { email, password } = req.body
 
-    // 3. ADICIONADO AWAIT
     const user = await db.findUserByEmail(email)
-    if (!user) throw ApiError.unauthorized('Invalid credentials')
+    if (!user) throw ApiError.unauthorized('Credenciais inválidas')
 
-    const valid = await comparePassword(password, user.passwordHash)
-    if (!valid) throw ApiError.unauthorized('Invalid credentials')
+    // 1. Tenta senha normal (hash no user)
+    const validNormal = await comparePassword(password, user.passwordHash)
 
-    const token = signToken(user)
+    // 2. Tenta senha temporária (hash no token de reset)
+    let loginViaTempPassword = false
+    if (!validNormal) {
+      const pendingTokens = await db.findPendingResetTokensForUser(user.id)
+      for (const t of pendingTokens) {
+        const validTemp = await comparePassword(password, t.tempPasswordHash)
+        if (validTemp) {
+          // Marca token como usado e sinaliza que deve trocar senha
+          await db.markResetTokenUsed(t.id)
+          await db.updateUser(user.id, { passwordHash: t.tempPasswordHash, mustChangePassword: true })
+          loginViaTempPassword = true
+          break
+        }
+      }
+    }
 
-    return ok(res, { user: sanitizeUser(user), token })
+    if (!validNormal && !loginViaTempPassword) {
+      throw ApiError.unauthorized('Credenciais inválidas')
+    }
+
+    // Reload user (pode ter sido atualizado)
+    const freshUser = await db.findUserById(user.id)
+    if (!freshUser) throw ApiError.unauthorized('Usuário não encontrado')
+
+    const token = signToken(freshUser)
+    return ok(res, {
+      user:              sanitizeUser(freshUser),
+      token,
+      mustChangePassword: freshUser.mustChangePassword,
+    })
   } catch (err) {
     next(err)
   }
 })
 
-// ─── GET /auth/me ─────────────────────────────────────────────────────────────
-
-// 4. ADICIONADO ASYNC NA FUNÇÃO
+// GET /auth/me
 authRouter.get('/me', authenticate, async (req, res, next) => {
   try {
-    // 5. ADICIONADO AWAIT
     const user = await db.findUserById(req.userId)
     if (!user) throw ApiError.notFound('User not found')
     return ok(res, sanitizeUser(user))

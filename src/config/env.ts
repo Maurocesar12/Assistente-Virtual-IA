@@ -3,8 +3,6 @@ import dotenv from 'dotenv'
 
 dotenv.config()
 
-// ─── Schema ───────────────────────────────────────────────────────────────────
-
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
@@ -19,9 +17,14 @@ const envSchema = z.object({
 
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900_000),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
-})
 
-// ─── Parse & export ───────────────────────────────────────────────────────────
+  // SMTP — Para Gmail use smtp.gmail.com porta 587 + "Senha de app"
+  SMTP_HOST: z.string().default('smtp.gmail.com'),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_USER: z.string().min(1, 'SMTP_USER é obrigatório'),
+  SMTP_PASS: z.string().min(1, 'SMTP_PASS é obrigatório'),
+  SMTP_FROM: z.string().optional(),
+})
 
 const parsed = envSchema.safeParse(process.env)
 

@@ -1,33 +1,29 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"       // Troque para "postgresql" em produção
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
-// ─── User ─────────────────────────────────────────────────────────────────────
-
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  lastName     String
-  email        String   @unique
-  passwordHash String
-  plan         String   @default("starter")
-  apiKeys      String   @default("{}")   // JSON serializado
+  id                  String   @id @default(cuid())
+  name                String
+  lastName            String
+  email               String   @unique
+  passwordHash        String
+  plan                String   @default("starter")
+  apiKeys             String   @default("{}")
+  mustChangePassword  Boolean  @default(false)
 
-  bots          Bot[]
-  conversations Conversation[]
+  bots                Bot[]
+  conversations       Conversation[]
+  passwordResetTokens PasswordResetToken[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
-// ─── Bot ──────────────────────────────────────────────────────────────────────
 
 model Bot {
   id           String  @id @default(cuid())
@@ -48,8 +44,6 @@ model Bot {
   updatedAt DateTime @updatedAt
 }
 
-// ─── Conversation ─────────────────────────────────────────────────────────────
-
 model Conversation {
   id           String   @id @default(cuid())
   botId        String
@@ -65,22 +59,32 @@ model Conversation {
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]
 
-  // ✅ Índice único para o upsert funcionar
   @@unique([botId, contactPhone])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-// ─── Message ──────────────────────────────────────────────────────────────────
-
 model Message {
   id             String   @id @default(cuid())
   conversationId String
-  role           String   // "user" | "assistant"
+  role           String
   content        String
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model PasswordResetToken {
+  id               String    @id @default(cuid())
+  userId           String
+  tokenHash        String    @unique
+  tempPasswordHash String
+  expiresAt        DateTime
+  usedAt           DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 }
