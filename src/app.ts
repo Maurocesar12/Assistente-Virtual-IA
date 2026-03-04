@@ -10,7 +10,6 @@ import { usersRouter } from './routes/users.js'
 import { botsRouter } from './routes/bots.js'
 import { conversationsRouter } from './routes/conversations.js'
 import { errorHandler } from './middleware/errorHandler.js'
-import { authenticate } from './middleware/authenticate.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -32,16 +31,9 @@ export function createApp() {
     res.json({ status: 'ok', timestamp: new Date().toISOString(), env: env.NODE_ENV })
   })
 
-  // Auth routes (públicas + reset)
+  // Auth routes (públicas + autenticadas)
   app.use('/api/auth', authRouter)
-  app.use('/api/auth', authResetRouter)
-
-  // Rota change-password precisa de autenticação
-  app.post('/api/auth/change-password', authenticate, (req, res, next) => {
-    // A lógica fica no authResetRouter mas o middleware authenticate é aplicado aqui
-    // O router já tem a rota, então o authenticate é injetado via app.ts
-    next()
-  })
+  app.use('/api/auth', authResetRouter) // change-password já tem authenticate interno
 
   app.use('/api/users', usersRouter)
   app.use('/api/bots', botsRouter)

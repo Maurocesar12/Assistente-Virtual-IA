@@ -263,8 +263,8 @@ const Auth = {
   },
 
   checkPasswordStrength(value) {
-    const bar   = UI.el('cp-strength-bar')
-    const label = UI.el('cp-strength-label')
+    const bar   = UI.el('modal-cp-strength-bar')
+    const label = UI.el('modal-cp-strength-label')
     if (!bar || !label) return
 
     let score = 0
@@ -309,29 +309,29 @@ const Auth = {
   // ── Trocar senha (pós-login com senha temporária) ─────────────────────────
 
   async changePassword() {
-    const current = UI.el('cp-current')?.value?.trim() ?? ''
-    const next    = UI.el('cp-new')?.value?.trim()     ?? ''
-    const confirm = UI.el('cp-confirm')?.value?.trim() ?? ''
+    const current = UI.el('modal-cp-current')?.value?.trim() ?? ''
+    const next    = UI.el('modal-cp-new')?.value?.trim()     ?? ''
+    const confirm = UI.el('modal-cp-confirm')?.value?.trim() ?? ''
 
     if (!current || !next || !confirm) { toast('Preencha todos os campos', 'error'); return }
     if (next.length < 8)  { toast('Nova senha deve ter pelo menos 8 caracteres', 'error'); return }
     if (next !== confirm) { toast('As senhas não coincidem', 'error'); return }
 
-    UI.setLoading('changePassBtn', true)
+    UI.setLoading('modal-changePassBtn', true)
     try {
       await Api.post('/auth/change-password', { currentPassword: current, newPassword: next })
       State.user = { ...State.user, mustChangePassword: false }
       Store.save()
       Modals.close('changePassword')
       toast('Senha alterada com sucesso! 🔐', 'success')
-      // Limpa campos
-      if (UI.el('cp-current')) UI.el('cp-current').value = ''
-      if (UI.el('cp-new'))     UI.el('cp-new').value     = ''
-      if (UI.el('cp-confirm')) UI.el('cp-confirm').value = ''
+      // Limpa campos do modal
+      if (UI.el('modal-cp-current')) UI.el('modal-cp-current').value = ''
+      if (UI.el('modal-cp-new'))     UI.el('modal-cp-new').value     = ''
+      if (UI.el('modal-cp-confirm')) UI.el('modal-cp-confirm').value = ''
     } catch (err) {
       toast(err.message, 'error')
     } finally {
-      UI.setLoading('changePassBtn', false)
+      UI.setLoading('modal-changePassBtn', false)
     }
   },
 
