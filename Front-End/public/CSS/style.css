@@ -371,7 +371,6 @@ textarea.field { resize: vertical; line-height: 1.6; }
 ═══════════════════════════════════════════════════════ */
 #landing { background: var(--bg); }
 
-/* nav */
 .l-nav {
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
   display: flex; align-items: center; justify-content: space-between;
@@ -393,7 +392,6 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .l-nav-links a:hover { color: var(--text); }
 .l-nav-right { display: flex; gap: 10px; align-items: center; }
 
-/* hero */
 .l-hero {
   position: relative; z-index: 1;
   min-height: 100vh; display: flex; flex-direction: column;
@@ -441,7 +439,6 @@ textarea.field { resize: vertical; line-height: 1.6; }
 }
 .h-stat-label { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
 
-/* sections */
 .l-section { position: relative; z-index: 1; max-width: 1160px; margin: 0 auto; padding: 100px 48px; }
 .section-tag {
   display: inline-block; font-size: 11px; font-weight: 700;
@@ -450,7 +447,6 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .section-h { font-size: 38px; font-weight: 800; letter-spacing: -1.5px; max-width: 480px; line-height: 1.1; }
 .section-sep { height: 1px; background: linear-gradient(90deg, transparent, var(--border), transparent); }
 
-/* features grid */
 .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 56px; }
 .feat-card {
   padding: 26px; background: var(--surface); border: 1px solid var(--border);
@@ -465,7 +461,6 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .feat-card h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
 .feat-card p { font-size: 13px; color: var(--text-muted); line-height: 1.65; }
 
-/* pricing */
 .price-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 56px; }
 .price-card {
   padding: 30px; background: var(--surface); border: 1px solid var(--border);
@@ -489,11 +484,7 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .price-features li { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 9px; }
 .price-features li::before { content: '✓'; color: var(--green); font-weight: 700; font-size: 12px; flex-shrink: 0; }
 
-/* CTA */
-.l-cta {
-  position: relative; z-index: 1;
-  padding: 100px 48px; text-align: center;
-}
+.l-cta { position: relative; z-index: 1; padding: 100px 48px; text-align: center; }
 .cta-box {
   max-width: 660px; margin: 0 auto; padding: 60px 48px;
   background: linear-gradient(135deg, rgba(0,212,106,0.07), rgba(0,212,106,0.02));
@@ -502,7 +493,6 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .cta-box h2 { font-size: 38px; font-weight: 800; letter-spacing: -1.5px; margin-bottom: 14px; }
 .cta-box p { color: var(--text-muted); font-size: 15px; margin-bottom: 32px; }
 
-/* footer */
 .l-footer {
   padding: 40px 48px; border-top: 1px solid var(--border);
   text-align: center; font-size: 13px; color: var(--text-dim);
@@ -510,13 +500,16 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .l-footer a { color: var(--green); }
 
 /* ═══════════════════════════════════════════════════════
-   ██ AUTH PAGES
+   ██ AUTH PAGES  (login / register / forgot)
 ═══════════════════════════════════════════════════════ */
-#login, #register {
+#login, #register, #forgot {
   display: none; min-height: 100vh;
   background: var(--bg);
 }
-#login.active, #register.active { display: flex; align-items: center; justify-content: center; padding: 40px; }
+
+#login.active, #register.active, #forgot.active {
+  display: flex; align-items: center; justify-content: center; padding: 40px;
+}
 
 .auth-wrap { position: relative; z-index: 1; width: 100%; max-width: 420px; }
 .auth-wrap.wide { max-width: 480px; }
@@ -540,7 +533,6 @@ textarea.field { resize: vertical; line-height: 1.6; }
 ═══════════════════════════════════════════════════════ */
 #dashboard { background: var(--bg); }
 
-/* Sidebar */
 .sidebar {
   width: 232px; flex-shrink: 0;
   background: var(--surface); border-right: 1px solid var(--border);
@@ -582,7 +574,6 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .sb-user-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-user-plan { font-size: 10px; color: var(--green); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 1px; }
 
-/* Main */
 .main { flex: 1; margin-left: 232px; display: flex; flex-direction: column; min-height: 100vh; }
 .topbar {
   height: 62px; display: flex; align-items: center; justify-content: space-between;
@@ -593,11 +584,9 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .topbar-right { display: flex; align-items: center; gap: 10px; }
 .content { padding: 28px; flex: 1; }
 
-/* Views */
 .view { display: none; }
 .view.active { display: block; }
 
-/* Conversation item */
 .conv-row {
   display: flex; align-items: center; gap: 13px;
   padding: 13px 20px; cursor: pointer; transition: background 0.12s;
@@ -621,7 +610,6 @@ textarea.field { resize: vertical; line-height: 1.6; }
   font-size: 9px; font-weight: 700; border-radius: 9px; margin-top: 4px;
 }
 
-/* QR code area */
 .qr-wrap {
   width: 188px; height: 188px; margin: 16px auto;
   background: var(--bg2); border: 1px solid var(--border);
@@ -636,12 +624,8 @@ textarea.field { resize: vertical; line-height: 1.6; }
   box-shadow: 0 0 8px var(--green);
   animation: qr-scan 2.2s linear infinite;
 }
-@keyframes qr-scan {
-  0%  { top: 10%; }
-  100%{ top: 90%; }
-}
+@keyframes qr-scan { 0% { top: 10%; } 100% { top: 90%; } }
 
-/* Log box */
 .log-box {
   background: var(--bg2); border: 1px solid var(--border);
   border-radius: var(--r-sm); padding: 12px 14px;
@@ -652,17 +636,14 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .log-error   { color: var(--red); }
 .log-info    { color: #60a0f0; }
 
-/* Progress bar */
 .progress-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 8px; }
 .progress-fill  { height: 100%; background: var(--green); border-radius: 2px; transition: width 0.8s ease; }
 
-/* Model color tag */
 .model-tag { font-size: 11px; font-weight: 700; letter-spacing: 0.3px; }
 .model-gemini { color: #4080f0; }
 .model-gpt4   { color: #9060e0; }
 .model-gpt35  { color: #e09030; }
 
-/* Onboarding steps */
 .step-card {
   padding: 18px 20px; background: var(--bg2); border: 1px solid var(--border);
   border-radius: var(--r); transition: all 0.2s; flex: 1;

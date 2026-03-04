@@ -522,22 +522,22 @@
     </div>
     <div class="form-group">
       <label class="field-label">Senha temporária (atual)</label>
-      <input class="field" type="password" id="cp-current" placeholder="A senha que você recebeu por email">
+      <input class="field" type="password" id="modal-cp-current" placeholder="A senha que você recebeu por email" autocomplete="current-password">
     </div>
     <div class="form-group">
       <label class="field-label">Nova senha</label>
-      <input class="field" type="password" id="cp-new" placeholder="Mínimo 8 caracteres" oninput="Auth.checkPasswordStrength(this.value)">
-      <div id="cp-strength" style="margin-top:6px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
-        <div id="cp-strength-bar" style="height:100%;width:0%;border-radius:2px;transition:all 0.3s"></div>
+      <input class="field" type="password" id="modal-cp-new" placeholder="Mínimo 8 caracteres" autocomplete="new-password" oninput="Auth.checkPasswordStrength(this.value)">
+      <div id="modal-cp-strength" style="margin-top:6px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+        <div id="modal-cp-strength-bar" style="height:100%;width:0%;border-radius:2px;transition:all 0.3s"></div>
       </div>
-      <div id="cp-strength-label" class="text-xs text-dim" style="margin-top:4px"></div>
+      <div id="modal-cp-strength-label" class="text-xs text-dim" style="margin-top:4px"></div>
     </div>
     <div class="form-group">
       <label class="field-label">Confirmar nova senha</label>
-      <input class="field" type="password" id="cp-confirm" placeholder="Repita a nova senha">
+      <input class="field" type="password" id="modal-cp-confirm" placeholder="Repita a nova senha" autocomplete="new-password">
     </div>
     <div class="modal-actions" style="margin-top:16px">
-      <button class="btn btn-primary btn-full btn-lg" id="changePassBtn" onclick="Auth.changePassword()">
+      <button class="btn btn-primary btn-full btn-lg" id="modal-changePassBtn" onclick="Auth.changePassword()">
         Salvar nova senha →
       </button>
     </div>

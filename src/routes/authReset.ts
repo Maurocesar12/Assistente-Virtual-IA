@@ -5,6 +5,7 @@ import { db } from '../models/database.js'
 import { hashPassword } from '../utils/auth.js'
 import { ApiError, ok } from '../utils/http.js'
 import { validate } from '../middleware/validate.js'
+import { authenticate } from '../middleware/authenticate.js'
 import {
   generateTempPassword,
   generateResetToken,
@@ -106,10 +107,10 @@ authResetRouter.post(
 
 authResetRouter.post(
   '/change-password',
+  authenticate,               // ✅ JWT obrigatório — injeta req.userId
   validate(changePasswordSchema),
   async (req, res, next) => {
     try {
-      // userId vem do middleware authenticate (deve ser adicionado na rota)
       const userId = (req as any).userId
       if (!userId) throw ApiError.unauthorized()
 
