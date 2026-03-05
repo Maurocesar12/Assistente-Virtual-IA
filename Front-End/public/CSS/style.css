@@ -611,10 +611,17 @@ textarea.field { resize: vertical; line-height: 1.6; }
 }
 
 .qr-wrap {
-  width: 188px; height: 188px; margin: 16px auto;
-  background: var(--bg2); border: 1px solid var(--border);
-  border-radius: var(--r); display: flex; align-items: center; justify-content: center;
-  position: relative; overflow: hidden;
+width: 260px;
+  height: 260px;
+  margin: 16px auto;
+  background: transparent;
+  border: none;
+  border-radius: var(--r);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: visible;
 }
 .qr-canvas { display: grid; grid-template-columns: repeat(11, 1fr); gap: 2px; padding: 12px; }
 .qr-cell { aspect-ratio: 1; border-radius: 1px; }
