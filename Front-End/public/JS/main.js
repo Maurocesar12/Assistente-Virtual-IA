@@ -408,7 +408,7 @@ const Dashboard = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MODEL_META = {
-  'gemini-2.0-flash': { label: 'Gemini 2.0', cls: 'model-gemini' },
+  'gemini-2.5-flash': { label: 'Gemini 2.5', cls: 'model-gemini' },
   'gpt-4':            { label: 'GPT-4',       cls: 'model-gpt4'   },
   'gpt-3.5-turbo':    { label: 'GPT-3.5',     cls: 'model-gpt35'  },
 }
@@ -733,8 +733,9 @@ const Connect = {
 
     Connect.log('Iniciando conexão...', 'info')
 
-    source.addEventListener('qr', () => {
-      Connect.renderQR()
+    source.addEventListener('qr', (e) => {
+      const { qrBase64 } = JSON.parse(e.data)
+      Connect.renderQR(qrBase64)
       Connect.log('QR Code gerado. Escaneie com o WhatsApp!', 'success')
       UI.el('qrStatus').textContent = 'Escaneie o QR Code acima'
     })
@@ -768,18 +769,25 @@ const Connect = {
     }
   },
 
-  renderQR() {
-    const canvas = UI.el('qrCanvas')
-    if (!canvas) return
-    const cells = Array.from({ length: 121 }, (_, i) => {
-      const row = Math.floor(i / 11), col = i % 11
-      const isCornerTL = row < 3 && col < 3
-      const isCornerTR = row < 3 && col > 7
-      const isCornerBL = row > 7 && col < 3
-      const isFilled   = isCornerTL || isCornerTR || isCornerBL || Math.random() > 0.55
-      return `<div class="qr-cell" style="background:${isFilled ? '#e8edf5' : 'transparent'}"></div>`
-    }).join('')
-    canvas.innerHTML = cells
+  renderQR(base64) {
+    // Suporta tanto qrWrap (novo) quanto qrCanvas (legado) — fallback seguro
+    const wrap = UI.el('qrWrap') || UI.el('qrCanvas')
+    if (!wrap) return
+
+    if (!base64) {
+      wrap.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--text-muted);font-size:12px">
+        <div class="spinner"></div>Gerando QR Code...</div>`
+      return
+    }
+
+    wrap.innerHTML = `
+      <img
+        src="data:image/png;base64,${base64}"
+        alt="QR Code WhatsApp"
+        style="width:100%;height:100%;object-fit:contain;border-radius:8px;display:block"
+      >
+      <div class="qr-scan-line"></div>
+    `
   },
 
   log(msg, type = '') {
@@ -795,6 +803,21 @@ const Connect = {
       State.sseSource.close()
       State.sseSource = null
     }
+    // Reseta o modal para o estado de loading (evita mostrar QR antigo)
+    const wrap = UI.el('qrWrap')
+    if (wrap) {
+      wrap.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--text-dim)">
+          <div class="spinner" style="width:28px;height:28px;border-width:3px"></div>
+          <span style="font-size:12px">Gerando QR Code...</span>
+        </div>
+        <div class="qr-scan-line"></div>
+      `
+    }
+    const status = UI.el('qrStatus')
+    if (status) status.textContent = 'Aguardando QR Code...'
+    const log = UI.el('connectLog')
+    if (log) log.innerHTML = ''
   },
 }
 

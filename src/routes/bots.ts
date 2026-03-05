@@ -14,13 +14,13 @@ botsRouter.use(authenticate)
 
 const createBotSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
-  model: z.enum(['gemini-2.0-flash', 'gpt-4', 'gpt-3.5-turbo']),
+  model: z.enum(['gemini-2.5-flash', 'gpt-4', 'gpt-3.5-turbo']),
   prompt: z.string().min(10, 'Prompt must be at least 10 characters'),
 })
 
 const updateBotSchema = z.object({
   name: z.string().min(2).optional(),
-  model: z.enum(['gemini-2.0-flash', 'gpt-4', 'gpt-3.5-turbo']).optional(),
+  model: z.enum(['gemini-2.5-flash', 'gpt-4', 'gpt-3.5-turbo']).optional(),
   prompt: z.string().min(10).optional(),
   isActive: z.boolean().optional(),
 })
@@ -157,8 +157,8 @@ botsRouter.get('/:id/events', async (req, res, next) => {  // ✅ async adiciona
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
     }
 
-    const unsubQR = whatsappManager.onQRCode((e) => {
-      if (e.botId !== bot.id) return
+    // ✅ onQRCodeForBot reenvia QR cacheado imediatamente se já foi gerado
+    const unsubQR = whatsappManager.onQRCodeForBot(bot.id, (e) => {
       sendEvent('qr', { qrBase64: e.qrBase64, qrAscii: e.qrAscii })
     })
 

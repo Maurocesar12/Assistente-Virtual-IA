@@ -39,8 +39,8 @@ export class GeminiSessionManager {
   }
 
   async sendMessage(chatId: string, message: string, options: GeminiOptions): Promise<string> {
-    const model = options.model ?? 'gemini-2.0-flash'
-    const systemPrompt = options.systemPrompt ?? 'Você é um assistente prestativo.'
+    const model = options.model ?? 'gemini-2.5-flash'
+    const systemPrompt = options.systemPrompt ?? 'Você é um assistente útil e amigável. Responda de forma clara e concisa.'
 
     const genAI = new GoogleGenerativeAI(options.apiKey)
     const geminiModel = genAI.getGenerativeModel({ model })

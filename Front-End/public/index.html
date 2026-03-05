@@ -33,7 +33,7 @@
   </nav>
 
   <section class="l-hero">
-    <div class="hero-pill">🤖 Integrado com GPT-4 e Gemini 2.0</div>
+    <div class="hero-pill">🤖 Integrado com GPT-4 e Gemini 2.5</div>
     <h1>Automatize seu<br>WhatsApp com <em>IA</em></h1>
     <p>Configure em minutos um assistente de IA no seu WhatsApp. Atenda clientes 24/7, humanize conversas e escale sem esforço.</p>
     <div class="hero-actions">
@@ -84,7 +84,7 @@
         <div class="price-amount">R$97<sub>/mês</sub></div>
         <ul class="price-features">
           <li>5 números de WhatsApp</li><li>Mensagens ilimitadas</li>
-          <li>GPT-4 & Gemini 2.0</li><li>Analytics avançado</li><li>Suporte prioritário</li>
+          <li>GPT-4 & Gemini 2.5</li><li>Analytics avançado</li><li>Suporte prioritário</li>
         </ul>
         <button class="btn btn-primary btn-full" onclick="UI.page('register')">Assinar Pro</button>
       </div>
@@ -461,7 +461,7 @@
     <div class="form-group">
       <label class="field-label">Modelo de IA</label>
       <select class="field" id="bModel">
-        <option value="gemini-2.0-flash">Gemini 2.0 Flash (Recomendado — usa sua Gemini Key)</option>
+        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado — usa sua Gemini Key)</option>
         <option value="gpt-4">GPT-4 (usa sua OpenAI Key + Assistant)</option>
         <option value="gpt-3.5-turbo">GPT-3.5 Turbo (usa sua OpenAI Key + Assistant)</option>
       </select>
@@ -496,13 +496,19 @@
 
 <!-- Connect WhatsApp -->
 <div class="overlay" id="m-connect">
-  <div class="modal" style="max-width:380px;text-align:center">
+  <div class="modal" style="max-width:400px;text-align:center">
     <div class="modal-title">Conectar WhatsApp</div>
     <div class="modal-subtitle">Abra o app → Dispositivos Conectados → Conectar</div>
-    <div class="qr-wrap">
-      <div class="qr-canvas" id="qrCanvas"></div>
+
+    <!-- Placeholder enquanto o QR não chega -->
+    <div id="qrWrap" class="qr-wrap" style="width:260px;height:260px;margin:16px auto">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--text-dim)">
+        <div class="spinner" style="width:28px;height:28px;border-width:3px"></div>
+        <span style="font-size:12px">Gerando QR Code...</span>
+      </div>
       <div class="qr-scan-line"></div>
     </div>
+
     <div class="text-sm text-muted mt-2 mb-3" id="qrStatus">Aguardando QR Code...</div>
     <div class="log-box" id="connectLog"></div>
     <div class="modal-actions" style="justify-content:center;margin-top:16px">
