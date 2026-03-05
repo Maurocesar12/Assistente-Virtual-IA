@@ -276,6 +276,13 @@ const Bots = {
     UI.el('eBotTitle').textContent = bot.name
     UI.el('eBotMeta').textContent  = `${m.label} · criado em ${new Date(bot.createdAt).toLocaleDateString('pt-BR')}`
     UI.el('eBotPrompt').value = bot.prompt; UI.el('eBotActive').checked = bot.isActive
+    // Atualiza status de conexão
+    const connStatus  = UI.el('eBotConnStatus')
+    const connectBtn  = UI.el('eBotConnectBtn')
+    const disconnBtn  = UI.el('eBotDisconnectBtn')
+    if (connStatus) connStatus.textContent = bot.isConnected ? '🟢 Conectado ao WhatsApp' : '🔴 Desconectado'
+    if (connectBtn)  connectBtn.style.display = bot.isConnected ? 'none' : ''
+    if (disconnBtn)  disconnBtn.style.display  = bot.isConnected ? '' : 'none'
     Modals.open('editBot')
   },
   async save() {
@@ -295,6 +302,35 @@ const Bots = {
       await Api.delete(`/bots/${id}`); State.bots = State.bots.filter(b => b.id !== id)
       Modals.close('editBot'); Bots.render(); Bots.renderOverview(); toast('Bot excluído', 'info')
     } catch (err) { toast(err.message, 'error') }
+  },
+  connectFromEdit() {
+    const id = State.activeBotId; if (!id) return
+    Modals.close('editBot')
+    Connect.open(id)
+  },
+  async disconnectFromEdit() {
+    const id = State.activeBotId; if (!id) return
+    const bot = State.bots.find(b => b.id === id); if (!bot) return
+    if (!confirm(`Desconectar o bot "${bot.name}" do WhatsApp?`)) return
+    const btn = UI.el('eBotDisconnectBtn')
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>' }
+    try {
+      await Api.post(`/bots/${id}/disconnect`)
+      // Atualiza estado local
+      const idx = State.bots.findIndex(b => b.id === id)
+      if (idx >= 0) State.bots[idx] = { ...State.bots[idx], isConnected: false, isActive: false }
+      Bots.render(); Bots.renderOverview(); Bots.updateSteps()
+      // Atualiza botões no modal
+      const connStatus = UI.el('eBotConnStatus')
+      const connectBtn = UI.el('eBotConnectBtn')
+      if (connStatus) connStatus.textContent = '🔴 Desconectado'
+      if (connectBtn) connectBtn.style.display = ''
+      if (btn) btn.style.display = 'none'
+      toast(`Bot "${bot.name}" desconectado do WhatsApp`, 'info')
+    } catch (err) {
+      toast('Erro ao desconectar: ' + err.message, 'error')
+      if (btn) { btn.disabled = false; btn.innerHTML = '⏹ Desconectar' }
+    }
   },
   escape(str) { return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') },
 }

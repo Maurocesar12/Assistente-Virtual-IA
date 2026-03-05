@@ -1,6 +1,5 @@
 import express from 'express'
 import cors from 'cors'
-import cookieParser from 'cookie-parser'
 import rateLimit from 'express-rate-limit'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -17,27 +16,30 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export function createApp() {
   const app = express()
 
-  // ✅ CORS com credentials: true — necessário para cookies funcionarem em
-  //    requests cross-origin (ex.: front separado do back no futuro)
-  app.use(cors({
-    origin: env.FRONTEND_URL,
-    credentials: true,
-  }))
-
+  app.use(cors({ origin: env.FRONTEND_URL, credentials: true }))
   app.use(express.json({ limit: '1mb' }))
   app.use(express.urlencoded({ extended: true }))
+  // ── Rate limit em camadas ───────────────────────────────────────────────────
+  // SSE (/bots/:id/events) e health ficam isentos — são conexões longas/keep-alive
+  // que não representam abuso e disparariam o limite rapidamente.
+  // Rotas de auth têm limite próprio mais restritivo.
+  // Demais rotas API: 2000 req / 15min por IP (generoso para uso real do dashboard).
 
-  // ✅ Cookie parser — deve vir ANTES das rotas para req.cookies estar disponível
-  //    no middleware authenticate (usado pelo SSE/EventSource)
-  app.use(cookieParser())
-
-  app.use(rateLimit({
+  const apiLimiter = rateLimit({
     windowMs: env.RATE_LIMIT_WINDOW_MS,
     max: env.RATE_LIMIT_MAX,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => {
+      // Isenta SSE (conexão permanente), health check, e arquivos estáticos
+      if (req.path.endsWith('/events')) return true
+      if (req.path === '/health') return true
+      if (!req.path.startsWith('/api')) return true
+      return false
+    },
     message: { success: false, error: { message: 'Too many requests', code: 'RATE_LIMITED' } },
-  }))
+  })
+  app.use(apiLimiter)
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString(), env: env.NODE_ENV })
@@ -45,7 +47,7 @@ export function createApp() {
 
   // Auth routes (públicas + autenticadas)
   app.use('/api/auth', authRouter)
-  app.use('/api/auth', authResetRouter)
+  app.use('/api/auth', authResetRouter) // change-password já tem authenticate interno
 
   app.use('/api/users', usersRouter)
   app.use('/api/bots', botsRouter)
