@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
-export type AIModel = 'gemini-2.0-flash' | 'gpt-4' | 'gpt-3.5-turbo'
+export type AIModel = 'gemini-2.5-flash' | 'gpt-4' | 'gpt-3.5-turbo'
 export type Plan = 'starter' | 'pro' | 'enterprise'
 
 export interface ApiKeys {
@@ -237,7 +237,7 @@ export const db = {
   findValidResetToken:             instance.findValidResetToken.bind(instance),
   markResetTokenUsed:              instance.markResetTokenUsed.bind(instance),
   invalidatePreviousResetTokens:   instance.invalidatePreviousResetTokens.bind(instance),
-  findPendingResetTokensForUser:         instance.findPendingResetTokensForUser.bind(instance),
+  findPendingResetTokensForUser:   instance.findPendingResetTokensForUser.bind(instance),
   createBot:                       instance.createBot.bind(instance),
   findBotById:                     instance.findBotById.bind(instance),
   findBotsByUserId:                instance.findBotsByUserId.bind(instance),
