@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import cookieParser from 'cookie-parser'
 import rateLimit from 'express-rate-limit'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -16,9 +17,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export function createApp() {
   const app = express()
 
-  app.use(cors({ origin: env.FRONTEND_URL, credentials: true }))
+  // ✅ CORS com credentials: true — necessário para cookies funcionarem em
+  //    requests cross-origin (ex.: front separado do back no futuro)
+  app.use(cors({
+    origin: env.FRONTEND_URL,
+    credentials: true,
+  }))
+
   app.use(express.json({ limit: '1mb' }))
   app.use(express.urlencoded({ extended: true }))
+
+  // ✅ Cookie parser — deve vir ANTES das rotas para req.cookies estar disponível
+  //    no middleware authenticate (usado pelo SSE/EventSource)
+  app.use(cookieParser())
+
   app.use(rateLimit({
     windowMs: env.RATE_LIMIT_WINDOW_MS,
     max: env.RATE_LIMIT_MAX,
@@ -33,7 +45,7 @@ export function createApp() {
 
   // Auth routes (públicas + autenticadas)
   app.use('/api/auth', authRouter)
-  app.use('/api/auth', authResetRouter) // change-password já tem authenticate interno
+  app.use('/api/auth', authResetRouter)
 
   app.use('/api/users', usersRouter)
   app.use('/api/bots', botsRouter)

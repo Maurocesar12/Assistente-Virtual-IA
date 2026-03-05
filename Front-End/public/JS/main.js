@@ -61,6 +61,10 @@ const Api = {
     const res = await fetch(API_URL + path, {
       method,
       headers,
+      // ✅ credentials: 'include' garante que o cookie httpOnly zapgpt_token
+      //    seja enviado em TODOS os requests (incluindo quando front e API
+      //    estiverem em domínios diferentes futuramente)
+      credentials: 'include',
       body: body ? JSON.stringify(body) : undefined,
     })
 
@@ -70,7 +74,6 @@ const Api = {
     }))
 
     if (!res.ok) {
-      // ✅ Mostra detalhes de validação se disponíveis (erro 400)
       const details = json?.error?.details
       const msg = details
         ? details.map(d => d.message).join(', ')
@@ -174,7 +177,6 @@ const Modals = {
   },
 }
 
-// Fecha overlay ao clicar no fundo
 document.querySelectorAll('.overlay').forEach(o =>
   o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open') })
 )
@@ -194,7 +196,6 @@ const Auth = {
       const data = await Api.post('/auth/login', { email, password })
       State.token = data.token
       State.user  = data.user
-      // Sinaliza se deve trocar senha (login com senha temporária)
       if (data.mustChangePassword) {
         State.user = { ...State.user, mustChangePassword: true }
       }
@@ -252,7 +253,6 @@ const Auth = {
   },
 
   openForgot() {
-    // Reseta o estado ao abrir
     const form    = UI.el('fp-form')
     const success = UI.el('fp-success')
     if (form)    form.style.display    = 'block'
@@ -287,8 +287,6 @@ const Auth = {
     label.textContent    = value.length ? lvl.text : ''
   },
 
-  // ── Esqueci a senha ──────────────────────────────────────────────────────
-
   async forgotPassword() {
     const email = UI.val('fp-email')
     if (!email) { toast('Informe seu email', 'error'); return }
@@ -296,7 +294,6 @@ const Auth = {
     UI.setLoading('forgotBtn', true)
     try {
       await Api.post('/auth/forgot-password', { email })
-      // Mensagem genérica mesmo se email não existir (segurança)
       UI.el('fp-success').style.display = 'block'
       UI.el('fp-form').style.display    = 'none'
     } catch (err) {
@@ -305,8 +302,6 @@ const Auth = {
       UI.setLoading('forgotBtn', false)
     }
   },
-
-  // ── Trocar senha (pós-login com senha temporária) ─────────────────────────
 
   async changePassword() {
     const current = UI.el('modal-cp-current')?.value?.trim() ?? ''
@@ -324,7 +319,6 @@ const Auth = {
       Store.save()
       Modals.close('changePassword')
       toast('Senha alterada com sucesso! 🔐', 'success')
-      // Limpa campos do modal
       if (UI.el('modal-cp-current')) UI.el('modal-cp-current').value = ''
       if (UI.el('modal-cp-new'))     UI.el('modal-cp-new').value     = ''
       if (UI.el('modal-cp-confirm')) UI.el('modal-cp-confirm').value = ''
@@ -335,8 +329,15 @@ const Auth = {
     }
   },
 
-  logout() {
+  async logout() {
     Connect.cleanup()
+
+    // ✅ Chama o backend para limpar o cookie httpOnly
+    // (JS do front não consegue deletar cookies httpOnly diretamente)
+    try {
+      await Api.post('/auth/logout')
+    } catch (_) {}
+
     Store.clear()
     State.bots          = []
     State.conversations = []
@@ -357,7 +358,6 @@ const Dashboard = {
     Dashboard.updateSidebar()
     await Dashboard.refresh()
 
-    // Se logou com senha temporária, força troca imediata
     if (State.user?.mustChangePassword) {
       setTimeout(() => Modals.open('changePassword'), 500)
     }
@@ -417,7 +417,6 @@ const Bots = {
   async load() {
     try {
       const result = await Api.get('/bots')
-      // ✅ Garante que State.bots seja sempre um array
       State.bots = Array.isArray(result) ? result : []
       Bots.render()
       Bots.renderOverview()
@@ -542,7 +541,6 @@ const Bots = {
     const model  = UI.val('bModel')
     const prompt = UI.val('bPrompt')
 
-    // ✅ Validações front-end espelhando as regras do backend (Zod)
     if (!name || name.length < 2) {
       toast('O nome do bot deve ter pelo menos 2 caracteres', 'error')
       return
@@ -556,14 +554,11 @@ const Bots = {
     try {
       const bot = await Api.post('/bots', { name, model, prompt })
 
-      // ✅ Garante que o array existe antes de inserir
       if (!Array.isArray(State.bots)) State.bots = []
       State.bots.unshift(bot)
 
-      // ✅ Fecha o modal correto (era UI.modal — função inexistente)
       Modals.close('newBot')
 
-      // ✅ Limpa os campos do formulário
       UI.el('bName').value   = ''
       UI.el('bPrompt').value = ''
 
@@ -725,15 +720,31 @@ const Connect = {
     const botId = State.connectBotId
     if (!botId) return
 
+    // Inicia a sessão no backend (assíncrono)
     Api.post(`/bots/${botId}/connect`).catch(() => {})
 
     Connect.cleanup()
-    const source = new EventSource(`${API_URL}/bots/${botId}/events`)
+
+    // ✅ JWT na query string — EventSource não suporta headers customizados.
+    //    Query string é a solução padrão para SSE autenticado.
+    const token = State.token || ''
+    const source = new EventSource(`${API_URL}/bots/${botId}/events?token=${encodeURIComponent(token)}`)
     State.sseSource = source
+
+    // Grace period: ignora onerror nos primeiros 30s enquanto Chromium inicializa
+    let qrReceived = false
+    let connectedOk = false
+    const errorGraceTimer = setTimeout(() => {
+      if (!qrReceived && !connectedOk && source.readyState !== EventSource.CLOSED) {
+        Connect.log('Tempo esgotado aguardando QR Code. Tente novamente.', 'error')
+      }
+    }, 30_000)
 
     Connect.log('Iniciando conexão...', 'info')
 
     source.addEventListener('qr', (e) => {
+      qrReceived = true
+      clearTimeout(errorGraceTimer)
       const { qrBase64 } = JSON.parse(e.data)
       Connect.renderQR(qrBase64)
       Connect.log('QR Code gerado. Escaneie com o WhatsApp!', 'success')
@@ -744,6 +755,8 @@ const Connect = {
       const data = JSON.parse(e.data)
       Connect.log(`Status: ${data.status}`, 'info')
       if (data.status === 'inChat' || data.status === 'isLogged') {
+        connectedOk = true
+        clearTimeout(errorGraceTimer)
         Connect.log('✓ WhatsApp conectado com sucesso!', 'success')
         UI.el('qrStatus').textContent = '✅ Conectado!'
       }
@@ -757,6 +770,7 @@ const Connect = {
       Bots.renderOverview()
       Bots.updateSteps()
       if (updatedBot.isConnected) {
+        clearTimeout(errorGraceTimer)
         setTimeout(() => {
           Modals.close('connect')
           toast('Bot conectado ao WhatsApp! 🟢', 'success')
@@ -764,13 +778,16 @@ const Connect = {
       }
     })
 
+    // onerror silencioso — EventSource reconecta automaticamente.
+    // Só registra se conexão foi encerrada de verdade e sem sucesso.
     source.onerror = () => {
-      Connect.log('Erro de conexão. Verifique o servidor.', 'error')
+      if (source.readyState === EventSource.CLOSED && !connectedOk) {
+        Connect.log('Conexão SSE encerrada. Reconectando...', 'info')
+      }
     }
   },
 
   renderQR(base64) {
-    // Suporta tanto qrWrap (novo) quanto qrCanvas (legado) — fallback seguro
     const wrap = UI.el('qrWrap') || UI.el('qrCanvas')
     if (!wrap) return
 
@@ -803,7 +820,6 @@ const Connect = {
       State.sseSource.close()
       State.sseSource = null
     }
-    // Reseta o modal para o estado de loading (evita mostrar QR antigo)
     const wrap = UI.el('qrWrap')
     if (wrap) {
       wrap.innerHTML = `
@@ -868,6 +884,29 @@ const Settings = {
       toast('Chaves de API salvas! 🔐', 'success')
     } catch (err) {
       toast(err.message, 'error')
+    }
+  },
+
+  async changePassword() {
+    const current = UI.el('cp-current')?.value?.trim() ?? ''
+    const next    = UI.el('cp-new')?.value?.trim()     ?? ''
+    const confirm = UI.el('cp-confirm')?.value?.trim() ?? ''
+
+    if (!current || !next || !confirm) { toast('Preencha todos os campos', 'error'); return }
+    if (next.length < 8)  { toast('Nova senha deve ter pelo menos 8 caracteres', 'error'); return }
+    if (next !== confirm) { toast('As senhas não coincidem', 'error'); return }
+
+    UI.setLoading('changePassBtn', true)
+    try {
+      await Api.post('/auth/change-password', { currentPassword: current, newPassword: next })
+      toast('Senha alterada com sucesso! 🔐', 'success')
+      if (UI.el('cp-current')) UI.el('cp-current').value = ''
+      if (UI.el('cp-new'))     UI.el('cp-new').value     = ''
+      if (UI.el('cp-confirm')) UI.el('cp-confirm').value = ''
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      UI.setLoading('changePassBtn', false)
     }
   },
 }
