@@ -307,12 +307,12 @@ const Conversations = {
   render() {
     const el = UI.el('convsList'); if (!el) return
     if (!State.conversations.length) { el.innerHTML = `<div class="empty"><div class="empty-icon">💬</div><h3>Nenhuma conversa</h3><p>As conversas aparecerão quando seu bot estiver ativo</p></div>`; return }
-    el.innerHTML = State.conversations.map(c => { const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); return `<div class="conv-row" data-search="${Bots.escape(c.contactName?.toLowerCase() ?? '')} ${Bots.escape(c.lastMessage?.toLowerCase() ?? '')}" onclick="toast('Visualização de chat em breve!','info')"><div class="conv-avatar">👤</div><div class="conv-body"><div class="conv-name">${Bots.escape(c.contactName || c.contactPhone)}</div><div class="conv-preview">${Bots.escape(c.lastMessage)}</div></div><div class="conv-right"><div class="conv-time">${time}</div>${c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''}</div></div>` }).join('')
+    el.innerHTML = State.conversations.map(c => { const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); return `<div class="conv-row" data-search="${Bots.escape(c.contactName?.toLowerCase() ?? '')} ${Bots.escape(c.lastMessage?.toLowerCase() ?? '')}" onclick="ChatViewer.open('${c.id}','${Bots.escape(c.contactName || c.contactPhone)}','${Bots.escape(c.contactPhone)}')"><div class="conv-avatar">👤</div><div class="conv-body" style="min-width:0"><div class="conv-name">${Bots.escape(c.contactName || c.contactPhone)}</div><div class="conv-preview" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Bots.escape(c.lastMessage)}</div></div><div class="conv-right" style="flex-shrink:0"><div class="conv-time">${time}</div>${c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''}</div></div>` }).join('')
   },
   renderOverview() {
     const el = UI.el('ov-convs'); if (!el) return
     if (!State.conversations.length) { el.innerHTML = `<div class="empty" style="padding:32px"><div class="empty-icon" style="font-size:28px">💬</div><h3>Nenhuma conversa</h3></div>`; return }
-    el.innerHTML = State.conversations.slice(0, 4).map(c => { const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); return `<div class="conv-row" onclick="toast('Visualização de chat em breve!','info')"><div class="conv-avatar">👤</div><div class="conv-body"><div class="conv-name">${Bots.escape(c.contactName || c.contactPhone)}</div><div class="conv-preview">${Bots.escape(c.lastMessage)}</div></div><div class="conv-right"><div class="conv-time">${time}</div>${c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''}</div></div>` }).join('')
+    el.innerHTML = State.conversations.slice(0, 4).map(c => { const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); return `<div class="conv-row" style="cursor:pointer" onclick="UI.view('convs')"><div class="conv-avatar">👤</div><div class="conv-body" style="min-width:0"><div class="conv-name">${Bots.escape(c.contactName || c.contactPhone)}</div><div class="conv-preview" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Bots.escape(c.lastMessage)}</div></div><div class="conv-right" style="flex-shrink:0"><div class="conv-time">${time}</div>${c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''}</div></div>` }).join('')
   },
 }
 
@@ -525,6 +525,89 @@ const Billing = {
     const pill = UI.el('bilPill'); pill.textContent = planPills[plan]; pill.className = `plan-pill ${plan}`
     UI.el('bilUsage').textContent = `${msgs.toLocaleString('pt-BR')} / ${limit === Infinity ? '∞' : limit}`
     UI.el('bilBar').style.width   = limit === Infinity ? '8%' : `${Math.min(100, (msgs / limit) * 100)}%`
+  },
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHAT VIEWER
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ChatViewer = {
+  async open(convId, contactName, contactPhone) {
+    // Preenche header
+    UI.el('chatContactName').textContent = contactName || contactPhone
+    UI.el('chatContactPhone').textContent = contactPhone
+
+    // Busca bot do contato (para badge)
+    const conv = State.conversations.find(c => c.id === convId)
+    const bot  = conv ? State.bots.find(b => b.id === conv.botId) : null
+    const badge = UI.el('chatBotBadge')
+    if (badge) badge.textContent = bot ? bot.name : 'Bot'
+
+    // Abre modal e mostra loading
+    document.getElementById('m-chat')?.classList.add('open')
+    UI.el('chatMessages').innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:13px">
+        <span class="spinner" style="margin-right:8px"></span> Carregando mensagens...
+      </div>`
+    UI.el('chatMsgCount').textContent = '...'
+
+    try {
+      const messages = await Api.get(`/conversations/${convId}/messages`)
+      ChatViewer.render(messages)
+    } catch (err) {
+      UI.el('chatMessages').innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:13px">
+          ⚠️ Erro ao carregar mensagens
+        </div>`
+    }
+  },
+
+  render(messages) {
+    const container = UI.el('chatMessages')
+    const count     = UI.el('chatMsgCount')
+    if (!container) return
+
+    if (!messages || messages.length === 0) {
+      container.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:13px">
+          Nenhuma mensagem ainda
+        </div>`
+      if (count) count.textContent = '0 mensagens'
+      return
+    }
+
+    if (count) count.textContent = `${messages.length} mensagem${messages.length !== 1 ? 's' : ''}`
+
+    container.innerHTML = messages.map(m => {
+      const isUser = m.role === 'user'
+      const time   = new Date(m.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      const text   = Bots.escape(m.content)
+      const isError = m.role === 'assistant' && m.content.startsWith('⚠️')
+
+      return `
+        <div style="display:flex;flex-direction:column;align-items:${isUser ? 'flex-start' : 'flex-end'};gap:2px">
+          <div style="
+            max-width: 80%;
+            padding: 9px 13px;
+            border-radius: ${isUser ? '4px 14px 14px 14px' : '14px 4px 14px 14px'};
+            font-size: 13px;
+            line-height: 1.55;
+            word-break: break-word;
+            ${isUser
+              ? 'background:var(--surface3);color:var(--text);border:1px solid var(--border2);'
+              : isError
+                ? 'background:rgba(240,80,96,0.12);color:#f07080;border:1px solid rgba(240,80,96,0.25);'
+                : 'background:rgba(0,212,106,0.12);color:var(--text);border:1px solid rgba(0,212,106,0.2);'
+            }
+          ">${text}</div>
+          <span style="font-size:10px;color:var(--text-dim);padding:0 4px">${isUser ? '👤' : '🤖'} ${time}</span>
+        </div>`
+    }).join('')
+
+    // Scroll para a última mensagem
+    setTimeout(() => { container.scrollTop = container.scrollHeight }, 50)
   },
 }
 
