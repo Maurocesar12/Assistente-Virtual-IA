@@ -33,7 +33,7 @@
   </nav>
 
   <section class="l-hero">
-    <div class="hero-pill">🤖 Integrado com GPT-4 e Gemini 2.5</div>
+    <div class="hero-pill">🤖 Integrado com GPT-4 e Gemini 2.0</div>
     <h1>Automatize seu<br>WhatsApp com <em>IA</em></h1>
     <p>Configure em minutos um assistente de IA no seu WhatsApp. Atenda clientes 24/7, humanize conversas e escale sem esforço.</p>
     <div class="hero-actions">
@@ -84,7 +84,7 @@
         <div class="price-amount">R$97<sub>/mês</sub></div>
         <ul class="price-features">
           <li>5 números de WhatsApp</li><li>Mensagens ilimitadas</li>
-          <li>GPT-4 & Gemini 2.5</li><li>Analytics avançado</li><li>Suporte prioritário</li>
+          <li>GPT-4 & Gemini 2.0</li><li>Analytics avançado</li><li>Suporte prioritário</li>
         </ul>
         <button class="btn btn-primary btn-full" onclick="UI.page('register')">Assinar Pro</button>
       </div>
@@ -461,7 +461,7 @@
     <div class="form-group">
       <label class="field-label">Modelo de IA</label>
       <select class="field" id="bModel">
-        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado — usa sua Gemini Key)</option>
+        <option value="gemini-2.0-flash">Gemini 2.0 Flash (Recomendado — usa sua Gemini Key)</option>
         <option value="gpt-4">GPT-4 (usa sua OpenAI Key + Assistant)</option>
         <option value="gpt-3.5-turbo">GPT-3.5 Turbo (usa sua OpenAI Key + Assistant)</option>
       </select>
@@ -486,6 +486,20 @@
         <label class="toggle"><input type="checkbox" id="eBotActive"><span class="toggle-track"></span></label>
       </div>
     </div>
+    <!-- Seção de conexão WhatsApp -->
+    <div style="padding:14px 0;border-top:1px solid var(--border)">
+      <div class="flex-between">
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:3px">Conexão WhatsApp</div>
+          <div style="font-size:12px;color:var(--text-muted)" id="eBotConnStatus">—</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" id="eBotConnectBtn" onclick="Bots.connectFromEdit()">📱 Conectar</button>
+          <button class="btn btn-sm" id="eBotDisconnectBtn" onclick="Bots.disconnectFromEdit()" style="background:rgba(240,80,96,0.1);color:var(--red);border:1px solid rgba(240,80,96,0.25);display:none">⏹ Desconectar</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-danger" onclick="Bots.delete()">Excluir bot</button>
       <button class="btn btn-ghost" onclick="Modals.close('editBot')">Fechar</button>
@@ -594,3 +608,4 @@
 <script src="JS/main.js"></script>
 </body>
 </html>
+<!-- INJECTED BY PATCH - remove this comment after applying -->

@@ -16,7 +16,7 @@ const envSchema = z.object({
   GEMINI_KEY: z.string().optional(),
 
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900_000),
-  RATE_LIMIT_MAX: z.coerce.number().default(100),
+  RATE_LIMIT_MAX: z.coerce.number().default(2000), // 2000 req/15min — SSE + dashboard polling
 
   // SMTP — Para Gmail use smtp.gmail.com porta 587 + "Senha de app"
   SMTP_HOST: z.string().default('smtp.gmail.com'),
