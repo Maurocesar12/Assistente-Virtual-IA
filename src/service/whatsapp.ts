@@ -223,14 +223,57 @@ export class WhatsAppManager {
     bot: Bot, apiKeys: import('../models/database.js').ApiKeys,
     chatId: string, message: string,
   ): Promise<string> {
+    let lastError: unknown
+
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try { return await this.callAI(bot, apiKeys, chatId, message) }
-      catch (err) {
-        if (attempt === MAX_RETRIES)
-          return 'Desculpe, nao consegui processar sua mensagem no momento.'
+      try {
+        return await this.callAI(bot, apiKeys, chatId, message)
+      } catch (err) {
+        lastError = err
+        const msg = String((err as any)?.message ?? err).toLowerCase()
+
+        // Loga o erro REAL no terminal para debug
+        console.error(
+          `[Bot:${bot.name}] Erro AI (tentativa ${attempt}/${MAX_RETRIES}):`,
+          (err as any)?.message ?? err
+        )
+
+        // Erro de configuração — não tenta novamente
+        const isConfigError =
+          msg.includes('api key') ||
+          msg.includes('nao configurad') ||
+          msg.includes('invalid api key') ||
+          msg.includes('api_key_invalid') ||
+          msg.includes('permission_denied')
+
+        if (isConfigError) {
+          return '⚠️ Chave de API inválida ou não configurada. Acesse o painel → Configurações → API Keys.'
+        }
+
+        // Erro de quota/rate limit — não tenta novamente
+        const isQuotaError =
+          msg.includes('quota') ||
+          msg.includes('rate limit') ||
+          msg.includes('resource_exhausted') ||
+          msg.includes('429') ||
+          msg.includes('insufficient_quota') ||
+          msg.includes('billing') ||
+          msg.includes('exceeded your current quota')
+
+        if (isQuotaError) {
+          return '⚠️ Cota da API esgotada. Verifique seu plano no painel da OpenAI ou Gemini e adicione créditos.'
+        }
+
+        // Outros erros: aguarda antes da próxima tentativa
+        if (attempt < MAX_RETRIES) {
+          await new Promise(r => setTimeout(r, 1500 * attempt))
+        }
       }
     }
-    return 'Desculpe, nao consegui processar sua mensagem no momento.'
+
+    const errMsg = String((lastError as any)?.message ?? '').slice(0, 100)
+    console.error(`[Bot:${bot.name}] Falha após ${MAX_RETRIES} tentativas. Último erro:`, errMsg)
+    return `⚠️ Não consegui processar sua mensagem. Erro: ${errMsg || 'desconhecido'}. Tente novamente em instantes.`
   }
 
   private async callAI(
