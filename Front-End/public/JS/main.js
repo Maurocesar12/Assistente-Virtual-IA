@@ -353,6 +353,87 @@ const Conversations = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// BOT ALERTS — exibe erros de conexão wppconnect na tela do usuário
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BotAlerts = {
+  // Mapa de alertas ativos: `${botId}:${kind}` → elemento DOM
+  _alerts: new Map(),
+
+  // kind: 'connection' | 'config' | 'quota' | 'network' | 'unknown'
+  // message: pode ser null (omitido no render)
+  show(botId, botName, kind, title, message, action) {
+    const key = `${botId}:${kind}`
+    if (BotAlerts._alerts.has(key)) BotAlerts.dismiss(key)
+
+    const container = UI.el('botAlertsContainer')
+    if (!container) return
+
+    const STYLES = {
+      connection: { color: 'var(--red)',    bg: 'rgba(240,80,96,0.08)',    border: 'rgba(240,80,96,0.3)',    icon: '📵', btnLabel: '📱 Reconectar', btnAction: `Connect.open('${botId}')` },
+      config:     { color: 'var(--red)',    bg: 'rgba(240,80,96,0.08)',    border: 'rgba(240,80,96,0.3)',    icon: '🔑', btnLabel: '⚙️ API Keys',   btnAction: `UI.view('settings')` },
+      quota:      { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '💳', btnLabel: '💳 Assinatura', btnAction: `UI.view('billing')` },
+      network:    { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '🌐', btnLabel: null,             btnAction: null },
+      unknown:    { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '⚠️', btnLabel: null,             btnAction: null },
+    }
+    const s = STYLES[kind] ?? STYLES.unknown
+
+    const alertEl = document.createElement('div')
+    alertEl.dataset.botAlert = key
+    alertEl.style.cssText = `
+      display:flex;align-items:flex-start;gap:14px;
+      padding:16px 18px;margin-bottom:10px;
+      background:${s.bg};
+      border:1px solid ${s.border};
+      border-left:4px solid ${s.color};
+      border-radius:10px;
+      animation:toast-slide 0.3s ease;
+    `
+
+    const msgHtml = message
+      ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;line-height:1.5">${Bots.escape(message)}</div>`
+      : ''
+
+    const actionBtn = s.btnLabel
+      ? `<button class="btn btn-sm" onclick="${s.btnAction}" style="background:${s.color};color:${kind==='connection'?'#fff':'#000'};font-size:11px;padding:5px 10px;border-radius:6px;white-space:nowrap">${s.btnLabel}</button>`
+      : ''
+
+    alertEl.innerHTML = `
+      <div style="font-size:22px;flex-shrink:0;margin-top:1px">${s.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;color:${s.color};margin-bottom:3px">
+          ${Bots.escape(botName)} — ${Bots.escape(title)}
+        </div>
+        ${msgHtml}
+        <div style="font-size:12px;color:#f0c060;font-weight:500">👉 ${Bots.escape(action)}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end">
+        ${actionBtn}
+        <button class="btn btn-ghost btn-sm" onclick="BotAlerts.dismiss('${key}')" style="font-size:11px;padding:5px 10px">✕</button>
+      </div>
+    `
+    container.appendChild(alertEl)
+    BotAlerts._alerts.set(key, alertEl)
+  },
+
+  dismiss(key) {
+    const el = BotAlerts._alerts.get(key)
+    if (el) el.remove()
+    BotAlerts._alerts.delete(key)
+  },
+
+  dismissByBotId(botId) {
+    BotAlerts._alerts.forEach((_, key) => {
+      if (key.startsWith(`${botId}:`)) BotAlerts.dismiss(key)
+    })
+  },
+
+  dismissAll() {
+    BotAlerts._alerts.forEach((_, key) => BotAlerts.dismiss(key))
+  },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CONNECT WHATSAPP (SSE)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -400,6 +481,20 @@ const Connect = {
       }
     })
 
+    // Erros de sessão WhatsApp (wppconnect) → alerta de reconexão
+    source.addEventListener('error-bot', (e) => {
+      const { title, message, action, botId: errBotId } = JSON.parse(e.data)
+      const bot = State.bots.find(b => b.id === errBotId)
+      BotAlerts.show(errBotId, bot?.name ?? 'Bot', 'connection', title, message, action)
+      Connect.log(`⚠️ ${title}: ${message}`, 'error')
+    })
+
+    // Erros de IA (config/quota/network) → alerta no painel, NUNCA enviado ao contato do WhatsApp
+    source.addEventListener('ai-error', (e) => {
+      const { botId: errBotId, botName, kind, title, action } = JSON.parse(e.data)
+      BotAlerts.show(errBotId, botName, kind, title, null, action)
+    })
+
     source.addEventListener('bot', (e) => {
       const updatedBot = JSON.parse(e.data)
       const idx = State.bots.findIndex(b => b.id === updatedBot.id)
@@ -413,6 +508,7 @@ const Connect = {
       if (updatedBot.isConnected && qrReceived && connectedOk) {
         clearTimeout(errorGraceTimer)
         source.close()
+        BotAlerts.dismissByBotId(botId)  // limpa todos os alertas do bot ao reconectar com sucesso
         setTimeout(() => { Modals.close('connect'); toast('Bot conectado ao WhatsApp! 🟢', 'success') }, 1500)
       }
     })

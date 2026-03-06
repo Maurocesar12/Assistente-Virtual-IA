@@ -24,9 +24,9 @@ export function splitMessages(text: string): string[] {
   return parts.map((p) => p.trimStart()).filter(Boolean)
 }
 
-// ─── Send messages with human-like typing delay ───────────────────────────────
+// ─── Envie mensagens com um atraso de digitação semelhante ao humano. ───────────────────────────────
 
-const CHARS_PER_MS = 100  // roughly simulates typing speed
+const CHARS_PER_MS = 120  // simula aproximadamente a velocidade de digitação
 
 export async function sendMessagesWithDelay(
   client: Whatsapp,
@@ -43,7 +43,7 @@ export async function sendMessagesWithDelay(
   }
 }
 
-// ─── Sleep helper ─────────────────────────────────────────────────────────────
+// ─── Ajudante de sono ─────────────────────────────────────────────────────────────
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
