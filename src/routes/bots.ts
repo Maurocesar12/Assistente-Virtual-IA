@@ -160,30 +160,56 @@ botsRouter.get('/:id/events', async (req, res, next) => {
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
     }
 
-    // onQRCodeForBot faz replay do QR cacheado imediatamente se já foi gerado
-    const unsubQR = whatsappManager.onQRCodeForBot(bot.id, (e) => {
-      sendEvent('qr', { qrBase64: e.qrBase64, qrAscii: e.qrAscii })
-    })
+    // ── Máquina de estado da sessão SSE ──────────────────────────────────────
+    //
+    // Regras para disparar alerta de erro:
+    //
+    //   FASE 1 — qrShown=false, everConnected=false (inicializando)
+    //     → status de falha como 'notLogged', 'deleteToken' são NORMAIS nesta fase
+    //     → IGNORAR — wppconnect emite isso durante bootstrap, antes do QR aparecer
+    //
+    //   FASE 2 — qrShown=true, everConnected=false (QR visível, aguardando scan)
+    //     → se vier falha aqui → QR expirou ou erro real → ALERTAR
+    //
+    //   FASE 3 — everConnected=true (já conectou ao menos uma vez)
+    //     → qualquer falha aqui → sessão caiu → ALERTAR
 
-    // ── Status de conexão wppconnect → mensagem amigável para o painel ───────
+    let qrShown       = false
+    let everConnected = false 
+
     const SESSION_ERROR_MESSAGES: Record<string, { title: string; message: string; action: string }> = {
-      browserClose:       { title: 'Navegador fechado',      message: 'O navegador interno foi fechado inesperadamente.',           action: 'Clique em "Conectar" para reconectar o bot.' },
-      qrReadError:        { title: 'Erro ao ler QR Code',    message: 'O QR Code expirou ou não foi lido corretamente.',            action: 'Clique em "Conectar" e escaneie o QR novamente.' },
-      autocloseCalled:    { title: 'Conexão encerrada',      message: 'A sessão foi encerrada automaticamente por inatividade.',    action: 'Clique em "Conectar" para reconectar.' },
-      desconnectedMobile: { title: 'Desconectado pelo app',  message: 'O WhatsApp foi desconectado pelo celular.',                  action: 'Abra o WhatsApp → Dispositivos Conectados e reconecte.' },
-      disconnected:       { title: 'Conexão perdida',        message: 'A conexão com o WhatsApp foi perdida.',                     action: 'Clique em "Conectar" para reconectar.' },
-      notLogged:          { title: 'Sessão expirada',        message: 'Sua sessão do WhatsApp expirou.',                           action: 'Clique em "Conectar" e escaneie o QR Code novamente.' },
-      serverClose:        { title: 'Servidor encerrou',      message: 'O servidor do WhatsApp encerrou a conexão.',                action: 'Aguarde alguns minutos e clique em "Conectar".' },
-      deleteToken:        { title: 'Sessão removida',        message: 'Os dados de sessão foram removidos.',                      action: 'Clique em "Conectar" para iniciar nova sessão.' },
+      browserClose:       { title: 'Navegador fechado',     message: 'O navegador interno foi fechado inesperadamente.',        action: 'Clique em "Conectar" para reconectar o bot.' },
+      qrReadError:        { title: 'QR Code não lido',      message: 'O QR Code expirou sem ser escaneado.',                   action: 'Clique em "Conectar" e escaneie o QR novamente.' },
+      autocloseCalled:    { title: 'Conexão encerrada',     message: 'A sessão foi encerrada automaticamente por inatividade.', action: 'Clique em "Conectar" para reconectar.' },
+      desconnectedMobile: { title: 'Desconectado pelo app', message: 'O WhatsApp foi desconectado pelo celular.',               action: 'Abra o WhatsApp → Dispositivos Conectados e reconecte.' },
+      disconnected:       { title: 'Conexão perdida',       message: 'A conexão com o WhatsApp foi perdida.',                  action: 'Clique em "Conectar" para reconectar.' },
+      notLogged:          { title: 'Sessão expirada',       message: 'Sua sessão do WhatsApp expirou.',                        action: 'Clique em "Conectar" e escaneie o QR Code novamente.' },
+      serverClose:        { title: 'Servidor encerrou',     message: 'O servidor do WhatsApp encerrou a conexão.',             action: 'Aguarde alguns minutos e clique em "Conectar".' },
+      deleteToken:        { title: 'Sessão removida',       message: 'Os dados de sessão foram removidos.',                   action: 'Clique em "Conectar" para iniciar nova sessão.' },
     }
 
     const SESSION_FAILED_KEYS = new Set(Object.keys(SESSION_ERROR_MESSAGES))
+    const SESSION_CONNECTED_KEYS = new Set(['inChat', 'isLogged'])
+
+    const unsubQR = whatsappManager.onQRCodeForBot(bot.id, (e) => {
+      qrShown = true
+      sendEvent('qr', { qrBase64: e.qrBase64, qrAscii: e.qrAscii })
+    })
 
     const unsubSession = whatsappManager.onSessionUpdate(async (e) => {
       if (e.botId !== bot.id) return
+
       sendEvent('status', { status: e.status })
 
-      if (SESSION_FAILED_KEYS.has(e.status)) {
+      if (SESSION_CONNECTED_KEYS.has(e.status)) {
+        everConnected = true
+      }
+
+      // Só emite alerta se o usuário já viu o QR OU se já esteve conectado.
+      // Status como 'notLogged' durante bootstrap (fase 1) são ignorados.
+      const shouldAlert = SESSION_FAILED_KEYS.has(e.status) && (qrShown || everConnected)
+
+      if (shouldAlert) {
         const info = SESSION_ERROR_MESSAGES[e.status] ?? {
           title:   'Conexão perdida',
           message: 'Erro inesperado na sessão do WhatsApp.',
