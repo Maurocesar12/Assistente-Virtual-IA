@@ -25,9 +25,9 @@ const updateApiKeysSchema = z.object({
 
 // ─── GET /users/me/stats ──────────────────────────────────────────────────────
 
-usersRouter.get('/me/stats', async (req, res, next) => {  // ✅ async adicionado
+usersRouter.get('/me/stats', async (req, res, next) => {
   try {
-    const stats = await db.getUserStats(req.userId)  // ✅ await adicionado
+    const stats = await db.getUserStats(req.userId)
     return ok(res, stats)
   } catch (err) {
     next(err)
@@ -36,9 +36,9 @@ usersRouter.get('/me/stats', async (req, res, next) => {  // ✅ async adicionad
 
 // ─── PATCH /users/me ──────────────────────────────────────────────────────────
 
-usersRouter.patch('/me', validate(updateProfileSchema), async (req, res, next) => {  // ✅ async adicionado
+usersRouter.patch('/me', validate(updateProfileSchema), async (req, res, next) => {  
   try {
-    const updated = await db.updateUser(req.userId, req.body)  // ✅ await adicionado
+    const updated = await db.updateUser(req.userId, req.body)  
     if (!updated) throw ApiError.notFound('User not found')
     return ok(res, sanitizeUser(updated))
   } catch (err) {
@@ -48,13 +48,13 @@ usersRouter.patch('/me', validate(updateProfileSchema), async (req, res, next) =
 
 // ─── PATCH /users/me/api-keys ─────────────────────────────────────────────────
 
-usersRouter.patch('/me/api-keys', validate(updateApiKeysSchema), async (req, res, next) => {  // ✅ async adicionado
+usersRouter.patch('/me/api-keys', validate(updateApiKeysSchema), async (req, res, next) => { 
   try {
-    const user = await db.findUserById(req.userId)  // ✅ await adicionado
+    const user = await db.findUserById(req.userId)  
     if (!user) throw ApiError.notFound('User not found')
 
     const updatedKeys = { ...user.apiKeys, ...req.body }
-    const updated = await db.updateUser(req.userId, { apiKeys: updatedKeys })  // ✅ await adicionado
+    const updated = await db.updateUser(req.userId, { apiKeys: updatedKeys }) 
 
     return ok(res, { apiKeys: updated?.apiKeys })
   } catch (err) {

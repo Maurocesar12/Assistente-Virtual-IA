@@ -165,16 +165,54 @@ botsRouter.get('/:id/events', async (req, res, next) => {
       sendEvent('qr', { qrBase64: e.qrBase64, qrAscii: e.qrAscii })
     })
 
+    // ── Status de conexão wppconnect → mensagem amigável para o painel ───────
+    const SESSION_ERROR_MESSAGES: Record<string, { title: string; message: string; action: string }> = {
+      browserClose:       { title: 'Navegador fechado',      message: 'O navegador interno foi fechado inesperadamente.',           action: 'Clique em "Conectar" para reconectar o bot.' },
+      qrReadError:        { title: 'Erro ao ler QR Code',    message: 'O QR Code expirou ou não foi lido corretamente.',            action: 'Clique em "Conectar" e escaneie o QR novamente.' },
+      autocloseCalled:    { title: 'Conexão encerrada',      message: 'A sessão foi encerrada automaticamente por inatividade.',    action: 'Clique em "Conectar" para reconectar.' },
+      desconnectedMobile: { title: 'Desconectado pelo app',  message: 'O WhatsApp foi desconectado pelo celular.',                  action: 'Abra o WhatsApp → Dispositivos Conectados e reconecte.' },
+      disconnected:       { title: 'Conexão perdida',        message: 'A conexão com o WhatsApp foi perdida.',                     action: 'Clique em "Conectar" para reconectar.' },
+      notLogged:          { title: 'Sessão expirada',        message: 'Sua sessão do WhatsApp expirou.',                           action: 'Clique em "Conectar" e escaneie o QR Code novamente.' },
+      serverClose:        { title: 'Servidor encerrou',      message: 'O servidor do WhatsApp encerrou a conexão.',                action: 'Aguarde alguns minutos e clique em "Conectar".' },
+      deleteToken:        { title: 'Sessão removida',        message: 'Os dados de sessão foram removidos.',                      action: 'Clique em "Conectar" para iniciar nova sessão.' },
+    }
+
+    const SESSION_FAILED_KEYS = new Set(Object.keys(SESSION_ERROR_MESSAGES))
+
     const unsubSession = whatsappManager.onSessionUpdate(async (e) => {
       if (e.botId !== bot.id) return
       sendEvent('status', { status: e.status })
+
+      if (SESSION_FAILED_KEYS.has(e.status)) {
+        const info = SESSION_ERROR_MESSAGES[e.status] ?? {
+          title:   'Conexão perdida',
+          message: 'Erro inesperado na sessão do WhatsApp.',
+          action:  'Clique em "Conectar" para tentar reconectar.',
+        }
+        sendEvent('error-bot', { ...info, status: e.status, botId: e.botId })
+      }
+
       const updated = await db.findBotById(bot.id)
       if (updated) sendEvent('bot', updated)
+    })
+
+    // ── Erros de IA → painel do operador (NUNCA enviados ao contato) ─────────
+    const unsubAIError = whatsappManager.onAIError((e) => {
+      if (e.botId !== bot.id) return
+      // Envia apenas title, action e kind ao front — detail fica nos logs do servidor
+      sendEvent('ai-error', {
+        botId:   e.botId,
+        botName: e.botName,
+        kind:    e.kind,
+        title:   e.title,
+        action:  e.action,
+      })
     })
 
     req.on('close', () => {
       unsubQR()
       unsubSession()
+      unsubAIError()
     })
   } catch (err) {
     next(err)
