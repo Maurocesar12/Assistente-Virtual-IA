@@ -506,7 +506,7 @@ textarea.field { resize: vertical; line-height: 1.6; }
   display: none; min-height: 100vh;
   background: var(--bg);
 }
-
+/* ✅ CORREÇÃO: #forgot incluído para centralizar igual login/register */
 #login.active, #register.active, #forgot.active {
   display: flex; align-items: center; justify-content: center; padding: 40px;
 }
@@ -611,17 +611,10 @@ textarea.field { resize: vertical; line-height: 1.6; }
 }
 
 .qr-wrap {
-width: 260px;
-  height: 260px;
-  margin: 16px auto;
-  background: transparent;
-  border: none;
-  border-radius: var(--r);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  overflow: visible;
+  width: 250px; height: 220px; margin: 16px auto;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r); display: flex; align-items: center; justify-content: center;
+  position: relative; overflow: hidden;
 }
 .qr-canvas { display: grid; grid-template-columns: repeat(11, 1fr); gap: 2px; padding: 12px; }
 .qr-cell { aspect-ratio: 1; border-radius: 1px; }
@@ -701,4 +694,12 @@ width: 260px;
   .main { margin-left: 0; }
   .grid-2 { grid-template-columns: 1fr; }
   .steps-row { flex-direction: column; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   ✦ Feature 4 — Typing indicator (IA digitando)
+═══════════════════════════════════════════════════════ */
+@keyframes typing-dot {
+  0%, 60%, 100% { transform: translateY(0);   opacity: 0.4; }
+  30%            { transform: translateY(-4px); opacity: 1;   }
 }

@@ -340,11 +340,86 @@ const Conversations = {
     try { const result = await Api.get('/conversations'); State.conversations = Array.isArray(result) ? result : []; Conversations.render(); Conversations.renderOverview() }
     catch (_) { State.conversations = [] }
   },
+
   render() {
     const el = UI.el('convsList'); if (!el) return
-    if (!State.conversations.length) { el.innerHTML = `<div class="empty"><div class="empty-icon">💬</div><h3>Nenhuma conversa</h3><p>As conversas aparecerão quando seu bot estiver ativo</p></div>`; return }
-    el.innerHTML = State.conversations.map(c => { const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); return `<div class="conv-row" data-search="${Bots.escape(c.contactName?.toLowerCase() ?? '')} ${Bots.escape(c.lastMessage?.toLowerCase() ?? '')}" onclick="ChatViewer.open('${c.id}','${Bots.escape(c.contactName || c.contactPhone)}','${Bots.escape(c.contactPhone)}')"><div class="conv-avatar">👤</div><div class="conv-body" style="min-width:0"><div class="conv-name">${Bots.escape(c.contactName || c.contactPhone)}</div><div class="conv-preview" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Bots.escape(c.lastMessage)}</div></div><div class="conv-right" style="flex-shrink:0"><div class="conv-time">${time}</div>${c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''}</div></div>` }).join('')
+    if (!State.conversations.length) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">💬</div><h3>Nenhuma conversa</h3><p>As conversas aparecerão quando seu bot estiver ativo</p></div>`
+      return
+    }
+    el.innerHTML = State.conversations.map(c => {
+      const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+
+      // ✦ Feature 2 & 3 — badge de status da conversa
+      const pauseBadge = c.humanHandoff
+        ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px;background:rgba(240,179,64,0.15);color:#f0c060;border:1px solid rgba(240,179,64,0.3);white-space:nowrap">👤 Humano</span>`
+        : c.isPaused
+          ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px;background:rgba(240,179,64,0.1);color:#f0b340;border:1px solid rgba(240,179,64,0.25);white-space:nowrap">⏸ Pausado</span>`
+          : ''
+
+      const pauseBtn = c.isPaused
+        ? `<button class="btn btn-ghost btn-sm" title="Retomar bot" onclick="Conversations.resume('${c.id}')" style="padding:3px 7px;font-size:10px">▶ Retomar</button>`
+        : `<button class="btn btn-ghost btn-sm" title="Pausar bot" onclick="Conversations.pause('${c.id}')" style="padding:3px 7px;font-size:10px">⏸</button>`
+
+      const unreadBadge = c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''
+
+      return `<div class="conv-row" id="conv-row-${c.id}" data-search="${Bots.escape(c.contactName?.toLowerCase() ?? '')} ${Bots.escape(c.lastMessage?.toLowerCase() ?? '')}">
+          <div class="conv-avatar" style="cursor:pointer" onclick="ChatViewer.open('${c.id}','${Bots.escape(c.contactName || c.contactPhone)}','${Bots.escape(c.contactPhone)}')">👤</div>
+          <div class="conv-body" style="min-width:0;cursor:pointer;flex:1" onclick="ChatViewer.open('${c.id}','${Bots.escape(c.contactName || c.contactPhone)}','${Bots.escape(c.contactPhone)}')">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+              <div class="conv-name">${Bots.escape(c.contactName || c.contactPhone)}</div>
+              ${pauseBadge}
+            </div>
+            <div class="conv-preview" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Bots.escape(c.lastMessage)}</div>
+          </div>
+          <div class="conv-right" style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+            <div class="conv-time">${time}</div>
+            ${unreadBadge}
+            <div style="display:flex;gap:4px;margin-top:2px">
+              ${pauseBtn}
+              <button class="btn btn-ghost btn-sm" title="Excluir conversa" onclick="Conversations.deleteChat('${c.id}')" style="padding:3px 7px;font-size:10px;color:var(--red)">🗑</button>
+            </div>
+          </div>
+        </div>`
+    }).join('')
   },
+
+  // ✦ Feature 1 — Delete Chat
+  async deleteChat(convId) {
+    if (!confirm('Excluir esta conversa? Todas as mensagens serão apagadas permanentemente.')) return
+    try {
+      await Api.delete(`/conversations/${convId}`)
+      State.conversations = State.conversations.filter(c => c.id !== convId)
+      Conversations.render()
+      Conversations.renderOverview()
+      toast('Conversa excluída', 'info')
+    } catch (err) { toast('Erro ao excluir: ' + err.message, 'error') }
+  },
+
+  // ✦ Feature 2 — Manual pause
+  async pause(convId) {
+    try {
+      const updated = await Api.post(`/conversations/${convId}/pause`)
+      const idx = State.conversations.findIndex(c => c.id === convId)
+      if (idx >= 0) State.conversations[idx] = { ...State.conversations[idx], ...updated }
+      Conversations.render()
+      ChatViewer.updatePauseStatus(convId, true, false)
+      toast('Bot pausado para esta conversa ⏸', 'info')
+    } catch (err) { toast('Erro ao pausar: ' + err.message, 'error') }
+  },
+
+  // ✦ Feature 2 — Resume
+  async resume(convId) {
+    try {
+      const updated = await Api.post(`/conversations/${convId}/resume`)
+      const idx = State.conversations.findIndex(c => c.id === convId)
+      if (idx >= 0) State.conversations[idx] = { ...State.conversations[idx], ...updated }
+      Conversations.render()
+      ChatViewer.updatePauseStatus(convId, false, false)
+      toast('Bot retomado ▶', 'success')
+    } catch (err) { toast('Erro ao retomar: ' + err.message, 'error') }
+  },
+
   renderOverview() {
     const el = UI.el('ov-convs'); if (!el) return
     if (!State.conversations.length) { el.innerHTML = `<div class="empty" style="padding:32px"><div class="empty-icon" style="font-size:28px">💬</div><h3>Nenhuma conversa</h3></div>`; return }
@@ -501,16 +576,38 @@ const Connect = {
       if (idx >= 0) State.bots[idx] = updatedBot
       Bots.render(); Bots.renderOverview(); Bots.updateSteps()
 
-      // ✅ CONDIÇÃO DUPLA OBRIGATÓRIA:
-      // - qrReceived: garante que o QR foi exibido nesta sessão (não sessão restaurada)
-      // - connectedOk: garante que o status 'inChat' chegou via evento 'status' (escanou de fato)
-      // Sem isso, sessões antigas restauradas pelo wppconnect fecham o modal prematuramente.
+      // CONDIÇÃO DUPLA OBRIGATÓRIA: QR visto + status inChat confirmado
       if (updatedBot.isConnected && qrReceived && connectedOk) {
         clearTimeout(errorGraceTimer)
         source.close()
-        BotAlerts.dismissByBotId(botId)  // limpa todos os alertas do bot ao reconectar com sucesso
+        BotAlerts.dismissByBotId(botId)
         setTimeout(() => { Modals.close('connect'); toast('Bot conectado ao WhatsApp! 🟢', 'success') }, 1500)
       }
+    })
+
+    // ✦ Feature 2 & 3 — bot-pause: manual override ou human handoff
+    source.addEventListener('bot-pause', (e) => {
+      const { convId, contactPhone, isPaused, humanHandoff, reason } = JSON.parse(e.data)
+
+      // Atualiza estado local da conversa
+      const idx = State.conversations.findIndex(c => c.id === convId)
+      if (idx >= 0) {
+        State.conversations[idx] = { ...State.conversations[idx], isPaused, humanHandoff }
+        Conversations.render()
+        Conversations.renderOverview()
+      }
+
+      if (reason === 'human_handoff')   toast(`👤 ${contactPhone} solicitou atendimento humano`, 'warning')
+      else if (reason === 'manual_override') toast(`⏸ Bot pausado para ${contactPhone}`, 'info')
+      else if (reason === 'resumed')    toast(`▶ Bot retomado para ${contactPhone}`, 'success')
+
+      ChatViewer.updatePauseStatus(convId, isPaused, humanHandoff)
+    })
+
+    // ✦ Feature 4 — bot-typing: indicador de digitação da IA no chat viewer
+    source.addEventListener('bot-typing', (e) => {
+      const { convId, isTyping } = JSON.parse(e.data)
+      ChatViewer.setTypingIndicator(convId, isTyping)
     })
 
     source.onerror = () => {
@@ -666,18 +763,23 @@ const Billing = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ChatViewer = {
-  async open(convId, contactName, contactPhone) {
-    // Preenche header
-    UI.el('chatContactName').textContent = contactName || contactPhone
-    UI.el('chatContactPhone').textContent = contactPhone
+  _activeConvId: null,
 
-    // Busca bot do contato (para badge)
+  async open(convId, contactName, contactPhone) {
+    ChatViewer._activeConvId = convId
+
     const conv = State.conversations.find(c => c.id === convId)
     const bot  = conv ? State.bots.find(b => b.id === conv.botId) : null
+
+    UI.el('chatContactName').textContent  = contactName || contactPhone
+    UI.el('chatContactPhone').textContent = contactPhone
+
     const badge = UI.el('chatBotBadge')
     if (badge) badge.textContent = bot ? bot.name : 'Bot'
 
-    // Abre modal e mostra loading
+    // ✦ Feature 2 & 3 — status badge no header do chat viewer
+    ChatViewer.updatePauseStatus(convId, conv?.isPaused ?? false, conv?.humanHandoff ?? false)
+
     document.getElementById('m-chat')?.classList.add('open')
     UI.el('chatMessages').innerHTML = `
       <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:13px">
@@ -713,20 +815,17 @@ const ChatViewer = {
     if (count) count.textContent = `${messages.length} mensagem${messages.length !== 1 ? 's' : ''}`
 
     container.innerHTML = messages.map(m => {
-      const isUser = m.role === 'user'
-      const time   = new Date(m.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-      const text   = Bots.escape(m.content)
+      const isUser  = m.role === 'user'
+      const time    = new Date(m.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      const text    = Bots.escape(m.content)
       const isError = m.role === 'assistant' && m.content.startsWith('⚠️')
 
       return `
         <div style="display:flex;flex-direction:column;align-items:${isUser ? 'flex-start' : 'flex-end'};gap:2px">
           <div style="
-            max-width: 80%;
-            padding: 9px 13px;
-            border-radius: ${isUser ? '4px 14px 14px 14px' : '14px 4px 14px 14px'};
-            font-size: 13px;
-            line-height: 1.55;
-            word-break: break-word;
+            max-width:80%;padding:9px 13px;
+            border-radius:${isUser ? '4px 14px 14px 14px' : '14px 4px 14px 14px'};
+            font-size:13px;line-height:1.55;word-break:break-word;
             ${isUser
               ? 'background:var(--surface3);color:var(--text);border:1px solid var(--border2);'
               : isError
@@ -738,8 +837,72 @@ const ChatViewer = {
         </div>`
     }).join('')
 
-    // Scroll para a última mensagem
     setTimeout(() => { container.scrollTop = container.scrollHeight }, 50)
+  },
+
+  // ✦ Feature 2 & 3 — badge de status do bot no header do chat viewer
+  updatePauseStatus(convId, isPaused, humanHandoff) {
+    if (ChatViewer._activeConvId !== convId) return
+    const statusEl = UI.el('chatPauseStatus')
+    if (!statusEl) return
+
+    if (humanHandoff) {
+      statusEl.innerHTML =
+        `<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:100px;` +
+        `background:rgba(240,179,64,0.15);color:#f0c060;border:1px solid rgba(240,179,64,0.3)">` +
+        `👤 Aguardando humano</span>` +
+        `<button class="btn btn-ghost btn-sm" onclick="ChatViewer.resumeCurrentChat()" style="padding:3px 8px;font-size:10px">▶ Retomar</button>`
+    } else if (isPaused) {
+      statusEl.innerHTML =
+        `<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:100px;` +
+        `background:rgba(240,179,64,0.1);color:#f0b340;border:1px solid rgba(240,179,64,0.25)">` +
+        `⏸ Bot pausado</span>` +
+        `<button class="btn btn-ghost btn-sm" onclick="ChatViewer.resumeCurrentChat()" style="padding:3px 8px;font-size:10px">▶ Retomar</button>`
+    } else {
+      statusEl.innerHTML =
+        `<span style="font-size:11px;padding:3px 10px;border-radius:100px;` +
+        `background:rgba(0,212,106,0.08);color:var(--green);border:1px solid rgba(0,212,106,0.2)">` +
+        `🤖 Bot ativo</span>` +
+        `<button class="btn btn-ghost btn-sm" onclick="ChatViewer.pauseCurrentChat()" style="padding:3px 8px;font-size:10px">⏸ Pausar</button>`
+    }
+  },
+
+  async pauseCurrentChat() {
+    const convId = ChatViewer._activeConvId
+    if (convId) await Conversations.pause(convId)
+  },
+
+  async resumeCurrentChat() {
+    const convId = ChatViewer._activeConvId
+    if (convId) await Conversations.resume(convId)
+  },
+
+  // ✦ Feature 4 — typing indicator: 3 pontos animados enquanto a IA gera resposta
+  setTypingIndicator(convId, isTyping) {
+    if (ChatViewer._activeConvId !== convId) return
+    const container = UI.el('chatMessages')
+    if (!container) return
+
+    const existing = container.querySelector('#typing-indicator')
+
+    if (isTyping && !existing) {
+      const indicator = document.createElement('div')
+      indicator.id = 'typing-indicator'
+      indicator.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:2px;animation:fade-up 0.2s ease'
+      indicator.innerHTML =
+        `<div style="padding:10px 16px;border-radius:14px 4px 14px 14px;` +
+        `background:rgba(0,212,106,0.08);border:1px solid rgba(0,212,106,0.15);` +
+        `display:inline-flex;align-items:center;gap:5px;">` +
+        `<span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;animation:typing-dot 1.2s infinite;animation-delay:0s"></span>` +
+        `<span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;animation:typing-dot 1.2s infinite;animation-delay:0.2s"></span>` +
+        `<span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;animation:typing-dot 1.2s infinite;animation-delay:0.4s"></span>` +
+        `</div>` +
+        `<span style="font-size:10px;color:var(--text-dim);padding:0 4px">🤖 digitando...</span>`
+      container.appendChild(indicator)
+      container.scrollTop = container.scrollHeight
+    } else if (!isTyping && existing) {
+      existing.remove()
+    }
   },
 }
 

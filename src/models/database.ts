@@ -1,42 +1,60 @@
 import { PrismaClient } from '@prisma/client'
+import { any } from 'zod/v4'
 
 const prisma = new PrismaClient()
 
 export type AIModel = 'gemini-2.5-flash' | 'gpt-4' | 'gpt-3.5-turbo'
-export type Plan = 'starter' | 'pro' | 'enterprise'
+export type Plan    = 'starter' | 'pro' | 'enterprise'
 
 export interface ApiKeys {
-  openaiKey?: string
+  openaiKey?:         string
   openaiAssistantId?: string
-  geminiKey?: string
+  geminiKey?:         string
 }
 
 export interface User {
-  id: string
-  name: string
-  lastName: string
-  email: string
-  passwordHash: string
-  plan: Plan
-  apiKeys: ApiKeys
+  id:                 string
+  name:               string
+  lastName:           string
+  email:              string
+  passwordHash:       string
+  plan:               Plan
+  apiKeys:            ApiKeys
   mustChangePassword: boolean
-  createdAt: Date
-  updatedAt: Date
+  createdAt:          Date
+  updatedAt:          Date
 }
 
 export interface Bot {
-  id: string
-  userId: string
-  name: string
-  model: AIModel
-  prompt: string
-  isActive: boolean
-  isConnected: boolean
-  phone?: string | null
-  sessionName: string
+  id:           string
+  userId:       string
+  name:         string
+  model:        AIModel
+  prompt:       string
+  isActive:     boolean
+  isConnected:  boolean
+  phone?:       string | null
+  sessionName:  string
   messageCount: number
-  createdAt: Date
-  updatedAt: Date
+  createdAt:    Date
+  updatedAt:    Date
+}
+
+// ─── Conversation agora carrega isPaused e humanHandoff ───────────────────────
+export interface Conversation {
+  id:            string
+  botId:         string
+  userId:        string
+  contactName:   string
+  contactPhone:  string
+  lastMessage:   string
+  lastMessageAt: Date
+  unreadCount:   number
+  messageCount:  number
+
+  // ✦ Feature 2 & 3 — intervenção humana e transbordo
+  isPaused:      boolean   // true = bot silenciado para este chat
+  humanHandoff:  boolean   // true = aguardando atendimento humano
 }
 
 class Database {
@@ -88,19 +106,12 @@ class Database {
 
   async findValidResetToken(tokenHash: string) {
     return prisma.passwordResetToken.findFirst({
-      where: {
-        tokenHash,
-        usedAt:    null,
-        expiresAt: { gt: new Date() },
-      },
+      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
     })
   }
 
   async markResetTokenUsed(id: string) {
-    return prisma.passwordResetToken.update({
-      where: { id },
-      data:  { usedAt: new Date() },
-    })
+    return prisma.passwordResetToken.update({ where: { id }, data: { usedAt: new Date() } })
   }
 
   async findPendingResetTokensForUser(userId: string) {
@@ -111,27 +122,27 @@ class Database {
 
   async invalidatePreviousResetTokens(userId: string) {
     return prisma.passwordResetToken.updateMany({
-      where:  { userId, usedAt: null },
-      data:   { usedAt: new Date() },
+      where: { userId, usedAt: null },
+      data:  { usedAt: new Date() },
     })
   }
 
   // ── Bots ───────────────────────────────────────────────────────────────────
 
   async createBot(data: Omit<Bot, 'id' | 'createdAt' | 'updatedAt'>): Promise<Bot> {
-    if (!data.userId || data.userId === 'undefined') {
+    if (!data.userId || data.userId === 'undefined')
       throw new Error('Não foi possível identificar o usuário. Saia e faça login novamente.')
-    }
+
     const bot = await prisma.bot.create({
       data: {
-        userId:      data.userId,
-        name:        data.name,
-        model:       data.model,
-        prompt:      data.prompt,
-        isActive:    data.isActive    ?? false,
-        isConnected: data.isConnected ?? false,
-        phone:       data.phone       ?? null,
-        sessionName: data.sessionName,
+        userId:       data.userId,
+        name:         data.name,
+        model:        data.model,
+        prompt:       data.prompt,
+        isActive:     data.isActive    ?? false,
+        isConnected:  data.isConnected ?? false,
+        phone:        data.phone       ?? null,
+        sessionName:  data.sessionName,
         messageCount: data.messageCount ?? 0,
       },
     })
@@ -147,7 +158,7 @@ class Database {
   async findBotsByUserId(userId: string): Promise<Bot[]> {
     if (!userId || userId === 'undefined') return []
     const bots = await prisma.bot.findMany({ where: { userId }, orderBy: { createdAt: 'desc' } })
-    return bots.map(b => this.parseBot(b))
+    return bots.map((b: any) => this.parseBot(b))
   }
 
   async updateBot(id: string, data: Partial<Omit<Bot, 'id' | 'userId' | 'createdAt'>>): Promise<Bot | null> {
@@ -164,33 +175,106 @@ class Database {
   // ── Conversations ──────────────────────────────────────────────────────────
 
   async upsertConversation(data: {
-    botId: string; userId: string; contactName: string; contactPhone: string
-    lastMessage: string; lastMessageAt: Date; unreadCount: number; messageCount: number
+    botId:         string
+    userId:        string
+    contactName:   string
+    contactPhone:  string
+    lastMessage:   string
+    lastMessageAt: Date
+    unreadCount:   number
+    messageCount:  number
   }) {
     return prisma.conversation.upsert({
       where:  { botId_contactPhone: { botId: data.botId, contactPhone: data.contactPhone } },
-      update: { lastMessage: data.lastMessage, lastMessageAt: data.lastMessageAt, unreadCount: { increment: data.unreadCount }, messageCount: { increment: data.messageCount } },
-      create: { ...data },
+      update: {
+        lastMessage:   data.lastMessage,
+        lastMessageAt: data.lastMessageAt,
+        unreadCount:   { increment: data.unreadCount },
+        messageCount:  { increment: data.messageCount },
+      },
+      // isPaused e humanHandoff NÃO devem ser passados no create:
+      // o schema os define com @default(false) — Prisma os inicializa automaticamente.
+      create: {
+        botId:         data.botId,
+        userId:        data.userId,
+        contactName:   data.contactName,
+        contactPhone:  data.contactPhone,
+        lastMessage:   data.lastMessage,
+        lastMessageAt: data.lastMessageAt,
+        unreadCount:   data.unreadCount,
+        messageCount:  data.messageCount,
+      },
     })
   }
 
-  async findConversationsByUserId(userId: string) {
+  async findConversationsByUserId(userId: string): Promise<Conversation[]> {
     if (!userId || userId === 'undefined') return []
-    return prisma.conversation.findMany({ where: { userId }, orderBy: { lastMessageAt: 'desc' } })
+    const rows = await prisma.conversation.findMany({
+      where:   { userId },
+      orderBy: { lastMessageAt: 'desc' },
+    })
+    return rows.map((r: any) => this.parseConversation(r))
   }
 
-  async findConversationsByBotId(botId: string) {
-    return prisma.conversation.findMany({ where: { botId }, orderBy: { lastMessageAt: 'desc' } })
+  async findConversationsByBotId(botId: string): Promise<Conversation[]> {
+    const rows = await prisma.conversation.findMany({
+      where:   { botId },
+      orderBy: { lastMessageAt: 'desc' },
+    })
+    return rows.map((r: any) => this.parseConversation(r))
+  }
+
+  async findConversationById(id: string): Promise<Conversation | null> {
+    const row = await prisma.conversation.findUnique({ where: { id } })
+    return row ? this.parseConversation(row) : null
+  }
+
+  // ✦ Feature 1 — Delete Chat
+  async deleteConversation(id: string): Promise<void> {
+    await prisma.message.deleteMany({ where: { conversationId: id } })
+    await prisma.conversation.delete({ where: { id } })
+  }
+
+  // ✦ Feature 2 & 3 — pause / resume / handoff
+  async setConversationPaused(id: string, isPaused: boolean): Promise<Conversation | null> {
+    const row = await prisma.conversation.update({
+      where: { id },
+      data:  { isPaused },
+    })
+    return this.parseConversation(row)
+  }
+
+  async setConversationHandoff(id: string, humanHandoff: boolean): Promise<Conversation | null> {
+    const row = await prisma.conversation.update({
+      where: { id },
+      data:  { humanHandoff, isPaused: humanHandoff }, // handoff sempre pausa o bot
+    })
+    return this.parseConversation(row)
+  }
+
+  // Busca a conversa por botId+phone (usada pelo whatsapp service)
+  async findConversationByBotAndPhone(botId: string, contactPhone: string): Promise<Conversation | null> {
+    const row = await prisma.conversation.findUnique({
+      where: { botId_contactPhone: { botId, contactPhone } },
+    })
+    return row ? this.parseConversation(row) : null
   }
 
   // ── Messages ───────────────────────────────────────────────────────────────
 
-  async createMessage(data: { conversationId: string; role: 'user' | 'assistant'; content: string }) {
+  async createMessage(data: {
+    conversationId: string
+    role:           'user' | 'assistant'
+    content:        string
+  }) {
     return prisma.message.create({ data })
   }
 
   async findMessagesByConversationId(conversationId: string) {
-    return prisma.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'asc' } })
+    return prisma.message.findMany({
+      where:   { conversationId },
+      orderBy: { createdAt: 'asc' },
+    })
   }
 
   // ── Stats ──────────────────────────────────────────────────────────────────
@@ -200,13 +284,13 @@ class Database {
       prisma.bot.findMany({ where: { userId } }),
       prisma.conversation.findMany({ where: { userId } }),
     ])
-    const totalMessages = bots.reduce((s, b) => s + (b.messageCount ?? 0), 0)
+    const totalMessages = bots.reduce((s: any, b: { messageCount: any }) => s + (b.messageCount ?? 0), 0)
     return {
-      totalBots: bots.length,
-      activeBots: bots.filter(b => b.isActive && b.isConnected).length,
+      totalBots:          bots.length,
+      activeBots:         bots.filter((b: { isActive: any; isConnected: any }) => b.isActive && b.isConnected).length,
       totalConversations: conversations.length,
       totalMessages,
-      tokensUsed: totalMessages * 142,
+      tokensUsed:         totalMessages * 142,
     }
   }
 
@@ -215,38 +299,51 @@ class Database {
   private parseUser(u: any): User {
     return {
       ...u,
-      plan: u.plan as Plan,
+      plan:               u.plan as Plan,
       mustChangePassword: u.mustChangePassword ?? false,
-      apiKeys: typeof u.apiKeys === 'string' ? JSON.parse(u.apiKeys) : (u.apiKeys ?? {}),
+      apiKeys:            typeof u.apiKeys === 'string' ? JSON.parse(u.apiKeys) : (u.apiKeys ?? {}),
     }
   }
 
   private parseBot(b: any): Bot {
     return { ...b, model: b.model as AIModel }
   }
+
+  private parseConversation(c: any): Conversation {
+    return {
+      ...c,
+      isPaused:     c.isPaused     ?? false,
+      humanHandoff: c.humanHandoff ?? false,
+    }
+  }
 }
 
 const instance = new Database()
 
 export const db = {
-  createUser:                      instance.createUser.bind(instance),
-  findUserById:                    instance.findUserById.bind(instance),
-  findUserByEmail:                 instance.findUserByEmail.bind(instance),
-  updateUser:                      instance.updateUser.bind(instance),
-  createPasswordResetToken:        instance.createPasswordResetToken.bind(instance),
-  findValidResetToken:             instance.findValidResetToken.bind(instance),
-  markResetTokenUsed:              instance.markResetTokenUsed.bind(instance),
-  invalidatePreviousResetTokens:   instance.invalidatePreviousResetTokens.bind(instance),
-  findPendingResetTokensForUser:   instance.findPendingResetTokensForUser.bind(instance),
-  createBot:                       instance.createBot.bind(instance),
-  findBotById:                     instance.findBotById.bind(instance),
-  findBotsByUserId:                instance.findBotsByUserId.bind(instance),
-  updateBot:                       instance.updateBot.bind(instance),
-  deleteBot:                       instance.deleteBot.bind(instance),
-  upsertConversation:              instance.upsertConversation.bind(instance),
-  findConversationsByUserId:       instance.findConversationsByUserId.bind(instance),
-  findConversationsByBotId:        instance.findConversationsByBotId.bind(instance),
-  createMessage:                   instance.createMessage.bind(instance),
-  findMessagesByConversationId:    instance.findMessagesByConversationId.bind(instance),
-  getUserStats:                    instance.getUserStats.bind(instance),
+  createUser:                       instance.createUser.bind(instance),
+  findUserById:                     instance.findUserById.bind(instance),
+  findUserByEmail:                  instance.findUserByEmail.bind(instance),
+  updateUser:                       instance.updateUser.bind(instance),
+  createPasswordResetToken:         instance.createPasswordResetToken.bind(instance),
+  findValidResetToken:              instance.findValidResetToken.bind(instance),
+  markResetTokenUsed:               instance.markResetTokenUsed.bind(instance),
+  invalidatePreviousResetTokens:    instance.invalidatePreviousResetTokens.bind(instance),
+  findPendingResetTokensForUser:    instance.findPendingResetTokensForUser.bind(instance),
+  createBot:                        instance.createBot.bind(instance),
+  findBotById:                      instance.findBotById.bind(instance),
+  findBotsByUserId:                 instance.findBotsByUserId.bind(instance),
+  updateBot:                        instance.updateBot.bind(instance),
+  deleteBot:                        instance.deleteBot.bind(instance),
+  upsertConversation:               instance.upsertConversation.bind(instance),
+  findConversationsByUserId:        instance.findConversationsByUserId.bind(instance),
+  findConversationsByBotId:         instance.findConversationsByBotId.bind(instance),
+  findConversationById:             instance.findConversationById.bind(instance),
+  deleteConversation:               instance.deleteConversation.bind(instance),
+  setConversationPaused:            instance.setConversationPaused.bind(instance),
+  setConversationHandoff:           instance.setConversationHandoff.bind(instance),
+  findConversationByBotAndPhone:    instance.findConversationByBotAndPhone.bind(instance),
+  createMessage:                    instance.createMessage.bind(instance),
+  findMessagesByConversationId:     instance.findMessagesByConversationId.bind(instance),
+  getUserStats:                     instance.getUserStats.bind(instance),
 }
