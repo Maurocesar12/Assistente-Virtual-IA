@@ -173,9 +173,11 @@ botsRouter.get('/:id/events', async (req, res, next) => {
     //
     //   FASE 3 — everConnected=true (já conectou ao menos uma vez)
     //     → qualquer falha aqui → sessão caiu → ALERTAR
+    //
+    // Dessa forma o usuário só vê alertas quando realmente há algo a fazer.
 
-    let qrShown       = false
-    let everConnected = false 
+    let qrShown       = false  // true após o primeiro QR ser enviado ao front
+    let everConnected = false  // true após primeiro status inChat/isLogged
 
     const SESSION_ERROR_MESSAGES: Record<string, { title: string; message: string; action: string }> = {
       browserClose:       { title: 'Navegador fechado',     message: 'O navegador interno foi fechado inesperadamente.',        action: 'Clique em "Conectar" para reconectar o bot.' },
@@ -225,13 +227,25 @@ botsRouter.get('/:id/events', async (req, res, next) => {
     // ── Erros de IA → painel do operador (NUNCA enviados ao contato) ─────────
     const unsubAIError = whatsappManager.onAIError((e) => {
       if (e.botId !== bot.id) return
-      // Envia apenas title, action e kind ao front — detail fica nos logs do servidor
       sendEvent('ai-error', {
-        botId:   e.botId,
-        botName: e.botName,
-        kind:    e.kind,
-        title:   e.title,
-        action:  e.action,
+        botId: e.botId, botName: e.botName, kind: e.kind, title: e.title, action: e.action,
+      })
+    })
+
+    // ── Feature 2 & 3 — bot-pause: manual override ou human handoff ─────────
+    const unsubPause = whatsappManager.onBotPause((e) => {
+      if (e.botId !== bot.id) return
+      sendEvent('bot-pause', {
+        convId: e.convId, contactPhone: e.contactPhone,
+        isPaused: e.isPaused, humanHandoff: e.humanHandoff, reason: e.reason,
+      })
+    })
+
+    // ── Feature 4 — bot-typing: indicador de digitação da IA ─────────────────
+    const unsubTyping = whatsappManager.onTyping((e) => {
+      if (e.botId !== bot.id) return
+      sendEvent('bot-typing', {
+        convId: e.convId, contactPhone: e.contactPhone, isTyping: e.isTyping,
       })
     })
 
@@ -239,6 +253,8 @@ botsRouter.get('/:id/events', async (req, res, next) => {
       unsubQR()
       unsubSession()
       unsubAIError()
+      unsubPause()
+      unsubTyping()
     })
   } catch (err) {
     next(err)

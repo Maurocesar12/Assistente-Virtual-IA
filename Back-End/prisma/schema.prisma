@@ -55,6 +55,11 @@ model Conversation {
   unreadCount  Int      @default(0)
   messageCount Int      @default(0)
 
+  // ✦ Feature 2 — Manual Override: bot silenciado para este chat
+  isPaused     Boolean  @default(false)
+  // ✦ Feature 3 — Human Handoff: aguardando atendimento humano
+  humanHandoff Boolean  @default(false)
+
   bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]
