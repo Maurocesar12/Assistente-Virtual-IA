@@ -162,22 +162,26 @@ botsRouter.get('/:id/events', async (req, res, next) => {
 
     // ── Máquina de estado da sessão SSE ──────────────────────────────────────
     //
-    // Regras para disparar alerta de erro:
+    // FASE 1 — qrShown=false, everConnected=false (bootstrap)
+    //   → status 'notLogged', 'deleteToken' são normais nesta fase → IGNORAR
+    //   → Qualquer outro status de falha também é ignorado (race condition de init)
     //
-    //   FASE 1 — qrShown=false, everConnected=false (inicializando)
-    //     → status de falha como 'notLogged', 'deleteToken' são NORMAIS nesta fase
-    //     → IGNORAR — wppconnect emite isso durante bootstrap, antes do QR aparecer
+    // FASE 2 — qrShown=true, everConnected=false (QR visível, aguardando scan)
+    //   → falha aqui = QR expirou ou erro real → ALERTAR
     //
-    //   FASE 2 — qrShown=true, everConnected=false (QR visível, aguardando scan)
-    //     → se vier falha aqui → QR expirou ou erro real → ALERTAR
+    // FASE 3 — everConnected=true (já conectou ao menos uma vez nesta sessão SSE)
+    //   → qualquer falha = sessão caiu → ALERTAR
     //
-    //   FASE 3 — everConnected=true (já conectou ao menos uma vez)
-    //     → qualquer falha aqui → sessão caiu → ALERTAR
-    //
-    // Dessa forma o usuário só vê alertas quando realmente há algo a fazer.
+    // Evento 'connected' explícito: emitido assim que inChat/isLogged chega,
+    // ANTES de buscar o bot no DB. Isso garante feedback imediato ao frontend
+    // independentemente da velocidade da query ao banco.
 
     let qrShown       = false  // true após o primeiro QR ser enviado ao front
     let everConnected = false  // true após primeiro status inChat/isLogged
+
+    // Status que NUNCA devem gerar alerta na fase 1 (bootstrap normal do wppconnect)
+    const BOOTSTRAP_NOISE = new Set(['notLogged', 'deleteToken', 'isLogged', 'inChat',
+                                      'desconnectedMobile', 'disconnected', 'notLogged'])
 
     const SESSION_ERROR_MESSAGES: Record<string, { title: string; message: string; action: string }> = {
       browserClose:       { title: 'Navegador fechado',     message: 'O navegador interno foi fechado inesperadamente.',        action: 'Clique em "Conectar" para reconectar o bot.' },
@@ -190,7 +194,7 @@ botsRouter.get('/:id/events', async (req, res, next) => {
       deleteToken:        { title: 'Sessão removida',       message: 'Os dados de sessão foram removidos.',                   action: 'Clique em "Conectar" para iniciar nova sessão.' },
     }
 
-    const SESSION_FAILED_KEYS = new Set(Object.keys(SESSION_ERROR_MESSAGES))
+    const SESSION_FAILED_KEYS    = new Set(Object.keys(SESSION_ERROR_MESSAGES))
     const SESSION_CONNECTED_KEYS = new Set(['inChat', 'isLogged'])
 
     const unsubQR = whatsappManager.onQRCodeForBot(bot.id, (e) => {
@@ -205,11 +209,20 @@ botsRouter.get('/:id/events', async (req, res, next) => {
 
       if (SESSION_CONNECTED_KEYS.has(e.status)) {
         everConnected = true
+
+        // ✅ Evento explícito de conexão bem-sucedida — chega IMEDIATAMENTE
+        // no frontend para mostrar tela de sucesso, antes mesmo de buscar no DB.
+        // O evento 'bot' com dados atualizados chega logo depois.
+        sendEvent('connected', { botId: e.botId, status: e.status })
       }
 
-      // Só emite alerta se o usuário já viu o QR OU se já esteve conectado.
-      // Status como 'notLogged' durante bootstrap (fase 1) são ignorados.
-      const shouldAlert = SESSION_FAILED_KEYS.has(e.status) && (qrShown || everConnected)
+      // Só emite alerta se:
+      // - É um status de falha conhecido, E
+      // - O usuário já viu o QR (fase 2) OU já estava conectado (fase 3), E
+      // - Não é ruído de bootstrap da fase 1 (evita alertas prematuros)
+      const isFailure = SESSION_FAILED_KEYS.has(e.status)
+      const isBootstrapNoise = BOOTSTRAP_NOISE.has(e.status) && !qrShown && !everConnected
+      const shouldAlert = isFailure && (qrShown || everConnected) && !isBootstrapNoise
 
       if (shouldAlert) {
         const info = SESSION_ERROR_MESSAGES[e.status] ?? {

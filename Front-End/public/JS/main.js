@@ -529,11 +529,16 @@ const Connect = {
     const source = new EventSource(`${API_URL}/bots/${botId}/events?token=${encodeURIComponent(token)}`)
     State.sseSource = source
 
-    let qrReceived = false, connectedOk = false
+    let qrReceived  = false
+    let connectedOk = false
+
+    // Timer de segurança: se após 35s nem QR nem conexão chegaram, avisa o usuário
     const errorGraceTimer = setTimeout(() => {
-      if (!qrReceived && !connectedOk && source.readyState !== EventSource.CLOSED)
-        Connect.log('Tempo esgotado aguardando QR Code. Tente novamente.', 'error')
-    }, 30_000)
+      if (!qrReceived && !connectedOk && source.readyState !== EventSource.CLOSED) {
+        Connect.log('Tempo esgotado aguardando QR Code. Tente fechar e reconectar.', 'error')
+        UI.el('qrStatus').textContent = '⚠️ Tempo esgotado — tente novamente'
+      }
+    }, 35_000)
 
     Connect.log('Iniciando conexão...', 'info')
 
@@ -543,17 +548,24 @@ const Connect = {
       const { qrBase64 } = JSON.parse(e.data)
       Connect.renderQR(qrBase64)
       Connect.log('QR Code gerado. Escaneie com o WhatsApp!', 'success')
-      UI.el('qrStatus').textContent = 'Escaneie o QR Code acima'
+      UI.el('qrStatus').textContent = 'Aponte o WhatsApp para o QR Code acima'
     })
 
     source.addEventListener('status', (e) => {
       const data = JSON.parse(e.data)
       Connect.log(`Status: ${data.status}`, 'info')
       if (data.status === 'inChat' || data.status === 'isLogged') {
-        connectedOk = true; clearTimeout(errorGraceTimer)
-        Connect.log('✓ WhatsApp conectado com sucesso!', 'success')
-        UI.el('qrStatus').textContent = '✅ Conectado!'
+        connectedOk = true
+        clearTimeout(errorGraceTimer)
       }
+    })
+
+    // ✅ Evento explícito de conexão — chega IMEDIATAMENTE quando inChat/isLogged é detectado
+    // ANTES do evento 'bot' (que aguarda query no DB). Isso garante feedback instantâneo.
+    source.addEventListener('connected', () => {
+      connectedOk = true
+      clearTimeout(errorGraceTimer)
+      Connect.showConnectedScreen()
     })
 
     // Erros de sessão WhatsApp (wppconnect) → alerta de reconexão
@@ -564,7 +576,7 @@ const Connect = {
       Connect.log(`⚠️ ${title}: ${message}`, 'error')
     })
 
-    // Erros de IA (config/quota/network) → alerta no painel, NUNCA enviado ao contato do WhatsApp
+    // Erros de IA → painel do operador, nunca enviados ao contato
     source.addEventListener('ai-error', (e) => {
       const { botId: errBotId, botName, kind, title, action } = JSON.parse(e.data)
       BotAlerts.show(errBotId, botName, kind, title, null, action)
@@ -576,35 +588,37 @@ const Connect = {
       if (idx >= 0) State.bots[idx] = updatedBot
       Bots.render(); Bots.renderOverview(); Bots.updateSteps()
 
-      // CONDIÇÃO DUPLA OBRIGATÓRIA: QR visto + status inChat confirmado
-      if (updatedBot.isConnected && qrReceived && connectedOk) {
+      // Fecha modal após atualização do bot confirmada no DB
+      // connectedOk já foi setado pelo evento 'connected' (mais rápido)
+      if (updatedBot.isConnected && connectedOk) {
         clearTimeout(errorGraceTimer)
         source.close()
         BotAlerts.dismissByBotId(botId)
-        setTimeout(() => { Modals.close('connect'); toast('Bot conectado ao WhatsApp! 🟢', 'success') }, 1500)
+        // A tela de sucesso já foi mostrada pelo evento 'connected'
+        // Fecha o modal após 2.5s para o usuário ler a confirmação
+        setTimeout(() => {
+          Modals.close('connect')
+          toast(`Bot conectado ao WhatsApp! 🟢`, 'success')
+        }, 2500)
       }
     })
 
-    // ✦ Feature 2 & 3 — bot-pause: manual override ou human handoff
+    // ✦ Feature 2 & 3 — bot-pause
     source.addEventListener('bot-pause', (e) => {
       const { convId, contactPhone, isPaused, humanHandoff, reason } = JSON.parse(e.data)
-
-      // Atualiza estado local da conversa
       const idx = State.conversations.findIndex(c => c.id === convId)
       if (idx >= 0) {
         State.conversations[idx] = { ...State.conversations[idx], isPaused, humanHandoff }
         Conversations.render()
         Conversations.renderOverview()
       }
-
-      if (reason === 'human_handoff')   toast(`👤 ${contactPhone} solicitou atendimento humano`, 'warning')
+      if (reason === 'human_handoff')        toast(`👤 ${contactPhone} solicitou atendimento humano`, 'warning')
       else if (reason === 'manual_override') toast(`⏸ Bot pausado para ${contactPhone}`, 'info')
-      else if (reason === 'resumed')    toast(`▶ Bot retomado para ${contactPhone}`, 'success')
-
+      else if (reason === 'resumed')         toast(`▶ Bot retomado para ${contactPhone}`, 'success')
       ChatViewer.updatePauseStatus(convId, isPaused, humanHandoff)
     })
 
-    // ✦ Feature 4 — bot-typing: indicador de digitação da IA no chat viewer
+    // ✦ Feature 4 — bot-typing
     source.addEventListener('bot-typing', (e) => {
       const { convId, isTyping } = JSON.parse(e.data)
       ChatViewer.setTypingIndicator(convId, isTyping)
@@ -612,8 +626,39 @@ const Connect = {
 
     source.onerror = () => {
       if (source.readyState === EventSource.CLOSED && !connectedOk)
-        Connect.log('Conexão SSE encerrada. Reconectando...', 'info')
+        Connect.log('Conexão SSE encerrada.', 'info')
     }
+  },
+
+  // ✅ Tela de sucesso — exibida IMEDIATAMENTE ao receber evento 'connected'
+  showConnectedScreen() {
+    Connect.log('✅ WhatsApp conectado com sucesso!', 'success')
+
+    const wrap = UI.el('qrWrap')
+    if (wrap) {
+      wrap.style.cssText = 'background:transparent;border:none;overflow:visible;'
+      wrap.innerHTML = `
+        <div style="
+          background:rgba(0,212,106,0.08);
+          border:1px solid rgba(0,212,106,0.25);
+          border-radius:16px;
+          padding:32px 40px;
+          display:flex;flex-direction:column;
+          align-items:center;justify-content:center;
+          gap:12px;
+          min-width:220px;
+          animation:fade-up 0.3s ease;
+        ">
+          <div style="font-size:52px;line-height:1">✅</div>
+          <div style="font-size:16px;font-weight:700;color:var(--green)">Conectado!</div>
+          <div style="font-size:12px;color:var(--text-muted);text-align:center;line-height:1.5">
+            WhatsApp vinculado com sucesso.<br>O bot já está pronto para responder.
+          </div>
+        </div>`
+    }
+
+    const status = UI.el('qrStatus')
+    if (status) status.textContent = '🟢 Bot ativo e respondendo'
   },
 
   renderQR(base64) {
@@ -683,8 +728,10 @@ const Connect = {
         </div>
         <div class="qr-scan-line"></div>`
     }
-    const status = UI.el('qrStatus'); if (status) status.textContent = 'Aguardando QR Code...'
-    const log = UI.el('connectLog'); if (log) log.innerHTML = ''
+    const status = UI.el('qrStatus')
+    if (status) status.textContent = 'Aguardando QR Code...'
+    const log = UI.el('connectLog')
+    if (log) log.innerHTML = ''
   },
 }
 
