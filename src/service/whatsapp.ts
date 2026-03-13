@@ -6,6 +6,7 @@ import { db, type Bot } from '../models/database.js'
 import { geminiManager } from './gemini.js'
 import { openaiManager } from './openai.js'
 import { splitMessages, sendMessagesWithDelay } from '../utils/messages.js'
+import { isMessageLimitReached, getPlanConfig } from '../utils/planLimits.js'
 
 const __dirname  = path.dirname(fileURLToPath(import.meta.url))
 const TOKENS_DIR = path.join(__dirname, '..', '..', 'tokens')
@@ -41,7 +42,6 @@ export interface QRCodeEvent  { botId: string; qrBase64: string; qrAscii: string
 export interface SessionEvent { botId: string; status: string }
 export interface AIErrorEvent { botId: string; botName: string; kind: AIErrorKind; title: string; detail: string; action: string }
 
-// Feature 2 + 3 — pausa do bot
 export interface BotPauseEvent {
   botId:        string
   convId:       string
@@ -51,7 +51,6 @@ export interface BotPauseEvent {
   reason:       'manual_override' | 'human_handoff' | 'resumed'
 }
 
-// Feature 4 — typing indicator
 export interface TypingEvent {
   botId:        string
   convId:       string
@@ -59,11 +58,20 @@ export interface TypingEvent {
   isTyping:     boolean
 }
 
-type QRListener      = (e: QRCodeEvent)   => void
-type SessionListener = (e: SessionEvent)  => void
-type AIErrorListener = (e: AIErrorEvent)  => void
-type PauseListener   = (e: BotPauseEvent) => void
-type TypingListener  = (e: TypingEvent)   => void
+export interface PlanLimitEvent {
+  botId:         string
+  userId:        string
+  plan:          string
+  totalMessages: number
+  messageLimit:  number
+}
+
+type QRListener        = (e: QRCodeEvent)    => void
+type SessionListener   = (e: SessionEvent)   => void
+type AIErrorListener   = (e: AIErrorEvent)   => void
+type PauseListener     = (e: BotPauseEvent)  => void
+type TypingListener    = (e: TypingEvent)    => void
+type PlanLimitListener = (e: PlanLimitEvent) => void
 
 const AI_ERROR_META: Record<AIErrorKind, { title: string; action: string }> = {
   config:  { title: 'Chave de API inválida', action: 'Vá em Configurações → API Keys e verifique suas credenciais.' },
@@ -94,8 +102,28 @@ function detectsHandoffIntent(message: string): boolean {
 
 const MAX_RETRIES            = 3
 const MESSAGE_BUFFER_TIMEOUT = 15_000
-const CONNECTED_STATUSES     = new Set(['inChat', 'isLogged'])
-const FAILED_STATUSES        = new Set(['browserClose', 'qrReadError', 'autocloseCalled', 'desconnectedMobile', 'disconnected'])
+
+// ── Status de conexão real ────────────────────────────────────────────────────
+// REGRA: bot só é marcado isConnected=true quando o wppconnect confirmar que o
+// QR foi escaneado E a sessão está ativa. 'inChat' é o único status 100% seguro
+// de que o usuário fez o scan. 'isLogged' pode aparecer em restaurações de
+// sessão antigas (tokens em disco) — por isso está FORA dos CONFIRMED_STATUSES
+// e tratado separadamente com a flag qrWasShown.
+const CONFIRMED_CONNECTED_STATUSES = new Set(['inChat'])
+
+// 'isLogged' só é tratado como conexão real se qrWasShown=true nesta sessão
+const MAYBE_CONNECTED_STATUSES = new Set(['isLogged'])
+
+// Qualquer um desses deve limpar a sessão e marcar bot como desconectado
+const FAILED_STATUSES = new Set([
+  'browserClose',
+  'qrReadError',       // QR expirou sem scan
+  'autocloseCalled',
+  'desconnectedMobile',
+  'disconnected',
+  'notLogged',         // ← adicionado: sessão sem autenticação
+  'deleteToken',       // ← adicionado: tokens deletados/corrompidos
+])
 
 // ═══════════════════════════════════════════════════════
 // TOKEN CLEANUP
@@ -130,11 +158,17 @@ export class WhatsAppManager {
   private messageTimers  = new Map<string, NodeJS.Timeout>()
   private lastQR         = new Map<string, { qrBase64: string; qrAscii: string }>()
 
-  private qrListeners:      QRListener[]      = []
-  private sessionListeners: SessionListener[] = []
-  private aiErrorListeners: AIErrorListener[] = []
-  private pauseListeners:   PauseListener[]   = []
-  private typingListeners:  TypingListener[]  = []
+  // ── qrWasShown: registra por sessão se o QR chegou ao frontend ────────────
+  // Impede que 'isLogged' de sessões restauradas de tokens antigos
+  // ative o bot sem que o usuário tenha de fato escaneado o QR.
+  private qrWasShown = new Map<string, boolean>()
+
+  private qrListeners:        QRListener[]        = []
+  private sessionListeners:   SessionListener[]   = []
+  private aiErrorListeners:   AIErrorListener[]   = []
+  private pauseListeners:     PauseListener[]     = []
+  private typingListeners:    TypingListener[]    = []
+  private planLimitListeners: PlanLimitListener[] = []
 
   // ── Subscriptions ────────────────────────────────────────────────────────
 
@@ -170,8 +204,11 @@ export class WhatsAppManager {
     return () => { this.typingListeners = this.typingListeners.filter(x => x !== l) }
   }
 
-  // Método público para rotas HTTP dispararem eventos SSE de pausa/retomada
-  // sem precisar acessar pauseListeners diretamente (que é private).
+  onPlanLimit(l: PlanLimitListener): () => void {
+    this.planLimitListeners.push(l)
+    return () => { this.planLimitListeners = this.planLimitListeners.filter(x => x !== l) }
+  }
+
   emitBotPause(event: Parameters<PauseListener>[0]): void {
     this.pauseListeners.forEach(l => l(event))
   }
@@ -181,7 +218,15 @@ export class WhatsAppManager {
   async startSession(bot: Bot): Promise<void> {
     if (this.clients.has(bot.id)) return
 
-    console.log(`[WhatsApp] Iniciando sessao para: ${bot.name}`)
+    console.log(`[WhatsApp] Iniciando sessão para: ${bot.name} (id: ${bot.id})`)
+
+    // Garante estado limpo antes de qualquer coisa
+    this.qrWasShown.delete(bot.id)
+    this.lastQR.delete(bot.id)
+
+    // Limpa tokens antigos no disco antes de criar nova sessão.
+    // Isso evita que wppconnect restaure uma sessão antiga e emita
+    // 'isLogged' sem o usuário ter escaneado o QR nesta sessão.
     await nukeAllBotTokens(bot.id)
 
     const sessionName = `zapgpt_${bot.id}_${Date.now()}`
@@ -189,33 +234,62 @@ export class WhatsAppManager {
 
     try {
       const client = await wppconnect.create({
-        session: sessionName, headless: 'new' as any,
-        logQR: false, autoClose: 0, disableWelcome: true,
+        session:          sessionName,
+        headless:         'new' as any,
+        logQR:            false,
+        autoClose:        0,             // nunca fecha sozinho — controlamos via stopSession
+        disableWelcome:   true,
         puppeteerOptions: {
-          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-                 '--disable-gpu', '--disable-extensions', `--user-data-dir=${sessionDir}`],
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-extensions',
+            `--user-data-dir=${sessionDir}`,
+          ],
         },
+
+        // ── QR Code ────────────────────────────────────────────────────────
         catchQR: (base64Qr: string, asciiQR: string) => {
+          // Marca que o QR foi mostrado nesta sessão
+          this.qrWasShown.set(bot.id, true)
           this.lastQR.set(bot.id, { qrBase64: base64Qr, qrAscii: asciiQR })
           this.qrListeners.forEach(l => l({ botId: bot.id, qrBase64: base64Qr, qrAscii: asciiQR }))
+          console.log(`[WhatsApp] QR gerado para: ${bot.name}`)
         },
+
+        // ── Status da sessão ───────────────────────────────────────────────
         statusFind: (status: string) => {
+          console.log(`[WhatsApp] Status [${bot.name}]: ${status}`)
           this.sessionListeners.forEach(l => l({ botId: bot.id, status }))
-          if (CONNECTED_STATUSES.has(status)) {
-            this.lastQR.delete(bot.id)
-            db.updateBot(bot.id, { isConnected: true, isActive: true }).catch(() => {})
-            // Captura o número do próprio bot para detectar override manual
-            client.getHostDevice().then((device: any) => {
-              const phone = device?.wid?.user ?? device?.id?.user
-              if (phone) db.updateBot(bot.id, { phone: `${phone}@c.us` }).catch(() => {})
-            }).catch(() => {})
+
+          // ── Conexão confirmada (scan real do QR) ─────────────────────────
+          if (CONFIRMED_CONNECTED_STATUSES.has(status)) {
+            this.onSessionConnected(bot, client)
             return
           }
+
+          // ── 'isLogged': só aceita como conexão real se QR foi mostrado ───
+          // Sem essa guarda, tokens antigos no disco causariam a ativação
+          // automática do bot sem que o usuário escaneasse o QR.
+          if (MAYBE_CONNECTED_STATUSES.has(status)) {
+            if (this.qrWasShown.get(bot.id) === true) {
+              this.onSessionConnected(bot, client)
+            } else {
+              console.warn(
+                `[WhatsApp] 'isLogged' recebido SEM QR mostrado para ${bot.name} — ` +
+                'ignorando (possível restauração de sessão antiga). Aguardando QR...'
+              )
+              // Força reset completo para garantir que o QR seja gerado
+              this.onSessionFailed(bot)
+            }
+            return
+          }
+
+          // ── Falha de sessão ───────────────────────────────────────────────
           if (FAILED_STATUSES.has(status)) {
-            this.lastQR.delete(bot.id)
-            this.clients.delete(bot.id)
-            setTimeout(() => nukeAllBotTokens(bot.id).catch(() => {}), 3000)
-            db.updateBot(bot.id, { isConnected: false, isActive: false }).catch(() => {})
+            this.onSessionFailed(bot)
           }
         },
       })
@@ -224,28 +298,64 @@ export class WhatsAppManager {
       this.attachMessageListener(bot, client)
     } catch (err) {
       this.clients.delete(bot.id)
+      this.qrWasShown.delete(bot.id)
       await db.updateBot(bot.id, { isConnected: false, isActive: false }).catch(() => {})
       throw err
     }
   }
 
+  // ── Handlers centralizados de conexão/falha ──────────────────────────────
+
+  /**
+   * Chamado quando a sessão é confirmada como conectada (QR escaneado).
+   * Único ponto que pode setar isConnected=true e isActive=true.
+   */
+  private onSessionConnected(bot: Bot, client: wppconnect.Whatsapp): void {
+    this.lastQR.delete(bot.id)
+    db.updateBot(bot.id, { isConnected: true, isActive: true }).catch(() => {})
+    console.log(`[WhatsApp] ✅ Bot conectado: ${bot.name}`)
+
+    // Captura o número do próprio bot para detectar override manual
+    client.getHostDevice().then((device: any) => {
+      const phone = device?.wid?.user ?? device?.id?.user
+      if (phone) db.updateBot(bot.id, { phone: `${phone}@c.us` }).catch(() => {})
+    }).catch(() => {})
+  }
+
+  /**
+   * Chamado quando a sessão falha ou é encerrada.
+   * Único ponto que limpa o cliente e reseta o estado do bot.
+   */
+  private onSessionFailed(bot: Bot): void {
+    this.lastQR.delete(bot.id)
+    this.qrWasShown.delete(bot.id)
+    this.clients.delete(bot.id)
+    // Limpa tokens com atraso para evitar EBUSY no Windows
+    setTimeout(() => nukeAllBotTokens(bot.id).catch(() => {}), 3000)
+    db.updateBot(bot.id, { isConnected: false, isActive: false }).catch(() => {})
+    console.log(`[WhatsApp] ❌ Sessão encerrada/falhou: ${bot.name}`)
+  }
+
   async stopSession(botId: string): Promise<void> {
     const client = this.clients.get(botId)
-    if (!client) return
-    try { await client.close() } catch (_) {}
+    if (client) {
+      try { await client.close() } catch (_) {}
+    }
     this.clients.delete(botId)
     this.lastQR.delete(botId)
+    this.qrWasShown.delete(botId)
     this.clearMessageBuffer(botId)
     await db.updateBot(botId, { isConnected: false, isActive: false })
     setTimeout(() => nukeAllBotTokens(botId).catch(() => {}), 3000)
+    console.log(`[WhatsApp] 🛑 Sessão parada manualmente: ${botId}`)
   }
 
   isRunning(botId: string): boolean { return this.clients.has(botId) }
 
-  // ── Feature 2 — Resume bot after manual override ─────────────────────────
+  // ── Feature 2 — Resume bot ────────────────────────────────────────────────
 
   async resumeBot(botId: string, convId: string): Promise<void> {
-    await db.setConversationHandoff(convId, false)  // também limpa isPaused
+    await db.setConversationHandoff(convId, false)
     const conv = await db.findConversationById(convId)
     if (!conv) return
     this.pauseListeners.forEach(l => l({
@@ -296,9 +406,7 @@ export class WhatsAppManager {
     this.messageBuffers.delete(botId)
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Core: processMessage
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Core: processMessage ─────────────────────────────────────────────────
 
   private async processMessage(
     bot: Bot, client: wppconnect.Whatsapp,
@@ -307,10 +415,22 @@ export class WhatsAppManager {
     const user = await db.findUserById(bot.userId)
     if (!user) return
 
-    // ── Feature 2: detecta intervenção manual do operador (mensagem do próprio número) ──
+    // ✦ Plan limit check
+    const stats = await db.getUserStats(bot.userId)
+    if (isMessageLimitReached(user.plan, stats.totalMessages)) {
+      const config = getPlanConfig(user.plan)
+      console.warn(`[Bot:${bot.name}] Limite de plano atingido (${stats.totalMessages}/${config.messageLimit})`)
+      this.planLimitListeners.forEach(l => l({
+        botId: bot.id, userId: bot.userId, plan: user.plan,
+        totalMessages: stats.totalMessages, messageLimit: config.messageLimit,
+      }))
+      await this.persistMessage(bot, from, message, null)
+      return
+    }
+
+    // ✦ Feature 2: detecta intervenção manual do operador
     const freshBot = await db.findBotById(bot.id)
     if (freshBot?.phone && from === freshBot.phone) {
-      // O chatId aqui é o número do cliente (destino da mensagem do operador)
       const targetConv = await db.findConversationByBotAndPhone(bot.id, chatId)
       if (targetConv && !targetConv.isPaused) {
         const updated = await db.setConversationPaused(targetConv.id, true)
@@ -327,7 +447,7 @@ export class WhatsAppManager {
 
     const conv = await db.findConversationByBotAndPhone(bot.id, from)
 
-    // ── Feature 3: Human Handoff intent ──────────────────────────────────
+    // ✦ Feature 3: Human Handoff intent
     if (conv && !conv.humanHandoff && detectsHandoffIntent(message)) {
       const updated = await db.setConversationHandoff(conv.id, true)
       if (updated) {
@@ -342,13 +462,13 @@ export class WhatsAppManager {
       return
     }
 
-    // ── Feature 2: bot pausado por override manual ────────────────────────
+    // ✦ Feature 2: bot pausado
     if (conv?.isPaused) {
       await this.persistMessage(bot, from, message, null)
       return
     }
 
-    // ── Feature 4: Typing indicator — emite antes de chamar a IA ─────────
+    // ✦ Feature 4: Typing indicator
     if (conv) {
       this.typingListeners.forEach(l => l({
         botId: bot.id, convId: conv.id, contactPhone: from, isTyping: true,
