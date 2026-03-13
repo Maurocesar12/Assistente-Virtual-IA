@@ -20,7 +20,7 @@ export const PLAN_CONFIG: Record<Plan, PlanConfig> = {
   },
   pro: {
     label:        'Pro',
-    price:        10.99,
+    price:         9.99,
     messageLimit: Infinity,
     botLimit:     5,
   },

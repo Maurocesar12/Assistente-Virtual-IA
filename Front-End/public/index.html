@@ -214,7 +214,7 @@
         <label class="field-label">Plano inicial</label>
         <select class="field" id="r-plan">
           <option value="starter">Starter — Grátis (50 mensagens/mês)</option>
-          <option value="pro">Pro — R$10,99/mês (ilimitado)</option>
+          <option value="pro">Pro — R$9,99/mês (ilimitado)</option>
         </select>
       </div>
       <button class="btn btn-primary btn-full btn-lg" id="registerBtn" onclick="Auth.register()">Criar conta grátis →</button>
@@ -416,7 +416,7 @@
             </div>
             <!-- ✦ Botão de upgrade — oculto automaticamente quando plano for Pro/Enterprise -->
             <button class="btn btn-primary mt-4" id="bilUpgradeBtn" onclick="PlanLimit.openUpgradeModal()">
-              ⚡ Fazer upgrade → Pro (R$10,99/mês)
+              ⚡ Fazer upgrade → Pro (R$9,99/mês)
             </button>
           </div>
         </div>
@@ -602,7 +602,7 @@
         </div>
         <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--green);margin-bottom:10px">PRO</div>
         <div style="font-family:var(--font-head);font-size:26px;font-weight:800;letter-spacing:-1px;color:var(--text);margin-bottom:12px">
-          R$10,99<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/mês</span>
+          R$9,99<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/mês</span>
         </div>
         <ul style="list-style:none;display:flex;flex-direction:column;gap:7px">
           <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span> Mensagens ilimitadas</li>
@@ -618,7 +618,7 @@
       onclick="toast('Redirecionando para checkout...','info'); Modals.close('upgradePlan')"
       style="margin-bottom:10px"
     >
-      ⚡ Assinar Pro por R$10,99/mês →
+      ⚡ Assinar Pro por R$9,99/mês →
     </button>
     <button class="btn btn-ghost btn-full" onclick="Modals.close('upgradePlan')">Agora não</button>
     <p style="font-size:11px;color:var(--text-dim);margin-top:14px;line-height:1.6">
