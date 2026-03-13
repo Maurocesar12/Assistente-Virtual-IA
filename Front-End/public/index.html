@@ -33,7 +33,7 @@
   </nav>
 
   <section class="l-hero">
-    <div class="hero-pill">🤖 Integrado com GPT-4 e Gemini 2.0</div>
+    <div class="hero-pill">🤖 Integrado com GPT-4 e Gemini 2.5</div>
     <h1>Automatize seu<br>WhatsApp com <em>IA</em></h1>
     <p>Configure em minutos um assistente de IA no seu WhatsApp. Atenda clientes 24/7, humanize conversas e escale sem esforço.</p>
     <div class="hero-actions">
@@ -74,17 +74,22 @@
         <div class="price-plan">Starter</div>
         <div class="price-amount">R$0<sub>/mês</sub></div>
         <ul class="price-features">
-          <li>1 número de WhatsApp</li><li>500 mensagens/mês</li>
-          <li>GPT-3.5 ou Gemini</li><li>Suporte por email</li>
+          <li>1 número de WhatsApp</li>
+          <li>50 mensagens/mês</li>
+          <li>GPT-3.5 ou Gemini</li>
+          <li>Suporte por email</li>
         </ul>
         <button class="btn btn-ghost btn-full" onclick="UI.page('register')">Começar grátis</button>
       </div>
       <div class="price-card pop" style="text-align:left">
         <div class="price-plan">Pro</div>
-        <div class="price-amount">R$97<sub>/mês</sub></div>
+        <div class="price-amount">R$10,99<sub>/mês</sub></div>
         <ul class="price-features">
-          <li>5 números de WhatsApp</li><li>Mensagens ilimitadas</li>
-          <li>GPT-4 & Gemini 2.0</li><li>Analytics avançado</li><li>Suporte prioritário</li>
+          <li>5 números de WhatsApp</li>
+          <li>Mensagens ilimitadas</li>
+          <li>GPT-4 & Gemini 2.5</li>
+          <li>Analytics avançado</li>
+          <li>Suporte prioritário</li>
         </ul>
         <button class="btn btn-primary btn-full" onclick="UI.page('register')">Assinar Pro</button>
       </div>
@@ -92,8 +97,10 @@
         <div class="price-plan">Enterprise</div>
         <div class="price-amount">Custom</div>
         <ul class="price-features">
-          <li>Números ilimitados</li><li>SLA garantido</li>
-          <li>Integração via API</li><li>Gerente de conta</li>
+          <li>Números ilimitados</li>
+          <li>SLA garantido</li>
+          <li>Integração via API</li>
+          <li>Gerente de conta</li>
         </ul>
         <button class="btn btn-ghost btn-full" onclick="toast('Entre em contato via WhatsApp!','info')">Falar com vendas</button>
       </div>
@@ -137,7 +144,6 @@
       </div>
       <div class="flex-between mt-2 mb-4">
         <span></span>
-        <!-- ✅ Agora chama a página de recuperação -->
         <a class="text-sm" style="color:var(--green);cursor:pointer" onclick="UI.page('forgot')">Esqueceu a senha?</a>
       </div>
       <button class="btn btn-primary btn-full btn-lg" id="loginBtn" onclick="Auth.login()">Entrar →</button>
@@ -160,8 +166,6 @@
     <div class="auth-card">
       <h2>Recuperar acesso</h2>
       <p class="sub">Enviaremos uma senha temporária para seu email</p>
-
-      <!-- Formulário -->
       <div id="fp-form">
         <div class="form-group">
           <label class="field-label">Email da conta</label>
@@ -174,8 +178,6 @@
           A senha expira em 15 minutos. Após o login, você deverá criar uma nova.
         </p>
       </div>
-
-      <!-- Sucesso -->
       <div id="fp-success" style="display:none;text-align:center">
         <div style="font-size:48px;margin-bottom:16px">📬</div>
         <h3 style="font-size:18px;font-weight:700;margin-bottom:10px">Email enviado!</h3>
@@ -183,14 +185,10 @@
           Se este email estiver cadastrado, você receberá a senha temporária em instantes.<br>
           <strong style="color:var(--text)">Verifique também a pasta de spam.</strong>
         </p>
-        <button class="btn btn-primary btn-full" onclick="UI.page('login')">
-          Ir para o login →
-        </button>
+        <button class="btn btn-primary btn-full" onclick="UI.page('login')">Ir para o login →</button>
       </div>
     </div>
-    <div class="auth-footer">
-      Lembrou a senha? <a onclick="UI.page('login')">Entrar</a>
-    </div>
+    <div class="auth-footer">Lembrou a senha? <a onclick="UI.page('login')">Entrar</a></div>
   </div>
 </div>
 
@@ -215,8 +213,8 @@
       <div class="form-group">
         <label class="field-label">Plano inicial</label>
         <select class="field" id="r-plan">
-          <option value="starter">Starter — Grátis</option>
-          <option value="pro">Pro — R$97/mês</option>
+          <option value="starter">Starter — Grátis (50 mensagens/mês)</option>
+          <option value="pro">Pro — R$10,99/mês (ilimitado)</option>
         </select>
       </div>
       <button class="btn btn-primary btn-full btn-lg" id="registerBtn" onclick="Auth.register()">Criar conta grátis →</button>
@@ -227,10 +225,6 @@
     <div class="auth-footer">Já tem conta? <a onclick="UI.page('login')">Entrar</a></div>
   </div>
 </div>
-
-<!-- ══════════════════════════════════════════════════════
-     ✅ NOVA PÁGINA — ESQUECI A SENHA
-══════════════════════════════════════════════════════ -->
 
 <!-- ══════════════════════════════════════════════════════
      DASHBOARD
@@ -276,7 +270,7 @@
 
     <div class="content">
 
-      <!-- ── BOT ALERTS CONTAINER — alertas de erro de conexão WhatsApp ── -->
+      <!-- BOT ALERTS CONTAINER -->
       <div id="botAlertsContainer" style="margin-bottom:0"></div>
 
       <!-- OVERVIEW -->
@@ -349,7 +343,6 @@
           <button class="tab-btn" onclick="UI.tab('t-apikeys',this)">API Keys</button>
           <button class="tab-btn" onclick="UI.tab('t-notif',this)">Notificações</button>
         </div>
-
         <div id="t-profile" class="tab-pane active" style="max-width:540px">
           <div class="card">
             <div class="card-header"><h3>Dados pessoais</h3></div>
@@ -362,33 +355,19 @@
               <button class="btn btn-primary" style="width:fit-content" onclick="Settings.saveProfile()">Salvar alterações</button>
             </div>
           </div>
-
-          <!-- ✅ NOVO card de troca de senha -->
-          <div class="card" style="margin-top:16px;">
+          <div class="card" style="margin-top:16px">
             <div class="card-header">
               <h3>Alterar senha</h3>
               <span class="text-xs text-dim">Recomendado após usar senha temporária</span>
             </div>
             <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
-              <div class="form-group" style="margin:0">
-                <label class="field-label">Senha atual</label>
-                <input class="field" type="password" id="cp-current" placeholder="Sua senha atual ou temporária" autocomplete="current-password">
-              </div>
-              <div class="form-group" style="margin:0">
-                <label class="field-label">Nova senha</label>
-                <input class="field" type="password" id="cp-new" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
-              </div>
-              <div class="form-group" style="margin:0">
-                <label class="field-label">Confirmar nova senha</label>
-                <input class="field" type="password" id="cp-confirm" placeholder="Repita a nova senha" autocomplete="new-password">
-              </div>
-              <button class="btn btn-primary" id="changePassBtn" style="width:fit-content" onclick="Settings.changePassword()">
-                Alterar senha
-              </button>
+              <div class="form-group" style="margin:0"><label class="field-label">Senha atual</label><input class="field" type="password" id="cp-current" placeholder="Sua senha atual ou temporária" autocomplete="current-password"></div>
+              <div class="form-group" style="margin:0"><label class="field-label">Nova senha</label><input class="field" type="password" id="cp-new" placeholder="Mínimo 8 caracteres" autocomplete="new-password"></div>
+              <div class="form-group" style="margin:0"><label class="field-label">Confirmar nova senha</label><input class="field" type="password" id="cp-confirm" placeholder="Repita a nova senha" autocomplete="new-password"></div>
+              <button class="btn btn-primary" id="changePassBtn" style="width:fit-content" onclick="Settings.changePassword()">Alterar senha</button>
             </div>
           </div>
         </div>
-
         <div id="t-apikeys" class="tab-pane" style="max-width:540px">
           <div class="card">
             <div class="card-header"><h3>Chaves de API</h3><span class="text-xs text-dim">Armazenadas com segurança</span></div>
@@ -400,30 +379,20 @@
             </div>
           </div>
         </div>
-
         <div id="t-notif" class="tab-pane" style="max-width:540px">
           <div class="card">
             <div class="card-header"><h3>Notificações</h3></div>
             <div class="card-body">
-              <div class="toggle-row">
-                <div class="toggle-info"><label>Email de novos usuários</label><small>Receba notificação quando um contato iniciar conversa</small></div>
-                <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-info"><label>Alertas de erro</label><small>Notificação se o bot apresentar falhas</small></div>
-                <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-info"><label>Relatório semanal</label><small>Resumo de performance toda segunda-feira</small></div>
-                <label class="toggle"><input type="checkbox"><span class="toggle-track"></span></label>
-              </div>
+              <div class="toggle-row"><div class="toggle-info"><label>Email de novos usuários</label><small>Receba notificação quando um contato iniciar conversa</small></div><label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label></div>
+              <div class="toggle-row"><div class="toggle-info"><label>Alertas de erro</label><small>Notificação se o bot apresentar falhas</small></div><label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label></div>
+              <div class="toggle-row"><div class="toggle-info"><label>Relatório semanal</label><small>Resumo de performance toda segunda-feira</small></div><label class="toggle"><input type="checkbox"><span class="toggle-track"></span></label></div>
               <button class="btn btn-primary mt-4" onclick="toast('Preferências salvas!','success')">Salvar preferências</button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- BILLING -->
+      <!-- BILLING — ✦ ATUALIZADO com bilUsageAlert e bilUpgradeBtn -->
       <div id="view-billing" class="view" style="max-width:660px">
         <div class="card mb-4">
           <div class="card-body">
@@ -435,15 +404,29 @@
               <span class="plan-pill starter" id="bilPill">GRÁTIS</span>
             </div>
             <div>
-              <div class="flex-between text-xs text-muted mb-2"><span>Mensagens usadas</span><span id="bilUsage">0 / 500</span></div>
-              <div class="progress-track"><div class="progress-fill" id="bilBar" style="width:0%"></div></div>
+              <div class="flex-between text-xs text-muted mb-2">
+                <span>Mensagens usadas</span>
+                <span id="bilUsage">0 / 50</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill" id="bilBar" style="width:0%"></div>
+              </div>
+              <!-- ✦ Alerta dinâmico de uso (80% aviso / 100% bloqueio) -->
+              <div id="bilUsageAlert" style="display:none"></div>
             </div>
-            <button class="btn btn-primary mt-4" onclick="toast('Redirecionando para checkout...','info')">Fazer upgrade → Pro</button>
+            <!-- ✦ Botão de upgrade — oculto automaticamente quando plano for Pro/Enterprise -->
+            <button class="btn btn-primary mt-4" id="bilUpgradeBtn" onclick="PlanLimit.openUpgradeModal()">
+              ⚡ Fazer upgrade → Pro (R$10,99/mês)
+            </button>
           </div>
         </div>
         <div class="card">
           <div class="card-header"><h3>Histórico de faturas</h3></div>
-          <div class="empty"><div class="empty-icon">🧾</div><h3>Nenhuma fatura ainda</h3><p>Suas faturas aparecerão após a primeira cobrança</p></div>
+          <div class="empty">
+            <div class="empty-icon">🧾</div>
+            <h3>Nenhuma fatura ainda</h3>
+            <p>Suas faturas aparecerão após a primeira cobrança</p>
+          </div>
         </div>
       </div>
 
@@ -489,7 +472,6 @@
         <label class="toggle"><input type="checkbox" id="eBotActive"><span class="toggle-track"></span></label>
       </div>
     </div>
-    <!-- Seção de conexão WhatsApp -->
     <div style="padding:14px 0;border-top:1px solid var(--border)">
       <div class="flex-between">
         <div>
@@ -502,7 +484,6 @@
         </div>
       </div>
     </div>
-
     <div class="modal-actions">
       <button class="btn btn-danger" onclick="Bots.delete()">Excluir bot</button>
       <button class="btn btn-ghost" onclick="Modals.close('editBot')">Fechar</button>
@@ -516,8 +497,6 @@
   <div class="modal" style="max-width:400px;text-align:center">
     <div class="modal-title">Conectar WhatsApp</div>
     <div class="modal-subtitle">Abra o app → Dispositivos Conectados → Conectar</div>
-
-    <!-- Placeholder enquanto o QR não chega -->
     <div id="qrWrap" class="qr-wrap" style="width:260px;height:260px;margin:16px auto">
       <div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--text-dim)">
         <div class="spinner" style="width:28px;height:28px;border-width:3px"></div>
@@ -525,7 +504,6 @@
       </div>
       <div class="qr-scan-line"></div>
     </div>
-
     <div class="text-sm text-muted mt-2 mb-3" id="qrStatus">Aguardando QR Code...</div>
     <div class="log-box" id="connectLog"></div>
     <div class="modal-actions" style="justify-content:center;margin-top:16px">
@@ -539,43 +517,25 @@
   <div class="modal" style="max-width:440px">
     <div style="width:48px;height:48px;background:rgba(0,212,106,0.1);border:1px solid rgba(0,212,106,0.2);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px">🔐</div>
     <div class="modal-title">Defina sua nova senha</div>
-    <div class="modal-subtitle">
-      Você entrou com uma senha temporária.<br>
-      Crie uma senha permanente para continuar.
-    </div>
-    <div class="form-group">
-      <label class="field-label">Senha temporária (atual)</label>
-      <input class="field" type="password" id="modal-cp-current" placeholder="A senha que você recebeu por email" autocomplete="current-password">
-    </div>
+    <div class="modal-subtitle">Você entrou com uma senha temporária.<br>Crie uma senha permanente para continuar.</div>
+    <div class="form-group"><label class="field-label">Senha temporária (atual)</label><input class="field" type="password" id="modal-cp-current" placeholder="A senha que você recebeu por email" autocomplete="current-password"></div>
     <div class="form-group">
       <label class="field-label">Nova senha</label>
       <input class="field" type="password" id="modal-cp-new" placeholder="Mínimo 8 caracteres" autocomplete="new-password" oninput="Auth.checkPasswordStrength(this.value)">
-      <div id="modal-cp-strength" style="margin-top:6px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
-        <div id="modal-cp-strength-bar" style="height:100%;width:0%;border-radius:2px;transition:all 0.3s"></div>
-      </div>
+      <div id="modal-cp-strength" style="margin-top:6px;height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div id="modal-cp-strength-bar" style="height:100%;width:0%;border-radius:2px;transition:all 0.3s"></div></div>
       <div id="modal-cp-strength-label" class="text-xs text-dim" style="margin-top:4px"></div>
     </div>
-    <div class="form-group">
-      <label class="field-label">Confirmar nova senha</label>
-      <input class="field" type="password" id="modal-cp-confirm" placeholder="Repita a nova senha" autocomplete="new-password">
-    </div>
+    <div class="form-group"><label class="field-label">Confirmar nova senha</label><input class="field" type="password" id="modal-cp-confirm" placeholder="Repita a nova senha" autocomplete="new-password"></div>
     <div class="modal-actions" style="margin-top:16px">
-      <button class="btn btn-primary btn-full btn-lg" id="modal-changePassBtn" onclick="Auth.changePassword()">
-        Salvar nova senha →
-      </button>
+      <button class="btn btn-primary btn-full btn-lg" id="modal-changePassBtn" onclick="Auth.changePassword()">Salvar nova senha →</button>
     </div>
-    <p class="text-xs text-dim mt-3" style="text-align:center;line-height:1.6">
-      Esta etapa é obrigatória por segurança. Após confirmar, sua senha temporária será invalidada.
-    </p>
+    <p class="text-xs text-dim mt-3" style="text-align:center;line-height:1.6">Esta etapa é obrigatória por segurança. Após confirmar, sua senha temporária será invalidada.</p>
   </div>
 </div>
-
 
 <!-- Chat Viewer Modal -->
 <div class="overlay" id="m-chat">
   <div class="modal" style="max-width:520px;padding:0;overflow:hidden;display:flex;flex-direction:column;max-height:85vh">
-
-    <!-- Header -->
     <div style="padding:16px 24px;border-bottom:1px solid var(--border);flex-shrink:0">
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
         <div style="width:40px;height:40px;border-radius:50%;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">👤</div>
@@ -588,23 +548,13 @@
           <button class="btn btn-ghost btn-sm" onclick="Modals.close('chat')" style="padding:6px 10px">✕</button>
         </div>
       </div>
-      <!-- ✦ Feature 2 & 3 — status do bot para esta conversa -->
       <div id="chatPauseStatus" style="display:flex;align-items:center;gap:8px"></div>
     </div>
-
-    <!-- Messages -->
-    <div id="chatMessages" style="
-      flex:1;overflow-y:auto;padding:20px 16px;
-      display:flex;flex-direction:column;gap:10px;
-      background:var(--bg2);
-      min-height:300px;
-    ">
+    <div id="chatMessages" style="flex:1;overflow-y:auto;padding:20px 16px;display:flex;flex-direction:column;gap:10px;background:var(--bg2);min-height:300px">
       <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:13px">
         <span class="spinner" style="margin-right:8px"></span> Carregando mensagens...
       </div>
     </div>
-
-    <!-- Footer -->
     <div style="padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:space-between">
       <span style="font-size:11px;color:var(--text-dim)" id="chatMsgCount">0 mensagens</span>
       <button class="btn btn-ghost btn-sm" onclick="Modals.close('chat')">Fechar</button>
@@ -612,7 +562,71 @@
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════
+     ✦ MODAL — Upgrade de Plano (R$10,99/mês)
+══════════════════════════════════════════════════════ -->
+<div class="overlay" id="m-upgradePlan">
+  <div class="modal" style="max-width:480px;text-align:center">
+
+    <div style="width:56px;height:56px;background:linear-gradient(135deg,rgba(0,212,106,0.15),rgba(0,212,106,0.05));
+                border:1px solid rgba(0,212,106,0.25);border-radius:14px;
+                display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 20px">
+      ⚡
+    </div>
+
+    <div class="modal-title" style="font-size:22px">Faça upgrade para Pro</div>
+    <div class="modal-subtitle" style="margin-bottom:28px">
+      Você atingiu o limite de mensagens do plano gratuito.<br>
+      Faça upgrade e continue atendendo sem interrupções.
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;text-align:left">
+      <!-- Starter (atual) -->
+      <div style="padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">ATUAL — STARTER</div>
+        <div style="font-family:var(--font-head);font-size:26px;font-weight:800;letter-spacing:-1px;margin-bottom:12px">
+          R$0<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/mês</span>
+        </div>
+        <ul style="list-style:none;display:flex;flex-direction:column;gap:7px">
+          <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--text-dim)">✕</span> 50 mensagens/mês</li>
+          <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--text-dim)">✕</span> Bot pausado ao atingir limite</li>
+          <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--text-dim)">✕</span> 1 número de WhatsApp</li>
+        </ul>
+      </div>
+      <!-- Pro -->
+      <div style="padding:16px;background:linear-gradient(160deg,rgba(0,212,106,0.08),var(--surface));
+                  border:1px solid var(--green);border-radius:10px;position:relative">
+        <div style="position:absolute;top:-1px;right:14px;background:var(--green);color:#000;
+                    font-size:9px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:0 0 7px 7px">
+          RECOMENDADO
+        </div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--green);margin-bottom:10px">PRO</div>
+        <div style="font-family:var(--font-head);font-size:26px;font-weight:800;letter-spacing:-1px;color:var(--text);margin-bottom:12px">
+          R$10,99<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/mês</span>
+        </div>
+        <ul style="list-style:none;display:flex;flex-direction:column;gap:7px">
+          <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span> Mensagens ilimitadas</li>
+          <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span> Bot nunca é pausado</li>
+          <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span> Até 5 números WhatsApp</li>
+          <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span> Suporte prioritário</li>
+        </ul>
+      </div>
+    </div>
+
+    <button
+      class="btn btn-primary btn-full btn-lg"
+      onclick="toast('Redirecionando para checkout...','info'); Modals.close('upgradePlan')"
+      style="margin-bottom:10px"
+    >
+      ⚡ Assinar Pro por R$10,99/mês →
+    </button>
+    <button class="btn btn-ghost btn-full" onclick="Modals.close('upgradePlan')">Agora não</button>
+    <p style="font-size:11px;color:var(--text-dim);margin-top:14px;line-height:1.6">
+      Sem contrato de fidelidade · Cancele quando quiser
+    </p>
+  </div>
+</div>
+
 <script src="JS/main.js"></script>
 </body>
 </html>
-<!-- INJECTED BY PATCH - remove this comment after applying -->

@@ -13,15 +13,15 @@ botsRouter.use(authenticate)
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const createBotSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  model: z.enum(['gemini-2.5-flash', 'gpt-4', 'gpt-3.5-turbo']),
+  name:   z.string().min(2, 'Name must be at least 2 characters'),
+  model:  z.enum(['gemini-2.5-flash', 'gpt-4', 'gpt-3.5-turbo']),
   prompt: z.string().min(10, 'Prompt must be at least 10 characters'),
 })
 
 const updateBotSchema = z.object({
-  name: z.string().min(2).optional(),
-  model: z.enum(['gemini-2.5-flash', 'gpt-4', 'gpt-3.5-turbo']).optional(),
-  prompt: z.string().min(10).optional(),
+  name:     z.string().min(2).optional(),
+  model:    z.enum(['gemini-2.5-flash', 'gpt-4', 'gpt-3.5-turbo']).optional(),
+  prompt:   z.string().min(10).optional(),
   isActive: z.boolean().optional(),
 })
 
@@ -31,9 +31,7 @@ botsRouter.get('/', async (req, res, next) => {
   try {
     const bots = await db.findBotsByUserId(req.userId)
     return ok(res, bots)
-  } catch (err) {
-    next(err)
-  }
+  } catch (err) { next(err) }
 })
 
 // ─── GET /bots/:id ────────────────────────────────────────────────────────────
@@ -43,9 +41,7 @@ botsRouter.get('/:id', async (req, res, next) => {
     const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
     return ok(res, bot)
-  } catch (err) {
-    next(err)
-  }
+  } catch (err) { next(err) }
 })
 
 // ─── POST /bots ───────────────────────────────────────────────────────────────
@@ -54,19 +50,17 @@ botsRouter.post('/', validate(createBotSchema), async (req, res, next) => {
   try {
     const { name, model, prompt } = req.body
     const bot = await db.createBot({
-      userId: req.userId,
+      userId:       req.userId,
       name,
       model,
       prompt,
-      isActive: false,
-      isConnected: false,
-      sessionName: `zapgpt_${req.userId}_${Date.now()}`,
+      isActive:     false,
+      isConnected:  false,
+      sessionName:  `zapgpt_${req.userId}_${Date.now()}`,
       messageCount: 0,
     })
     return created(res, bot)
-  } catch (err) {
-    next(err)
-  }
+  } catch (err) { next(err) }
 })
 
 // ─── PATCH /bots/:id ──────────────────────────────────────────────────────────
@@ -77,9 +71,7 @@ botsRouter.patch('/:id', validate(updateBotSchema), async (req, res, next) => {
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
     const updated = await db.updateBot(req.params.id, req.body)
     return ok(res, updated)
-  } catch (err) {
-    next(err)
-  }
+  } catch (err) { next(err) }
 })
 
 // ─── DELETE /bots/:id ─────────────────────────────────────────────────────────
@@ -93,9 +85,7 @@ botsRouter.delete('/:id', async (req, res, next) => {
     }
     await db.deleteBot(bot.id)
     return noContent(res)
-  } catch (err) {
-    next(err)
-  }
+  } catch (err) { next(err) }
 })
 
 // ─── POST /bots/:id/connect ───────────────────────────────────────────────────
@@ -105,29 +95,31 @@ botsRouter.post('/:id/connect', async (req, res, next) => {
     const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
 
-    // ✅ FIX 1: Para a sessão existente SEMPRE que o usuário pedir conexão.
-    //    Sem isso, wppconnect restaura a sessão antiga dos tokens em disco e
-    //    emite status 'inChat' imediatamente — sem gerar QR Code.
+    // 1. Para qualquer sessão ativa antes de iniciar uma nova.
+    //    Sem isso, wppconnect poderia restaurar tokens antigos e emitir
+    //    'isLogged' sem o usuário ter escaneado o QR.
     if (whatsappManager.isRunning(bot.id)) {
       await whatsappManager.stopSession(bot.id)
     }
 
-    // ✅ FIX 2: Reseta isConnected=false no DB ANTES de iniciar o wppconnect.
-    //    Se o DB tinha isConnected=true de sessão anterior, o SSE enviaria um
-    //    evento 'bot' com isConnected=true logo na abertura, fechando o modal
-    //    de conexão antes do QR aparecer.
+    // 2. Reseta o estado no DB ANTES de iniciar wppconnect.
+    //    Garante que o evento 'bot' via SSE nunca carregue isConnected=true
+    //    de uma sessão anterior enquanto o novo QR ainda não foi escaneado.
     await db.updateBot(bot.id, { isConnected: false, isActive: false })
 
-    // Inicia de forma assíncrona — QR code chegará via SSE
-    whatsappManager.startSession(bot).catch((err) => {
-      console.error(`[Bots] Failed to start session for ${bot.id}:`, err)
-      db.updateBot(bot.id, { isConnected: false, isActive: false })
+    // 3. Busca o bot com o estado já atualizado para passar ao startSession.
+    //    Evita passar o objeto antigo (com isConnected=true) para o serviço.
+    const freshBot = await db.findBotById(bot.id)
+    if (!freshBot) throw ApiError.notFound('Bot not found after reset')
+
+    // 4. Inicia assincronamente — QR chegará via SSE
+    whatsappManager.startSession(freshBot).catch((err) => {
+      console.error(`[Bots] Failed to start session for ${freshBot.id}:`, err)
+      db.updateBot(freshBot.id, { isConnected: false, isActive: false })
     })
 
     return ok(res, { message: 'Connection started. Listen to /bots/:id/events for QR code.' })
-  } catch (err) {
-    next(err)
-  }
+  } catch (err) { next(err) }
 })
 
 // ─── POST /bots/:id/disconnect ────────────────────────────────────────────────
@@ -139,9 +131,7 @@ botsRouter.post('/:id/disconnect', async (req, res, next) => {
     await whatsappManager.stopSession(bot.id)
     const updated = await db.findBotById(bot.id)
     return ok(res, updated)
-  } catch (err) {
-    next(err)
-  }
+  } catch (err) { next(err) }
 })
 
 // ─── GET /bots/:id/events (SSE) ───────────────────────────────────────────────
@@ -162,27 +152,23 @@ botsRouter.get('/:id/events', async (req, res, next) => {
 
     // ── Máquina de estado da sessão SSE ──────────────────────────────────────
     //
-    // FASE 1 — qrShown=false, everConnected=false (bootstrap)
-    //   → status 'notLogged', 'deleteToken' são normais nesta fase → IGNORAR
-    //   → Qualquer outro status de falha também é ignorado (race condition de init)
+    // qrShown:       true após o primeiro QR chegar ao frontend nesta sessão SSE.
+    // everConnected: true após inChat confirmado (QR foi escaneado).
     //
-    // FASE 2 — qrShown=true, everConnected=false (QR visível, aguardando scan)
-    //   → falha aqui = QR expirou ou erro real → ALERTAR
+    // Regras de alerta:
+    //   - Antes do QR (fase 1): nenhum status gera alerta → são ruídos de bootstrap.
+    //   - Após QR (fase 2): falhas geram alerta → QR expirou ou erro real.
+    //   - Após conectar (fase 3): qualquer falha gera alerta → sessão caiu.
     //
-    // FASE 3 — everConnected=true (já conectou ao menos uma vez nesta sessão SSE)
-    //   → qualquer falha = sessão caiu → ALERTAR
-    //
-    // Evento 'connected' explícito: emitido assim que inChat/isLogged chega,
-    // ANTES de buscar o bot no DB. Isso garante feedback imediato ao frontend
-    // independentemente da velocidade da query ao banco.
+    // Alinhado com whatsapp.ts:
+    //   - 'inChat'   → conexão real confirmada (QR escaneado)
+    //   - 'isLogged' → só confirmado se qrShown=true (guarda no serviço)
+    //   - 'notLogged', 'deleteToken' → agora em FAILED_STATUSES (reset limpo)
 
-    let qrShown       = false  // true após o primeiro QR ser enviado ao front
-    let everConnected = false  // true após primeiro status inChat/isLogged
+    let qrShown       = false
+    let everConnected = false
 
-    // Status que NUNCA devem gerar alerta na fase 1 (bootstrap normal do wppconnect)
-    const BOOTSTRAP_NOISE = new Set(['notLogged', 'deleteToken', 'isLogged', 'inChat',
-                                      'desconnectedMobile', 'disconnected', 'notLogged'])
-
+    // Status que geram alerta quando ocorrem DEPOIS que o QR foi mostrado
     const SESSION_ERROR_MESSAGES: Record<string, { title: string; message: string; action: string }> = {
       browserClose:       { title: 'Navegador fechado',     message: 'O navegador interno foi fechado inesperadamente.',        action: 'Clique em "Conectar" para reconectar o bot.' },
       qrReadError:        { title: 'QR Code não lido',      message: 'O QR Code expirou sem ser escaneado.',                   action: 'Clique em "Conectar" e escaneie o QR novamente.' },
@@ -207,22 +193,17 @@ botsRouter.get('/:id/events', async (req, res, next) => {
 
       sendEvent('status', { status: e.status })
 
-      if (SESSION_CONNECTED_KEYS.has(e.status)) {
+      // Conexão confirmada → evento imediato para o frontend mostrar tela de sucesso
+      if (SESSION_CONNECTED_KEYS.has(e.status) && qrShown) {
         everConnected = true
-
-        // ✅ Evento explícito de conexão bem-sucedida — chega IMEDIATAMENTE
-        // no frontend para mostrar tela de sucesso, antes mesmo de buscar no DB.
-        // O evento 'bot' com dados atualizados chega logo depois.
         sendEvent('connected', { botId: e.botId, status: e.status })
       }
 
-      // Só emite alerta se:
-      // - É um status de falha conhecido, E
-      // - O usuário já viu o QR (fase 2) OU já estava conectado (fase 3), E
-      // - Não é ruído de bootstrap da fase 1 (evita alertas prematuros)
-      const isFailure = SESSION_FAILED_KEYS.has(e.status)
-      const isBootstrapNoise = BOOTSTRAP_NOISE.has(e.status) && !qrShown && !everConnected
-      const shouldAlert = isFailure && (qrShown || everConnected) && !isBootstrapNoise
+      // Alertas: só depois que o QR foi mostrado (fase 2 ou 3)
+      // Fase 1 (antes do QR): qualquer falha é ruído de bootstrap → silenciar
+      const isFailure    = SESSION_FAILED_KEYS.has(e.status)
+      const isAfterQR    = qrShown || everConnected
+      const shouldAlert  = isFailure && isAfterQR
 
       if (shouldAlert) {
         const info = SESSION_ERROR_MESSAGES[e.status] ?? {
@@ -233,11 +214,11 @@ botsRouter.get('/:id/events', async (req, res, next) => {
         sendEvent('error-bot', { ...info, status: e.status, botId: e.botId })
       }
 
+      // Envia o estado atualizado do bot (DB) para o frontend
       const updated = await db.findBotById(bot.id)
       if (updated) sendEvent('bot', updated)
     })
 
-    // ── Erros de IA → painel do operador (NUNCA enviados ao contato) ─────────
     const unsubAIError = whatsappManager.onAIError((e) => {
       if (e.botId !== bot.id) return
       sendEvent('ai-error', {
@@ -245,7 +226,11 @@ botsRouter.get('/:id/events', async (req, res, next) => {
       })
     })
 
-    // ── Feature 2 & 3 — bot-pause: manual override ou human handoff ─────────
+    const unsubPlanLimit = whatsappManager.onPlanLimit((e) => {
+      if (e.botId !== bot.id) return
+      sendEvent('plan-limit', e)
+    })
+
     const unsubPause = whatsappManager.onBotPause((e) => {
       if (e.botId !== bot.id) return
       sendEvent('bot-pause', {
@@ -254,7 +239,6 @@ botsRouter.get('/:id/events', async (req, res, next) => {
       })
     })
 
-    // ── Feature 4 — bot-typing: indicador de digitação da IA ─────────────────
     const unsubTyping = whatsappManager.onTyping((e) => {
       if (e.botId !== bot.id) return
       sendEvent('bot-typing', {
@@ -266,12 +250,11 @@ botsRouter.get('/:id/events', async (req, res, next) => {
       unsubQR()
       unsubSession()
       unsubAIError()
+      unsubPlanLimit()
       unsubPause()
       unsubTyping()
     })
-  } catch (err) {
-    next(err)
-  }
+  } catch (err) { next(err) }
 })
 
 // ─── GET /bots/:id/conversations ──────────────────────────────────────────────
@@ -282,7 +265,5 @@ botsRouter.get('/:id/conversations', async (req, res, next) => {
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
     const conversations = await db.findConversationsByBotId(bot.id)
     return ok(res, conversations)
-  } catch (err) {
-    next(err)
-  }
+  } catch (err) { next(err) }
 })
