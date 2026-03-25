@@ -51,7 +51,6 @@ export interface BotPauseEvent {
   reason:       'manual_override' | 'human_handoff' | 'resumed'
 }
 
-// ✦ Feature 4 — bot typing (IA gerando resposta)
 export interface TypingEvent {
   botId:        string
   convId:       string
@@ -59,11 +58,10 @@ export interface TypingEvent {
   isTyping:     boolean
 }
 
-// ✦ NOVO — Contact typing (cliente digitando no WhatsApp)
 export interface ContactTypingEvent {
   botId:        string
-  contactPhone: string   // ex: "5511999998888@c.us"
-  isTyping:     boolean  // true = composing/recording, false = paused/available
+  contactPhone: string
+  isTyping:     boolean
 }
 
 export interface PlanLimitEvent {
@@ -74,13 +72,13 @@ export interface PlanLimitEvent {
   messageLimit:  number
 }
 
-type QRListener             = (e: QRCodeEvent)         => void
-type SessionListener        = (e: SessionEvent)        => void
-type AIErrorListener        = (e: AIErrorEvent)        => void
-type PauseListener          = (e: BotPauseEvent)       => void
-type TypingListener         = (e: TypingEvent)         => void
-type ContactTypingListener  = (e: ContactTypingEvent)  => void
-type PlanLimitListener      = (e: PlanLimitEvent)      => void
+type QRListener            = (e: QRCodeEvent)        => void
+type SessionListener       = (e: SessionEvent)       => void
+type AIErrorListener       = (e: AIErrorEvent)       => void
+type PauseListener         = (e: BotPauseEvent)      => void
+type TypingListener        = (e: TypingEvent)        => void
+type ContactTypingListener = (e: ContactTypingEvent) => void
+type PlanLimitListener     = (e: PlanLimitEvent)     => void
 
 const AI_ERROR_META: Record<AIErrorKind, { title: string; action: string }> = {
   config:  { title: 'Chave de API inválida', action: 'Vá em Configurações → API Keys e verifique suas credenciais.' },
@@ -195,7 +193,6 @@ export class WhatsAppManager {
     return () => { this.typingListeners = this.typingListeners.filter(x => x !== l) }
   }
 
-  // ✦ NOVO — escuta digitação do contato (cliente no WhatsApp)
   onContactTyping(l: ContactTypingListener): () => void {
     this.contactTypingListeners.push(l)
     return () => { this.contactTypingListeners = this.contactTypingListeners.filter(x => x !== l) }
@@ -216,7 +213,6 @@ export class WhatsAppManager {
     if (this.clients.has(bot.id)) return
 
     console.log(`[WhatsApp] Iniciando sessão para: ${bot.name} (id: ${bot.id})`)
-
     this.qrWasShown.delete(bot.id)
     this.lastQR.delete(bot.id)
     await nukeAllBotTokens(bot.id)
@@ -250,8 +246,7 @@ export class WhatsAppManager {
           this.sessionListeners.forEach(l => l({ botId: bot.id, status }))
 
           if (CONFIRMED_CONNECTED_STATUSES.has(status)) {
-            this.onSessionConnected(bot, client)
-            return
+            this.onSessionConnected(bot, client); return
           }
 
           if (MAYBE_CONNECTED_STATUSES.has(status)) {
@@ -272,7 +267,7 @@ export class WhatsAppManager {
 
       this.clients.set(bot.id, client)
       this.attachMessageListener(bot, client)
-      this.attachPresenceListener(bot, client)   // ✦ NOVO
+      this.attachPresenceListener(bot, client)
     } catch (err) {
       this.clients.delete(bot.id)
       this.qrWasShown.delete(bot.id)
@@ -314,8 +309,6 @@ export class WhatsAppManager {
 
   isRunning(botId: string): boolean { return this.clients.has(botId) }
 
-  // ── Feature 2 — Resume bot ────────────────────────────────────────────────
-
   async resumeBot(botId: string, convId: string): Promise<void> {
     await db.setConversationHandoff(convId, false)
     const conv = await db.findConversationById(convId)
@@ -326,30 +319,20 @@ export class WhatsAppManager {
     }))
   }
 
-  // ── ✦ NOVO — Presence listener (cliente digitando no WhatsApp) ────────────
+  // ── Presence listener (cliente digitando no WhatsApp) ────────────────────
 
   private attachPresenceListener(bot: Bot, client: wppconnect.Whatsapp): void {
     try {
       client.onPresenceChanged((presence: any) => {
-        // presence.type: 'composing' | 'recording' | 'paused' | 'available' | 'unavailable'
-        // presence.id._serialized: '5511999...@c.us'
         const contactPhone = presence?.id?._serialized ?? presence?.chatId
         if (!contactPhone) return
-
-        // Ignora eventos do próprio bot
         db.findBotById(bot.id).then(freshBot => {
           if (freshBot?.phone && contactPhone === freshBot.phone) return
-
           const isTyping = presence.type === 'composing' || presence.type === 'recording'
-          this.contactTypingListeners.forEach(l => l({
-            botId:        bot.id,
-            contactPhone,
-            isTyping,
-          }))
+          this.contactTypingListeners.forEach(l => l({ botId: bot.id, contactPhone, isTyping }))
         }).catch(() => {})
       })
     } catch (err) {
-      // onPresenceChanged pode não estar disponível em todas as versões — não quebra o serviço
       console.warn(`[WhatsApp] onPresenceChanged não disponível para ${bot.name}:`, err)
     }
   }
@@ -405,11 +388,25 @@ export class WhatsAppManager {
     const user = await db.findUserById(bot.userId)
     if (!user) return
 
-    // ✦ Plan limit check
+    // ✅ FIX: Busca o estado ATUAL do bot do DB — uma única vez, no topo.
+    // Consolida a busca que antes era feita mais abaixo para checar phone.
+    // Todas as verificações de estado usam este objeto fresco.
+    const freshBot = await db.findBotById(bot.id)
+    if (!freshBot) return
+
+    // ── ✅ FIX: Respeita isActive — se desativado no painel, ignora mensagem ──
+    // O toggle "Bot ativo" no modal de edição salva isActive=false via PATCH,
+    // mas o serviço nunca verificava este campo. Agora verifica ANTES de tudo.
+    if (!freshBot.isActive) {
+      console.log(`[Bot:${freshBot.name}] Mensagem ignorada — bot desativado (isActive=false)`)
+      return;  // nem persiste a mensagem — bot desligado não deve registrar nada
+    }
+
+    // ── Plan limit check ──────────────────────────────────────────────────
     const stats = await db.getUserStats(bot.userId)
     if (isMessageLimitReached(user.plan, stats.totalMessages)) {
       const config = getPlanConfig(user.plan)
-      console.warn(`[Bot:${bot.name}] Limite de plano atingido (${stats.totalMessages}/${config.messageLimit})`)
+      console.warn(`[Bot:${freshBot.name}] Limite de plano atingido (${stats.totalMessages}/${config.messageLimit})`)
       this.planLimitListeners.forEach(l => l({
         botId: bot.id, userId: bot.userId, plan: user.plan,
         totalMessages: stats.totalMessages, messageLimit: config.messageLimit,
@@ -418,9 +415,9 @@ export class WhatsAppManager {
       return
     }
 
-    // ✦ Feature 2: detecta intervenção manual do operador
-    const freshBot = await db.findBotById(bot.id)
-    if (freshBot?.phone && from === freshBot.phone) {
+    // ── Feature 2: detecta intervenção manual do operador ────────────────
+    // Usa freshBot.phone que já foi buscado acima — sem segunda query
+    if (freshBot.phone && from === freshBot.phone) {
       const targetConv = await db.findConversationByBotAndPhone(bot.id, chatId)
       if (targetConv && !targetConv.isPaused) {
         const updated = await db.setConversationPaused(targetConv.id, true)
@@ -429,7 +426,7 @@ export class WhatsAppManager {
             botId: bot.id, convId: updated.id, contactPhone: chatId,
             isPaused: true, humanHandoff: false, reason: 'manual_override',
           }))
-          console.log(`[Bot:${bot.name}] Override manual — bot pausado para: ${chatId}`)
+          console.log(`[Bot:${freshBot.name}] Override manual — bot pausado para: ${chatId}`)
         }
       }
       return
@@ -437,7 +434,7 @@ export class WhatsAppManager {
 
     const conv = await db.findConversationByBotAndPhone(bot.id, from)
 
-    // ✦ Feature 3: Human Handoff intent
+    // ── Feature 3: Human Handoff intent ───────────────────────────────────
     if (conv && !conv.humanHandoff && detectsHandoffIntent(message)) {
       const updated = await db.setConversationHandoff(conv.id, true)
       if (updated) {
@@ -451,13 +448,13 @@ export class WhatsAppManager {
       return
     }
 
-    // ✦ Feature 2: bot pausado
+    // ── Feature 2: bot pausado por override manual ────────────────────────
     if (conv?.isPaused) {
       await this.persistMessage(bot, client, from, message, null)
       return
     }
 
-    // ✦ Feature 4: Typing indicator (IA gerando)
+    // ── Feature 4: Typing indicator (IA gerando) ──────────────────────────
     if (conv) {
       this.typingListeners.forEach(l => l({
         botId: bot.id, convId: conv.id, contactPhone: from, isTyping: true,
@@ -469,7 +466,7 @@ export class WhatsAppManager {
       answer = await this.callAIWithRetry(bot, user.apiKeys, chatId, message)
     } catch (raw) {
       const err = raw instanceof AIError ? raw : classifyError(raw)
-      console.error(`[Bot:${bot.name}] AI error [${err.kind}]: ${err.message}`)
+      console.error(`[Bot:${freshBot.name}] AI error [${err.kind}]: ${err.message}`)
       this.emitAIError(bot, err)
       if (conv) {
         this.typingListeners.forEach(l => l({
@@ -535,7 +532,7 @@ export class WhatsAppManager {
     }))
   }
 
-  // ── ✅ FIX: Mensagens em ordem correta + captura nome real do contato ──────
+  // ── Persistência com ordem garantida e nome real do contato ──────────────
 
   private async persistMessage(
     bot: Bot,
@@ -544,23 +541,20 @@ export class WhatsAppManager {
     message: string,
     answer: string | null,
   ): Promise<void> {
-
-    // ✦ Tenta buscar o nome real do contato (pushname do WhatsApp).
-    // Se falhar, usa o número como fallback.
+    // Tenta buscar o pushname real do contato no WhatsApp
     let contactName = from
     try {
       const contact = await client.getContact(from)
       const pushname = contact?.pushname ?? contact?.name ?? contact?.formattedName
       if (pushname && pushname.trim()) contactName = pushname.trim()
-    } catch (_) { /* ignora — fallback para o phone */ }
+    } catch (_) { /* fallback para o phone */ }
 
-    // Timestamp explícito da mensagem do usuário
     const userCreatedAt = new Date()
 
     const conversation = await db.upsertConversation({
       botId:         bot.id,
       userId:        bot.userId,
-      contactName,                          // nome real ou phone
+      contactName,
       contactPhone:  from,
       lastMessage:   answer ?? message,
       lastMessageAt: new Date(),
@@ -568,10 +562,8 @@ export class WhatsAppManager {
       messageCount:  1,
     })
 
-    // ✅ FIX ORDEM: Criar user message PRIMEIRO com timestamp,
-    // assistant message com timestamp +1ms para garantir ordem ascendente.
-    // Nunca usar Promise.all para as duas — timestamps seriam idênticos.
-
+    // Cria mensagem do usuário primeiro, depois a do assistente com +1ms
+    // para garantir ordem correta no orderBy: { createdAt: 'asc' }
     await db.createMessage({
       conversationId: conversation.id,
       role:           'user',
@@ -582,13 +574,11 @@ export class WhatsAppManager {
     await db.updateBot(bot.id, { messageCount: bot.messageCount + 1 })
 
     if (answer !== null) {
-      // +1ms garante que assistant sempre aparece depois do user no orderBy
-      const assistantCreatedAt = new Date(userCreatedAt.getTime() + 1)
       await db.createMessage({
         conversationId: conversation.id,
         role:           'assistant',
         content:        answer,
-        createdAt:      assistantCreatedAt,
+        createdAt:      new Date(userCreatedAt.getTime() + 1),
       })
     }
   }

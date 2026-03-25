@@ -276,7 +276,9 @@ const Bots = {
     if (State.bots.length === 0) { el.innerHTML = `<div class="empty"><div class="empty-icon">🤖</div><h3>Nenhum bot criado</h3><p>Clique em "+ Novo Bot" para criar seu assistente</p></div>`; return }
     const rows = State.bots.map(b => {
       const m = MODEL_META[b.model] ?? { label: b.model, cls: '' }
-      return `<tr><td><div class="flex-center gap-2"><div style="width:7px;height:7px;border-radius:50%;background:${b.isConnected ? 'var(--green)' : 'var(--text-dim)'};${b.isConnected ? 'box-shadow:0 0 6px var(--green)' : ''}"></div><strong>${Bots.escape(b.name)}</strong></div></td><td><span class="model-tag ${m.cls}">${m.label}</span></td><td class="mono text-sm">${b.phone ? b.phone : '<span class="text-dim">Não conectado</span>'}</td><td><span class="badge ${b.isActive ? 'badge-green' : 'badge-red'}">${b.isActive ? 'Ativo' : 'Inativo'}</span></td><td class="text-muted">${(b.messageCount ?? 0).toLocaleString('pt-BR')}</td><td><div class="flex gap-2"><button class="btn btn-ghost btn-sm" onclick="Connect.open('${b.id}')">📱 Conectar</button><button class="btn btn-ghost btn-sm" onclick="Bots.openEdit('${b.id}')">✏️ Editar</button></div></td></tr>`
+      const phoneDisplay = b.contactPhone ? _formatPhone(b.contactPhone) : '<span class="text-dim">Não conectado</span>'
+
+      return `<tr><td><div class="flex-center gap-2"><div style="width:7px;height:7px;border-radius:50%;background:${b.isConnected ? 'var(--green)' : 'var(--text-dim)'};${b.isConnected ? 'box-shadow:0 0 6px var(--green)' : ''}"></div><strong>${Bots.escape(b.name)}</strong></div></td><td><span class="model-tag ${m.cls}">${m.label}</span></td><td class="mono text-sm">${phoneDisplay}</td><td><span class="badge ${b.isActive ? 'badge-green' : 'badge-red'}">${b.isActive ? 'Ativo' : 'Inativo'}</span></td><td class="text-muted">${(b.messageCount ?? 0).toLocaleString('pt-BR')}</td><td><div class="flex gap-2"><button class="btn btn-ghost btn-sm" onclick="Connect.open('${b.id}')">📱 Conectar</button><button class="btn btn-ghost btn-sm" onclick="Bots.openEdit('${b.id}')">✏️ Editar</button></div></td></tr>`
     }).join('')
     el.innerHTML = `<table class="table"><thead><tr><th>Nome</th><th>Modelo</th><th>Número</th><th>Status</th><th>Mensagens</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table>`
   },
@@ -375,35 +377,54 @@ const Conversations = {
     }
     el.innerHTML = State.conversations.map(c => {
       const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-      // Nome legível: contactName se disponível, ou phone formatado
       const displayName = (c.contactName && c.contactName !== c.contactPhone)
         ? c.contactName
         : _formatPhone(c.contactPhone)
+
+      // ✅ FIX: flex-shrink:0 nos badges para não comprimirem e não
+      // empurrarem o nome para fora da tela
       const pauseBadge = c.humanHandoff
-        ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px;background:rgba(240,179,64,0.15);color:#f0c060;border:1px solid rgba(240,179,64,0.3);white-space:nowrap">👤 Humano</span>`
+        ? `<span style="flex-shrink:0;font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px;background:rgba(240,179,64,0.15);color:#f0c060;border:1px solid rgba(240,179,64,0.3);white-space:nowrap">👤 Humano</span>`
         : c.isPaused
-          ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px;background:rgba(240,179,64,0.1);color:#f0b340;border:1px solid rgba(240,179,64,0.25);white-space:nowrap">⏸ Pausado</span>`
+          ? `<span style="flex-shrink:0;font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px;background:rgba(240,179,64,0.1);color:#f0b340;border:1px solid rgba(240,179,64,0.25);white-space:nowrap">⏸ Pausado</span>`
           : ''
+
       const pauseBtn = c.isPaused
-        ? `<button class="btn btn-ghost btn-sm" title="Retomar bot" onclick="Conversations.resume('${c.id}')" style="padding:3px 7px;font-size:10px">▶ Retomar</button>`
-        : `<button class="btn btn-ghost btn-sm" title="Pausar bot" onclick="Conversations.pause('${c.id}')" style="padding:3px 7px;font-size:10px">⏸</button>`
+        ? `<button class="btn btn-ghost btn-sm" title="Retomar bot" onclick="Conversations.resume('${c.id}')" style="padding:3px 7px;font-size:10px;flex-shrink:0">▶ Retomar</button>`
+        : `<button class="btn btn-ghost btn-sm" title="Pausar bot" onclick="Conversations.pause('${c.id}')" style="padding:3px 7px;font-size:10px;flex-shrink:0">⏸</button>`
       const unreadBadge = c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''
 
       return `<div class="conv-row" id="conv-row-${c.id}" data-search="${Bots.escape(displayName.toLowerCase())} ${Bots.escape(c.lastMessage?.toLowerCase() ?? '')}">
-          <div class="conv-avatar" style="cursor:pointer" onclick="ChatViewer.open('${c.id}','${Bots.escape(displayName)}','${Bots.escape(c.contactPhone)}')">👤</div>
-          <div class="conv-body" style="min-width:0;cursor:pointer;flex:1" onclick="ChatViewer.open('${c.id}','${Bots.escape(displayName)}','${Bots.escape(c.contactPhone)}')">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
-              <div class="conv-name">${Bots.escape(displayName)}</div>
+          <div class="conv-avatar" style="cursor:pointer;flex-shrink:0"
+               onclick="ChatViewer.open('${c.id}','${Bots.escape(displayName)}','${Bots.escape(c.contactPhone)}')">👤</div>
+
+          <!-- ✅ FIX: overflow:hidden no corpo principal impede expansão além do flex -->
+          <div style="flex:1;min-width:0;cursor:pointer;overflow:hidden"
+               onclick="ChatViewer.open('${c.id}','${Bots.escape(displayName)}','${Bots.escape(c.contactPhone)}')">
+
+            <!-- ✅ FIX: nome com flex:1;min-width:0 trunca antes do badge -->
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;min-width:0">
+              <div style="font-size:13px;font-weight:600;
+                          white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+                          flex:1;min-width:0">
+                ${Bots.escape(displayName)}
+              </div>
               ${pauseBadge}
             </div>
-            <div class="conv-preview" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Bots.escape(c.lastMessage)}</div>
+            <div style="font-size:12px;color:var(--text-muted);
+                        white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              ${Bots.escape(c.lastMessage)}
+            </div>
           </div>
-          <div class="conv-right" style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+
+          <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px;margin-left:8px">
             <div class="conv-time">${time}</div>
             ${unreadBadge}
             <div style="display:flex;gap:4px;margin-top:2px">
               ${pauseBtn}
-              <button class="btn btn-ghost btn-sm" title="Excluir conversa" onclick="Conversations.deleteChat('${c.id}')" style="padding:3px 7px;font-size:10px;color:var(--red)">🗑</button>
+              <button class="btn btn-ghost btn-sm" title="Excluir conversa"
+                      onclick="Conversations.deleteChat('${c.id}')"
+                      style="padding:3px 7px;font-size:10px;color:var(--red);flex-shrink:0">🗑</button>
             </div>
           </div>
         </div>`

@@ -34,6 +34,7 @@ model Bot {
   isActive     Boolean @default(false)
   isConnected  Boolean @default(false)
   phone        String?
+  contactPhone String?
   sessionName  String  @unique
   messageCount Int     @default(0)
 
