@@ -532,7 +532,7 @@ export class WhatsAppManager {
     }))
   }
 
-  // ── Persistência com ordem garantida e nome real do contato ──────────────
+  // ── Persistência com ordem garantida e nome real do contato
 
   private async persistMessage(
     bot: Bot,
@@ -585,3 +585,5 @@ export class WhatsAppManager {
 }
 
 export const whatsappManager = new WhatsAppManager()
+
+console.log("teste")
