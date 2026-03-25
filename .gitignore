@@ -5,5 +5,7 @@ dist/
 .DS_Store
 .wppconnect/
 tokens/
+Back-End/prisma/dev.db
+Back-End/prisma/dev.db-journal
 
 /src/generated/prisma
