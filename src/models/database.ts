@@ -1,5 +1,4 @@
 import { PrismaClient } from '@prisma/client'
-import { any } from 'zod/v4'
 
 const prisma = new PrismaClient()
 
@@ -40,7 +39,6 @@ export interface Bot {
   updatedAt:    Date
 }
 
-// ─── Conversation agora carrega isPaused e humanHandoff ───────────────────────
 export interface Conversation {
   id:            string
   botId:         string
@@ -51,10 +49,17 @@ export interface Conversation {
   lastMessageAt: Date
   unreadCount:   number
   messageCount:  number
+  isPaused:      boolean
+  humanHandoff:  boolean
+}
 
-  // ✦ Feature 2 & 3 — intervenção humana e transbordo
-  isPaused:      boolean   // true = bot silenciado para este chat
-  humanHandoff:  boolean   // true = aguardando atendimento humano
+// ── Message agora expõe createdAt explícito ───────────────────────────────────
+export interface Message {
+  id:             string
+  conversationId: string
+  role:           'user' | 'assistant'
+  content:        string
+  createdAt:      Date
 }
 
 class Database {
@@ -187,13 +192,14 @@ class Database {
     return prisma.conversation.upsert({
       where:  { botId_contactPhone: { botId: data.botId, contactPhone: data.contactPhone } },
       update: {
+        // ✅ Atualiza contactName se um nome real chegou (pushname do WhatsApp)
+        // Só sobrescreve se o novo valor for diferente do phone (evita regredir para phone)
+        contactName:   data.contactName !== data.contactPhone ? data.contactName : undefined,
         lastMessage:   data.lastMessage,
         lastMessageAt: data.lastMessageAt,
         unreadCount:   { increment: data.unreadCount },
         messageCount:  { increment: data.messageCount },
       },
-      // isPaused e humanHandoff NÃO devem ser passados no create:
-      // o schema os define com @default(false) — Prisma os inicializa automaticamente.
       create: {
         botId:         data.botId,
         userId:        data.userId,
@@ -229,30 +235,24 @@ class Database {
     return row ? this.parseConversation(row) : null
   }
 
-  // ✦ Feature 1 — Delete Chat
   async deleteConversation(id: string): Promise<void> {
     await prisma.message.deleteMany({ where: { conversationId: id } })
     await prisma.conversation.delete({ where: { id } })
   }
 
-  // ✦ Feature 2 & 3 — pause / resume / handoff
   async setConversationPaused(id: string, isPaused: boolean): Promise<Conversation | null> {
-    const row = await prisma.conversation.update({
-      where: { id },
-      data:  { isPaused },
-    })
+    const row = await prisma.conversation.update({ where: { id }, data: { isPaused } })
     return this.parseConversation(row)
   }
 
   async setConversationHandoff(id: string, humanHandoff: boolean): Promise<Conversation | null> {
     const row = await prisma.conversation.update({
       where: { id },
-      data:  { humanHandoff, isPaused: humanHandoff }, // handoff sempre pausa o bot
+      data:  { humanHandoff, isPaused: humanHandoff },
     })
     return this.parseConversation(row)
   }
 
-  // Busca a conversa por botId+phone (usada pelo whatsapp service)
   async findConversationByBotAndPhone(botId: string, contactPhone: string): Promise<Conversation | null> {
     const row = await prisma.conversation.findUnique({
       where: { botId_contactPhone: { botId, contactPhone } },
@@ -262,19 +262,35 @@ class Database {
 
   // ── Messages ───────────────────────────────────────────────────────────────
 
+  /**
+   * Cria uma mensagem com timestamp explícito.
+   * Passar createdAt explicitamente garante a ordem correta mesmo quando
+   * user e assistant são criados em sequência rápida (SQLite resolve por
+   * createdAt, não por rowid, evitando inversão de ordem).
+   */
   async createMessage(data: {
     conversationId: string
     role:           'user' | 'assistant'
     content:        string
-  }) {
-    return prisma.message.create({ data })
+    createdAt?:     Date       // ← novo campo opcional
+  }): Promise<Message> {
+    const row = await prisma.message.create({
+      data: {
+        conversationId: data.conversationId,
+        role:           data.role,
+        content:        data.content,
+        ...(data.createdAt ? { createdAt: data.createdAt } : {}),
+      },
+    })
+    return this.parseMessage(row)
   }
 
-  async findMessagesByConversationId(conversationId: string) {
-    return prisma.message.findMany({
+  async findMessagesByConversationId(conversationId: string): Promise<Message[]> {
+    const rows = await prisma.message.findMany({
       where:   { conversationId },
       orderBy: { createdAt: 'asc' },
     })
+    return rows.map((r: any) => this.parseMessage(r))
   }
 
   // ── Stats ──────────────────────────────────────────────────────────────────
@@ -314,6 +330,16 @@ class Database {
       ...c,
       isPaused:     c.isPaused     ?? false,
       humanHandoff: c.humanHandoff ?? false,
+    }
+  }
+
+  private parseMessage(m: any): Message {
+    return {
+      id:             m.id,
+      conversationId: m.conversationId,
+      role:           m.role as 'user' | 'assistant',
+      content:        m.content,
+      createdAt:      m.createdAt,
     }
   }
 }

@@ -38,9 +38,9 @@ function classifyError(raw: unknown): AIError {
 // EVENTOS
 // ═══════════════════════════════════════════════════════
 
-export interface QRCodeEvent  { botId: string; qrBase64: string; qrAscii: string }
-export interface SessionEvent { botId: string; status: string }
-export interface AIErrorEvent { botId: string; botName: string; kind: AIErrorKind; title: string; detail: string; action: string }
+export interface QRCodeEvent      { botId: string; qrBase64: string; qrAscii: string }
+export interface SessionEvent     { botId: string; status: string }
+export interface AIErrorEvent     { botId: string; botName: string; kind: AIErrorKind; title: string; detail: string; action: string }
 
 export interface BotPauseEvent {
   botId:        string
@@ -51,11 +51,19 @@ export interface BotPauseEvent {
   reason:       'manual_override' | 'human_handoff' | 'resumed'
 }
 
+// ✦ Feature 4 — bot typing (IA gerando resposta)
 export interface TypingEvent {
   botId:        string
   convId:       string
   contactPhone: string
   isTyping:     boolean
+}
+
+// ✦ NOVO — Contact typing (cliente digitando no WhatsApp)
+export interface ContactTypingEvent {
+  botId:        string
+  contactPhone: string   // ex: "5511999998888@c.us"
+  isTyping:     boolean  // true = composing/recording, false = paused/available
 }
 
 export interface PlanLimitEvent {
@@ -66,12 +74,13 @@ export interface PlanLimitEvent {
   messageLimit:  number
 }
 
-type QRListener        = (e: QRCodeEvent)    => void
-type SessionListener   = (e: SessionEvent)   => void
-type AIErrorListener   = (e: AIErrorEvent)   => void
-type PauseListener     = (e: BotPauseEvent)  => void
-type TypingListener    = (e: TypingEvent)    => void
-type PlanLimitListener = (e: PlanLimitEvent) => void
+type QRListener             = (e: QRCodeEvent)         => void
+type SessionListener        = (e: SessionEvent)        => void
+type AIErrorListener        = (e: AIErrorEvent)        => void
+type PauseListener          = (e: BotPauseEvent)       => void
+type TypingListener         = (e: TypingEvent)         => void
+type ContactTypingListener  = (e: ContactTypingEvent)  => void
+type PlanLimitListener      = (e: PlanLimitEvent)      => void
 
 const AI_ERROR_META: Record<AIErrorKind, { title: string; action: string }> = {
   config:  { title: 'Chave de API inválida', action: 'Vá em Configurações → API Keys e verifique suas credenciais.' },
@@ -103,26 +112,11 @@ function detectsHandoffIntent(message: string): boolean {
 const MAX_RETRIES            = 3
 const MESSAGE_BUFFER_TIMEOUT = 15_000
 
-// ── Status de conexão real ────────────────────────────────────────────────────
-// REGRA: bot só é marcado isConnected=true quando o wppconnect confirmar que o
-// QR foi escaneado E a sessão está ativa. 'inChat' é o único status 100% seguro
-// de que o usuário fez o scan. 'isLogged' pode aparecer em restaurações de
-// sessão antigas (tokens em disco) — por isso está FORA dos CONFIRMED_STATUSES
-// e tratado separadamente com a flag qrWasShown.
 const CONFIRMED_CONNECTED_STATUSES = new Set(['inChat'])
-
-// 'isLogged' só é tratado como conexão real se qrWasShown=true nesta sessão
-const MAYBE_CONNECTED_STATUSES = new Set(['isLogged'])
-
-// Qualquer um desses deve limpar a sessão e marcar bot como desconectado
-const FAILED_STATUSES = new Set([
-  'browserClose',
-  'qrReadError',       // QR expirou sem scan
-  'autocloseCalled',
-  'desconnectedMobile',
-  'disconnected',
-  'notLogged',         // ← adicionado: sessão sem autenticação
-  'deleteToken',       // ← adicionado: tokens deletados/corrompidos
+const MAYBE_CONNECTED_STATUSES     = new Set(['isLogged'])
+const FAILED_STATUSES              = new Set([
+  'browserClose', 'qrReadError', 'autocloseCalled',
+  'desconnectedMobile', 'disconnected', 'notLogged', 'deleteToken',
 ])
 
 // ═══════════════════════════════════════════════════════
@@ -157,18 +151,15 @@ export class WhatsAppManager {
   private messageBuffers = new Map<string, string[]>()
   private messageTimers  = new Map<string, NodeJS.Timeout>()
   private lastQR         = new Map<string, { qrBase64: string; qrAscii: string }>()
+  private qrWasShown     = new Map<string, boolean>()
 
-  // ── qrWasShown: registra por sessão se o QR chegou ao frontend ────────────
-  // Impede que 'isLogged' de sessões restauradas de tokens antigos
-  // ative o bot sem que o usuário tenha de fato escaneado o QR.
-  private qrWasShown = new Map<string, boolean>()
-
-  private qrListeners:        QRListener[]        = []
-  private sessionListeners:   SessionListener[]   = []
-  private aiErrorListeners:   AIErrorListener[]   = []
-  private pauseListeners:     PauseListener[]     = []
-  private typingListeners:    TypingListener[]    = []
-  private planLimitListeners: PlanLimitListener[] = []
+  private qrListeners:            QRListener[]            = []
+  private sessionListeners:       SessionListener[]       = []
+  private aiErrorListeners:       AIErrorListener[]       = []
+  private pauseListeners:         PauseListener[]         = []
+  private typingListeners:        TypingListener[]        = []
+  private contactTypingListeners: ContactTypingListener[] = []
+  private planLimitListeners:     PlanLimitListener[]     = []
 
   // ── Subscriptions ────────────────────────────────────────────────────────
 
@@ -204,6 +195,12 @@ export class WhatsAppManager {
     return () => { this.typingListeners = this.typingListeners.filter(x => x !== l) }
   }
 
+  // ✦ NOVO — escuta digitação do contato (cliente no WhatsApp)
+  onContactTyping(l: ContactTypingListener): () => void {
+    this.contactTypingListeners.push(l)
+    return () => { this.contactTypingListeners = this.contactTypingListeners.filter(x => x !== l) }
+  }
+
   onPlanLimit(l: PlanLimitListener): () => void {
     this.planLimitListeners.push(l)
     return () => { this.planLimitListeners = this.planLimitListeners.filter(x => x !== l) }
@@ -220,13 +217,8 @@ export class WhatsAppManager {
 
     console.log(`[WhatsApp] Iniciando sessão para: ${bot.name} (id: ${bot.id})`)
 
-    // Garante estado limpo antes de qualquer coisa
     this.qrWasShown.delete(bot.id)
     this.lastQR.delete(bot.id)
-
-    // Limpa tokens antigos no disco antes de criar nova sessão.
-    // Isso evita que wppconnect restaure uma sessão antiga e emita
-    // 'isLogged' sem o usuário ter escaneado o QR nesta sessão.
     await nukeAllBotTokens(bot.id)
 
     const sessionName = `zapgpt_${bot.id}_${Date.now()}`
@@ -234,60 +226,44 @@ export class WhatsAppManager {
 
     try {
       const client = await wppconnect.create({
-        session:          sessionName,
-        headless:         'new' as any,
-        logQR:            false,
-        autoClose:        0,             // nunca fecha sozinho — controlamos via stopSession
-        disableWelcome:   true,
+        session:        sessionName,
+        headless:       'new' as any,
+        logQR:          false,
+        autoClose:      0,
+        disableWelcome: true,
         puppeteerOptions: {
           args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-extensions',
-            `--user-data-dir=${sessionDir}`,
+            '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+            '--disable-gpu', '--disable-extensions', `--user-data-dir=${sessionDir}`,
           ],
         },
 
-        // ── QR Code ────────────────────────────────────────────────────────
         catchQR: (base64Qr: string, asciiQR: string) => {
-          // Marca que o QR foi mostrado nesta sessão
           this.qrWasShown.set(bot.id, true)
           this.lastQR.set(bot.id, { qrBase64: base64Qr, qrAscii: asciiQR })
           this.qrListeners.forEach(l => l({ botId: bot.id, qrBase64: base64Qr, qrAscii: asciiQR }))
           console.log(`[WhatsApp] QR gerado para: ${bot.name}`)
         },
 
-        // ── Status da sessão ───────────────────────────────────────────────
         statusFind: (status: string) => {
           console.log(`[WhatsApp] Status [${bot.name}]: ${status}`)
           this.sessionListeners.forEach(l => l({ botId: bot.id, status }))
 
-          // ── Conexão confirmada (scan real do QR) ─────────────────────────
           if (CONFIRMED_CONNECTED_STATUSES.has(status)) {
             this.onSessionConnected(bot, client)
             return
           }
 
-          // ── 'isLogged': só aceita como conexão real se QR foi mostrado ───
-          // Sem essa guarda, tokens antigos no disco causariam a ativação
-          // automática do bot sem que o usuário escaneasse o QR.
           if (MAYBE_CONNECTED_STATUSES.has(status)) {
             if (this.qrWasShown.get(bot.id) === true) {
               this.onSessionConnected(bot, client)
             } else {
-              console.warn(
-                `[WhatsApp] 'isLogged' recebido SEM QR mostrado para ${bot.name} — ` +
-                'ignorando (possível restauração de sessão antiga). Aguardando QR...'
-              )
-              // Força reset completo para garantir que o QR seja gerado
+              console.warn(`[WhatsApp] 'isLogged' sem QR para ${bot.name} — forçando reset`)
               this.onSessionFailed(bot)
             }
             return
           }
 
-          // ── Falha de sessão ───────────────────────────────────────────────
           if (FAILED_STATUSES.has(status)) {
             this.onSessionFailed(bot)
           }
@@ -296,6 +272,7 @@ export class WhatsAppManager {
 
       this.clients.set(bot.id, client)
       this.attachMessageListener(bot, client)
+      this.attachPresenceListener(bot, client)   // ✦ NOVO
     } catch (err) {
       this.clients.delete(bot.id)
       this.qrWasShown.delete(bot.id)
@@ -304,33 +281,20 @@ export class WhatsAppManager {
     }
   }
 
-  // ── Handlers centralizados de conexão/falha ──────────────────────────────
-
-  /**
-   * Chamado quando a sessão é confirmada como conectada (QR escaneado).
-   * Único ponto que pode setar isConnected=true e isActive=true.
-   */
   private onSessionConnected(bot: Bot, client: wppconnect.Whatsapp): void {
     this.lastQR.delete(bot.id)
     db.updateBot(bot.id, { isConnected: true, isActive: true }).catch(() => {})
     console.log(`[WhatsApp] ✅ Bot conectado: ${bot.name}`)
-
-    // Captura o número do próprio bot para detectar override manual
     client.getHostDevice().then((device: any) => {
       const phone = device?.wid?.user ?? device?.id?.user
       if (phone) db.updateBot(bot.id, { phone: `${phone}@c.us` }).catch(() => {})
     }).catch(() => {})
   }
 
-  /**
-   * Chamado quando a sessão falha ou é encerrada.
-   * Único ponto que limpa o cliente e reseta o estado do bot.
-   */
   private onSessionFailed(bot: Bot): void {
     this.lastQR.delete(bot.id)
     this.qrWasShown.delete(bot.id)
     this.clients.delete(bot.id)
-    // Limpa tokens com atraso para evitar EBUSY no Windows
     setTimeout(() => nukeAllBotTokens(bot.id).catch(() => {}), 3000)
     db.updateBot(bot.id, { isConnected: false, isActive: false }).catch(() => {})
     console.log(`[WhatsApp] ❌ Sessão encerrada/falhou: ${bot.name}`)
@@ -338,9 +302,7 @@ export class WhatsAppManager {
 
   async stopSession(botId: string): Promise<void> {
     const client = this.clients.get(botId)
-    if (client) {
-      try { await client.close() } catch (_) {}
-    }
+    if (client) { try { await client.close() } catch (_) {} }
     this.clients.delete(botId)
     this.lastQR.delete(botId)
     this.qrWasShown.delete(botId)
@@ -362,6 +324,34 @@ export class WhatsAppManager {
       botId, convId, contactPhone: conv.contactPhone,
       isPaused: false, humanHandoff: false, reason: 'resumed',
     }))
+  }
+
+  // ── ✦ NOVO — Presence listener (cliente digitando no WhatsApp) ────────────
+
+  private attachPresenceListener(bot: Bot, client: wppconnect.Whatsapp): void {
+    try {
+      client.onPresenceChanged((presence: any) => {
+        // presence.type: 'composing' | 'recording' | 'paused' | 'available' | 'unavailable'
+        // presence.id._serialized: '5511999...@c.us'
+        const contactPhone = presence?.id?._serialized ?? presence?.chatId
+        if (!contactPhone) return
+
+        // Ignora eventos do próprio bot
+        db.findBotById(bot.id).then(freshBot => {
+          if (freshBot?.phone && contactPhone === freshBot.phone) return
+
+          const isTyping = presence.type === 'composing' || presence.type === 'recording'
+          this.contactTypingListeners.forEach(l => l({
+            botId:        bot.id,
+            contactPhone,
+            isTyping,
+          }))
+        }).catch(() => {})
+      })
+    } catch (err) {
+      // onPresenceChanged pode não estar disponível em todas as versões — não quebra o serviço
+      console.warn(`[WhatsApp] onPresenceChanged não disponível para ${bot.name}:`, err)
+    }
   }
 
   // ── Message pipeline ─────────────────────────────────────────────────────
@@ -424,7 +414,7 @@ export class WhatsAppManager {
         botId: bot.id, userId: bot.userId, plan: user.plan,
         totalMessages: stats.totalMessages, messageLimit: config.messageLimit,
       }))
-      await this.persistMessage(bot, from, message, null)
+      await this.persistMessage(bot, client, from, message, null)
       return
     }
 
@@ -456,19 +446,18 @@ export class WhatsAppManager {
           isPaused: true, humanHandoff: true, reason: 'human_handoff',
         }))
       }
-      await client.sendText(from, '👤 Vou transferir você para um de nossos atendentes. Aguarde um momento!')
-        .catch(() => {})
-      await this.persistMessage(bot, from, message, null)
+      await client.sendText(from, '👤 Vou transferir você para um de nossos atendentes. Aguarde um momento!').catch(() => {})
+      await this.persistMessage(bot, client, from, message, null)
       return
     }
 
     // ✦ Feature 2: bot pausado
     if (conv?.isPaused) {
-      await this.persistMessage(bot, from, message, null)
+      await this.persistMessage(bot, client, from, message, null)
       return
     }
 
-    // ✦ Feature 4: Typing indicator
+    // ✦ Feature 4: Typing indicator (IA gerando)
     if (conv) {
       this.typingListeners.forEach(l => l({
         botId: bot.id, convId: conv.id, contactPhone: from, isTyping: true,
@@ -476,7 +465,6 @@ export class WhatsAppManager {
     }
 
     let answer: string
-
     try {
       answer = await this.callAIWithRetry(bot, user.apiKeys, chatId, message)
     } catch (raw) {
@@ -488,7 +476,7 @@ export class WhatsAppManager {
           botId: bot.id, convId: conv.id, contactPhone: from, isTyping: false,
         }))
       }
-      await this.persistMessage(bot, from, message, null)
+      await this.persistMessage(bot, client, from, message, null)
       return
     }
 
@@ -498,7 +486,7 @@ export class WhatsAppManager {
       }))
     }
 
-    await this.persistMessage(bot, from, message, answer)
+    await this.persistMessage(bot, client, from, message, answer)
     await sendMessagesWithDelay(client, splitMessages(answer), from)
   }
 
@@ -509,7 +497,6 @@ export class WhatsAppManager {
     chatId: string, message: string,
   ): Promise<string> {
     let lastError: AIError | undefined
-
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         return await this.callAI(bot, apiKeys, chatId, message)
@@ -520,7 +507,6 @@ export class WhatsAppManager {
         if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 1500 * attempt))
       }
     }
-
     throw lastError ?? new AIError('unknown', 'Falha após múltiplas tentativas.')
   }
 
@@ -549,25 +535,62 @@ export class WhatsAppManager {
     }))
   }
 
+  // ── ✅ FIX: Mensagens em ordem correta + captura nome real do contato ──────
+
   private async persistMessage(
-    bot: Bot, from: string, message: string, answer: string | null,
+    bot: Bot,
+    client: wppconnect.Whatsapp,
+    from: string,
+    message: string,
+    answer: string | null,
   ): Promise<void> {
+
+    // ✦ Tenta buscar o nome real do contato (pushname do WhatsApp).
+    // Se falhar, usa o número como fallback.
+    let contactName = from
+    try {
+      const contact = await client.getContact(from)
+      const pushname = contact?.pushname ?? contact?.name ?? contact?.formattedName
+      if (pushname && pushname.trim()) contactName = pushname.trim()
+    } catch (_) { /* ignora — fallback para o phone */ }
+
+    // Timestamp explícito da mensagem do usuário
+    const userCreatedAt = new Date()
+
     const conversation = await db.upsertConversation({
-      botId: bot.id, userId: bot.userId,
-      contactName: from, contactPhone: from,
+      botId:         bot.id,
+      userId:        bot.userId,
+      contactName,                          // nome real ou phone
+      contactPhone:  from,
       lastMessage:   answer ?? message,
       lastMessageAt: new Date(),
-      unreadCount: 1, messageCount: 1,
+      unreadCount:   1,
+      messageCount:  1,
     })
 
-    await Promise.all([
-      db.createMessage({ conversationId: conversation.id, role: 'user', content: message }),
-      db.updateBot(bot.id, { messageCount: bot.messageCount + 1 }),
-      ...(answer !== null
-        ? [db.createMessage({ conversationId: conversation.id, role: 'assistant', content: answer })]
-        : []
-      ),
-    ])
+    // ✅ FIX ORDEM: Criar user message PRIMEIRO com timestamp,
+    // assistant message com timestamp +1ms para garantir ordem ascendente.
+    // Nunca usar Promise.all para as duas — timestamps seriam idênticos.
+
+    await db.createMessage({
+      conversationId: conversation.id,
+      role:           'user',
+      content:        message,
+      createdAt:      userCreatedAt,
+    })
+
+    await db.updateBot(bot.id, { messageCount: bot.messageCount + 1 })
+
+    if (answer !== null) {
+      // +1ms garante que assistant sempre aparece depois do user no orderBy
+      const assistantCreatedAt = new Date(userCreatedAt.getTime() + 1)
+      await db.createMessage({
+        conversationId: conversation.id,
+        role:           'assistant',
+        content:        answer,
+        createdAt:      assistantCreatedAt,
+      })
+    }
   }
 }
 

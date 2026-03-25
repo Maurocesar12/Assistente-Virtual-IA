@@ -99,69 +99,39 @@ const Modals = {
 }
 document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open') }))
 
+// ── Formata número de telefone para exibição legível ──────────────────────────
+function _formatPhone(raw) {
+  if (!raw) return raw
+  const digits = raw.replace(/@.*$/, '').replace(/\D/g, '')
+  if (digits.length === 13) return `+${digits.slice(0,2)} ${digits.slice(2,4)} ${digits.slice(4,9)}-${digits.slice(9)}`
+  if (digits.length === 12) return `+${digits.slice(0,2)} ${digits.slice(2,4)} ${digits.slice(4,8)}-${digits.slice(8)}`
+  return digits || raw
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// PLAN LIMIT — banner de bloqueio + modal de upgrade
+// PLAN LIMIT
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PlanLimit = {
-  // Exibe o banner fixo de limite atingido no topo do dashboard
   showBanner(totalMessages, messageLimit) {
     const existing = UI.el('planLimitBanner')
-    if (existing) return  // já exibindo
-
+    if (existing) return
     const banner = document.createElement('div')
     banner.id = 'planLimitBanner'
-    banner.style.cssText = `
-      position:fixed;top:0;left:0;right:0;z-index:999;
-      background:linear-gradient(90deg,#f05060,#c03040);
-      color:#fff;padding:12px 24px;
-      display:flex;align-items:center;justify-content:space-between;gap:16px;
-      font-size:14px;font-weight:500;
-      box-shadow:0 2px 16px rgba(240,80,96,0.5);
-      animation:toast-slide 0.3s ease;
-    `
-    banner.innerHTML = `
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:20px">🚫</span>
-        <span>
-          Você atingiu o limite de <strong>${messageLimit} mensagens</strong> do plano gratuito.
-          Seu bot está <strong>pausado</strong> — faça upgrade para continuar respondendo.
-        </span>
-      </div>
-      <button
-        onclick="PlanLimit.openUpgradeModal()"
-        style="background:#fff;color:#c03040;border:none;border-radius:8px;
-               padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0"
-      >
-        ⚡ Fazer upgrade →
-      </button>
-    `
+    banner.style.cssText = `position:fixed;top:0;left:0;right:0;z-index:999;background:linear-gradient(90deg,#f05060,#c03040);color:#fff;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:14px;font-weight:500;box-shadow:0 2px 16px rgba(240,80,96,0.5);animation:toast-slide 0.3s ease;`
+    banner.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><span style="font-size:20px">🚫</span><span>Você atingiu o limite de <strong>${messageLimit} mensagens</strong> do plano gratuito. Seu bot está <strong>pausado</strong> — faça upgrade para continuar respondendo.</span></div><button onclick="PlanLimit.openUpgradeModal()" style="background:#fff;color:#c03040;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">⚡ Fazer upgrade →</button>`
     document.body.prepend(banner)
-
-    // Empurra o conteúdo do dashboard para baixo do banner
     const main = document.querySelector('.main')
     if (main) main.style.paddingTop = '52px'
   },
-
   hideBanner() {
-    const banner = UI.el('planLimitBanner')
-    if (banner) banner.remove()
-    const main = document.querySelector('.main')
-    if (main) main.style.paddingTop = ''
+    const banner = UI.el('planLimitBanner'); if (banner) banner.remove()
+    const main = document.querySelector('.main'); if (main) main.style.paddingTop = ''
   },
-
-  // Abre modal de upgrade com detalhes do plano Pro
-  openUpgradeModal() {
-    Modals.open('upgradePlan')
-  },
-
-  // Atualiza o estado visual baseado nas stats vindas do servidor
+  openUpgradeModal() { Modals.open('upgradePlan') },
   applyFromStats(stats) {
-    if (stats.limitReached) {
-      PlanLimit.showBanner(stats.totalMessages, stats.messageLimit)
-    } else {
-      PlanLimit.hideBanner()
-    }
+    if (stats.limitReached) PlanLimit.showBanner(stats.totalMessages, stats.messageLimit)
+    else PlanLimit.hideBanner()
   },
 }
 
@@ -251,8 +221,7 @@ const Auth = {
     finally { UI.setLoading('modal-changePassBtn', false) }
   },
   async logout() {
-    Connect.cleanup()
-    PlanLimit.hideBanner()
+    Connect.cleanup(); PlanLimit.hideBanner()
     try { await Api.post('/auth/logout') } catch (_) {}
     Store.clear(); State.bots = []; State.conversations = []; State.stats = null
     UI.page('landing'); toast('Até logo! 👋', 'info')
@@ -270,16 +239,12 @@ const Dashboard = {
   },
   async loadStats() {
     try {
-      const stats = await Api.get('/users/me/stats')
-      State.stats = stats
-
+      const stats = await Api.get('/users/me/stats'); State.stats = stats
       UI.el('s-bots').textContent      = stats.activeBots
       UI.el('s-msgs').textContent      = stats.totalMessages.toLocaleString('pt-BR')
       UI.el('s-convs').textContent     = stats.totalConversations
       UI.el('s-tokens').textContent    = stats.tokensUsed.toLocaleString('pt-BR')
       UI.el('s-bots-meta').textContent = `${stats.totalBots} total`
-
-      // ✦ Atualiza banner de limite de plano
       PlanLimit.applyFromStats(stats)
     } catch (_) {}
   },
@@ -348,12 +313,10 @@ const Bots = {
     UI.el('eBotTitle').textContent = bot.name
     UI.el('eBotMeta').textContent  = `${m.label} · criado em ${new Date(bot.createdAt).toLocaleDateString('pt-BR')}`
     UI.el('eBotPrompt').value = bot.prompt; UI.el('eBotActive').checked = bot.isActive
-    const connStatus  = UI.el('eBotConnStatus')
-    const connectBtn  = UI.el('eBotConnectBtn')
-    const disconnBtn  = UI.el('eBotDisconnectBtn')
+    const connStatus = UI.el('eBotConnStatus'), connectBtn = UI.el('eBotConnectBtn'), disconnBtn = UI.el('eBotDisconnectBtn')
     if (connStatus) connStatus.textContent = bot.isConnected ? '🟢 Conectado ao WhatsApp' : '🔴 Desconectado'
-    if (connectBtn)  connectBtn.style.display = bot.isConnected ? 'none' : ''
-    if (disconnBtn)  disconnBtn.style.display  = bot.isConnected ? '' : 'none'
+    if (connectBtn) connectBtn.style.display = bot.isConnected ? 'none' : ''
+    if (disconnBtn) disconnBtn.style.display  = bot.isConnected ? '' : 'none'
     Modals.open('editBot')
   },
   async save() {
@@ -374,11 +337,7 @@ const Bots = {
       Modals.close('editBot'); Bots.render(); Bots.renderOverview(); toast('Bot excluído', 'info')
     } catch (err) { toast(err.message, 'error') }
   },
-  connectFromEdit() {
-    const id = State.activeBotId; if (!id) return
-    Modals.close('editBot')
-    Connect.open(id)
-  },
+  connectFromEdit() { const id = State.activeBotId; if (!id) return; Modals.close('editBot'); Connect.open(id) },
   async disconnectFromEdit() {
     const id = State.activeBotId; if (!id) return
     const bot = State.bots.find(b => b.id === id); if (!bot) return
@@ -390,8 +349,7 @@ const Bots = {
       const idx = State.bots.findIndex(b => b.id === id)
       if (idx >= 0) State.bots[idx] = { ...State.bots[idx], isConnected: false, isActive: false }
       Bots.render(); Bots.renderOverview(); Bots.updateSteps()
-      const connStatus = UI.el('eBotConnStatus')
-      const connectBtn = UI.el('eBotConnectBtn')
+      const connStatus = UI.el('eBotConnStatus'), connectBtn = UI.el('eBotConnectBtn')
       if (connStatus) connStatus.textContent = '🔴 Desconectado'
       if (connectBtn) connectBtn.style.display = ''
       if (btn) btn.style.display = 'none'
@@ -409,7 +367,6 @@ const Conversations = {
     try { const result = await Api.get('/conversations'); State.conversations = Array.isArray(result) ? result : []; Conversations.render(); Conversations.renderOverview() }
     catch (_) { State.conversations = [] }
   },
-
   render() {
     const el = UI.el('convsList'); if (!el) return
     if (!State.conversations.length) {
@@ -418,6 +375,10 @@ const Conversations = {
     }
     el.innerHTML = State.conversations.map(c => {
       const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      // Nome legível: contactName se disponível, ou phone formatado
+      const displayName = (c.contactName && c.contactName !== c.contactPhone)
+        ? c.contactName
+        : _formatPhone(c.contactPhone)
       const pauseBadge = c.humanHandoff
         ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px;background:rgba(240,179,64,0.15);color:#f0c060;border:1px solid rgba(240,179,64,0.3);white-space:nowrap">👤 Humano</span>`
         : c.isPaused
@@ -428,11 +389,11 @@ const Conversations = {
         : `<button class="btn btn-ghost btn-sm" title="Pausar bot" onclick="Conversations.pause('${c.id}')" style="padding:3px 7px;font-size:10px">⏸</button>`
       const unreadBadge = c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''
 
-      return `<div class="conv-row" id="conv-row-${c.id}" data-search="${Bots.escape(c.contactName?.toLowerCase() ?? '')} ${Bots.escape(c.lastMessage?.toLowerCase() ?? '')}">
-          <div class="conv-avatar" style="cursor:pointer" onclick="ChatViewer.open('${c.id}','${Bots.escape(c.contactName || c.contactPhone)}','${Bots.escape(c.contactPhone)}')">👤</div>
-          <div class="conv-body" style="min-width:0;cursor:pointer;flex:1" onclick="ChatViewer.open('${c.id}','${Bots.escape(c.contactName || c.contactPhone)}','${Bots.escape(c.contactPhone)}')">
+      return `<div class="conv-row" id="conv-row-${c.id}" data-search="${Bots.escape(displayName.toLowerCase())} ${Bots.escape(c.lastMessage?.toLowerCase() ?? '')}">
+          <div class="conv-avatar" style="cursor:pointer" onclick="ChatViewer.open('${c.id}','${Bots.escape(displayName)}','${Bots.escape(c.contactPhone)}')">👤</div>
+          <div class="conv-body" style="min-width:0;cursor:pointer;flex:1" onclick="ChatViewer.open('${c.id}','${Bots.escape(displayName)}','${Bots.escape(c.contactPhone)}')">
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
-              <div class="conv-name">${Bots.escape(c.contactName || c.contactPhone)}</div>
+              <div class="conv-name">${Bots.escape(displayName)}</div>
               ${pauseBadge}
             </div>
             <div class="conv-preview" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Bots.escape(c.lastMessage)}</div>
@@ -448,17 +409,14 @@ const Conversations = {
         </div>`
     }).join('')
   },
-
   async deleteChat(convId) {
     if (!confirm('Excluir esta conversa? Todas as mensagens serão apagadas permanentemente.')) return
     try {
       await Api.delete(`/conversations/${convId}`)
       State.conversations = State.conversations.filter(c => c.id !== convId)
-      Conversations.render(); Conversations.renderOverview()
-      toast('Conversa excluída', 'info')
+      Conversations.render(); Conversations.renderOverview(); toast('Conversa excluída', 'info')
     } catch (err) { toast('Erro ao excluir: ' + err.message, 'error') }
   },
-
   async pause(convId) {
     try {
       const updated = await Api.post(`/conversations/${convId}/pause`)
@@ -468,7 +426,6 @@ const Conversations = {
       toast('Bot pausado para esta conversa ⏸', 'info')
     } catch (err) { toast('Erro ao pausar: ' + err.message, 'error') }
   },
-
   async resume(convId) {
     try {
       const updated = await Api.post(`/conversations/${convId}/resume`)
@@ -478,75 +435,42 @@ const Conversations = {
       toast('Bot retomado ▶', 'success')
     } catch (err) { toast('Erro ao retomar: ' + err.message, 'error') }
   },
-
   renderOverview() {
     const el = UI.el('ov-convs'); if (!el) return
     if (!State.conversations.length) { el.innerHTML = `<div class="empty" style="padding:32px"><div class="empty-icon" style="font-size:28px">💬</div><h3>Nenhuma conversa</h3></div>`; return }
-    el.innerHTML = State.conversations.slice(0, 4).map(c => { const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); return `<div class="conv-row" style="cursor:pointer" onclick="UI.view('convs')"><div class="conv-avatar">👤</div><div class="conv-body" style="min-width:0"><div class="conv-name">${Bots.escape(c.contactName || c.contactPhone)}</div><div class="conv-preview" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Bots.escape(c.lastMessage)}</div></div><div class="conv-right" style="flex-shrink:0"><div class="conv-time">${time}</div>${c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''}</div></div>` }).join('')
+    el.innerHTML = State.conversations.slice(0, 4).map(c => {
+      const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      const name = (c.contactName && c.contactName !== c.contactPhone) ? c.contactName : _formatPhone(c.contactPhone)
+      return `<div class="conv-row" style="cursor:pointer" onclick="UI.view('convs')"><div class="conv-avatar">👤</div><div class="conv-body" style="min-width:0"><div class="conv-name">${Bots.escape(name)}</div><div class="conv-preview" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Bots.escape(c.lastMessage)}</div></div><div class="conv-right" style="flex-shrink:0"><div class="conv-time">${time}</div>${c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''}</div></div>`
+    }).join('')
   },
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BOT ALERTS
-// ─────────────────────────────────────────────────────────────────────────────
-
 const BotAlerts = {
   _alerts: new Map(),
-
   show(botId, botName, kind, title, message, action) {
     const key = `${botId}:${kind}`
     if (BotAlerts._alerts.has(key)) BotAlerts.dismiss(key)
-
-    const container = UI.el('botAlertsContainer')
-    if (!container) return
-
+    const container = UI.el('botAlertsContainer'); if (!container) return
     const STYLES = {
       connection: { color: 'var(--red)',    bg: 'rgba(240,80,96,0.08)',    border: 'rgba(240,80,96,0.3)',    icon: '📵', btnLabel: '📱 Reconectar', btnAction: `Connect.open('${botId}')` },
       config:     { color: 'var(--red)',    bg: 'rgba(240,80,96,0.08)',    border: 'rgba(240,80,96,0.3)',    icon: '🔑', btnLabel: '⚙️ API Keys',   btnAction: `UI.view('settings')` },
       quota:      { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '💳', btnLabel: '💳 Assinatura', btnAction: `UI.view('billing')` },
-      network:    { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '🌐', btnLabel: null,             btnAction: null },
-      unknown:    { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '⚠️', btnLabel: null,             btnAction: null },
+      network:    { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '🌐', btnLabel: null, btnAction: null },
+      unknown:    { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '⚠️', btnLabel: null, btnAction: null },
     }
     const s = STYLES[kind] ?? STYLES.unknown
-
     const alertEl = document.createElement('div')
     alertEl.dataset.botAlert = key
-    alertEl.style.cssText = `
-      display:flex;align-items:flex-start;gap:14px;
-      padding:16px 18px;margin-bottom:10px;
-      background:${s.bg};border:1px solid ${s.border};border-left:4px solid ${s.color};
-      border-radius:10px;animation:toast-slide 0.3s ease;
-    `
-    const msgHtml   = message  ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;line-height:1.5">${Bots.escape(message)}</div>` : ''
+    alertEl.style.cssText = `display:flex;align-items:flex-start;gap:14px;padding:16px 18px;margin-bottom:10px;background:${s.bg};border:1px solid ${s.border};border-left:4px solid ${s.color};border-radius:10px;animation:toast-slide 0.3s ease;`
+    const msgHtml   = message   ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;line-height:1.5">${Bots.escape(message)}</div>` : ''
     const actionBtn = s.btnLabel ? `<button class="btn btn-sm" onclick="${s.btnAction}" style="background:${s.color};color:${kind==='connection'?'#fff':'#000'};font-size:11px;padding:5px 10px;border-radius:6px;white-space:nowrap">${s.btnLabel}</button>` : ''
-
-    alertEl.innerHTML = `
-      <div style="font-size:22px;flex-shrink:0;margin-top:1px">${s.icon}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:700;color:${s.color};margin-bottom:3px">${Bots.escape(botName)} — ${Bots.escape(title)}</div>
-        ${msgHtml}
-        <div style="font-size:12px;color:#f0c060;font-weight:500">👉 ${Bots.escape(action)}</div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end">
-        ${actionBtn}
-        <button class="btn btn-ghost btn-sm" onclick="BotAlerts.dismiss('${key}')" style="font-size:11px;padding:5px 10px">✕</button>
-      </div>
-    `
+    alertEl.innerHTML = `<div style="font-size:22px;flex-shrink:0;margin-top:1px">${s.icon}</div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:${s.color};margin-bottom:3px">${Bots.escape(botName)} — ${Bots.escape(title)}</div>${msgHtml}<div style="font-size:12px;color:#f0c060;font-weight:500">👉 ${Bots.escape(action)}</div></div><div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end">${actionBtn}<button class="btn btn-ghost btn-sm" onclick="BotAlerts.dismiss('${key}')" style="font-size:11px;padding:5px 10px">✕</button></div>`
     container.appendChild(alertEl)
     BotAlerts._alerts.set(key, alertEl)
   },
-
-  dismiss(key) {
-    const el = BotAlerts._alerts.get(key)
-    if (el) el.remove()
-    BotAlerts._alerts.delete(key)
-  },
-
-  dismissByBotId(botId) {
-    BotAlerts._alerts.forEach((_, key) => {
-      if (key.startsWith(`${botId}:`)) BotAlerts.dismiss(key)
-    })
-  },
+  dismiss(key) { const el = BotAlerts._alerts.get(key); if (el) el.remove(); BotAlerts._alerts.delete(key) },
+  dismissByBotId(botId) { BotAlerts._alerts.forEach((_, key) => { if (key.startsWith(`${botId}:`)) BotAlerts.dismiss(key) }) },
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -554,15 +478,10 @@ const BotAlerts = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Connect = {
-  open(botId) {
-    State.connectBotId = botId
-    Modals.open('connect')
-  },
+  open(botId) { State.connectBotId = botId; Modals.open('connect') },
 
   start() {
-    const botId = State.connectBotId
-    if (!botId) return
-
+    const botId = State.connectBotId; if (!botId) return
     Api.post(`/bots/${botId}/connect`).catch(() => {})
     Connect.cleanup()
 
@@ -570,8 +489,7 @@ const Connect = {
     const source = new EventSource(`${API_URL}/bots/${botId}/events?token=${encodeURIComponent(token)}`)
     State.sseSource = source
 
-    let qrReceived  = false
-    let connectedOk = false
+    let qrReceived = false, connectedOk = false
 
     const errorGraceTimer = setTimeout(() => {
       if (!qrReceived && !connectedOk && source.readyState !== EventSource.CLOSED) {
@@ -583,8 +501,7 @@ const Connect = {
     Connect.log('Iniciando conexão...', 'info')
 
     source.addEventListener('qr', (e) => {
-      qrReceived = true
-      clearTimeout(errorGraceTimer)
+      qrReceived = true; clearTimeout(errorGraceTimer)
       const { qrBase64 } = JSON.parse(e.data)
       Connect.renderQR(qrBase64)
       Connect.log('QR Code gerado. Escaneie com o WhatsApp!', 'success')
@@ -594,16 +511,11 @@ const Connect = {
     source.addEventListener('status', (e) => {
       const data = JSON.parse(e.data)
       Connect.log(`Status: ${data.status}`, 'info')
-      if (data.status === 'inChat' || data.status === 'isLogged') {
-        connectedOk = true
-        clearTimeout(errorGraceTimer)
-      }
+      if (data.status === 'inChat' || data.status === 'isLogged') { connectedOk = true; clearTimeout(errorGraceTimer) }
     })
 
     source.addEventListener('connected', () => {
-      connectedOk = true
-      clearTimeout(errorGraceTimer)
-      Connect.showConnectedScreen()
+      connectedOk = true; clearTimeout(errorGraceTimer); Connect.showConnectedScreen()
     })
 
     source.addEventListener('error-bot', (e) => {
@@ -618,11 +530,10 @@ const Connect = {
       BotAlerts.show(errBotId, botName, kind, title, null, action)
     })
 
-    // ✦ Plan Limit via SSE — limite atingido durante uso ativo do bot
     source.addEventListener('plan-limit', (e) => {
       const { totalMessages, messageLimit } = JSON.parse(e.data)
       PlanLimit.showBanner(totalMessages, messageLimit)
-      Dashboard.loadStats()  // atualiza barra de uso no billing
+      Dashboard.loadStats()
       toast(`Limite de ${messageLimit} mensagens atingido. Bot pausado.`, 'warning')
     })
 
@@ -631,39 +542,36 @@ const Connect = {
       const idx = State.bots.findIndex(b => b.id === updatedBot.id)
       if (idx >= 0) State.bots[idx] = updatedBot
       Bots.render(); Bots.renderOverview(); Bots.updateSteps()
-
       if (updatedBot.isConnected && connectedOk) {
-        clearTimeout(errorGraceTimer)
-        source.close()
-        BotAlerts.dismissByBotId(botId)
-        setTimeout(() => {
-          Modals.close('connect')
-          toast(`Bot conectado ao WhatsApp! 🟢`, 'success')
-        }, 2500)
+        clearTimeout(errorGraceTimer); source.close(); BotAlerts.dismissByBotId(botId)
+        setTimeout(() => { Modals.close('connect'); toast(`Bot conectado ao WhatsApp! 🟢`, 'success') }, 2500)
       }
     })
 
     source.addEventListener('bot-pause', (e) => {
       const { convId, contactPhone, isPaused, humanHandoff, reason } = JSON.parse(e.data)
       const idx = State.conversations.findIndex(c => c.id === convId)
-      if (idx >= 0) {
-        State.conversations[idx] = { ...State.conversations[idx], isPaused, humanHandoff }
-        Conversations.render(); Conversations.renderOverview()
-      }
+      if (idx >= 0) { State.conversations[idx] = { ...State.conversations[idx], isPaused, humanHandoff }; Conversations.render(); Conversations.renderOverview() }
       if (reason === 'human_handoff')        toast(`👤 ${contactPhone} solicitou atendimento humano`, 'warning')
       else if (reason === 'manual_override') toast(`⏸ Bot pausado para ${contactPhone}`, 'info')
       else if (reason === 'resumed')         toast(`▶ Bot retomado para ${contactPhone}`, 'success')
       ChatViewer.updatePauseStatus(convId, isPaused, humanHandoff)
     })
 
+    // ✦ Feature 4 — bot-typing: IA gerando resposta
     source.addEventListener('bot-typing', (e) => {
       const { convId, isTyping } = JSON.parse(e.data)
       ChatViewer.setTypingIndicator(convId, isTyping)
     })
 
+    // ✦ NOVO — contact-typing: cliente digitando no WhatsApp
+    source.addEventListener('contact-typing', (e) => {
+      const { contactPhone, isTyping } = JSON.parse(e.data)
+      ChatViewer.setContactTypingIndicator(contactPhone, isTyping)
+    })
+
     source.onerror = () => {
-      if (source.readyState === EventSource.CLOSED && !connectedOk)
-        Connect.log('Conexão SSE encerrada.', 'info')
+      if (source.readyState === EventSource.CLOSED && !connectedOk) Connect.log('Conexão SSE encerrada.', 'info')
     }
   },
 
@@ -672,40 +580,17 @@ const Connect = {
     const wrap = UI.el('qrWrap')
     if (wrap) {
       wrap.style.cssText = 'background:transparent;border:none;overflow:visible;'
-      wrap.innerHTML = `
-        <div style="background:rgba(0,212,106,0.08);border:1px solid rgba(0,212,106,0.25);border-radius:16px;
-                    padding:32px 40px;display:flex;flex-direction:column;align-items:center;justify-content:center;
-                    gap:12px;min-width:220px;animation:fade-up 0.3s ease;">
-          <div style="font-size:52px;line-height:1">✅</div>
-          <div style="font-size:16px;font-weight:700;color:var(--green)">Conectado!</div>
-          <div style="font-size:12px;color:var(--text-muted);text-align:center;line-height:1.5">
-            WhatsApp vinculado com sucesso.<br>O bot já está pronto para responder.
-          </div>
-        </div>`
+      wrap.innerHTML = `<div style="background:rgba(0,212,106,0.08);border:1px solid rgba(0,212,106,0.25);border-radius:16px;padding:32px 40px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-width:220px;animation:fade-up 0.3s ease;"><div style="font-size:52px;line-height:1">✅</div><div style="font-size:16px;font-weight:700;color:var(--green)">Conectado!</div><div style="font-size:12px;color:var(--text-muted);text-align:center;line-height:1.5">WhatsApp vinculado com sucesso.<br>O bot já está pronto para responder.</div></div>`
     }
-    const status = UI.el('qrStatus')
-    if (status) status.textContent = '🟢 Bot ativo e respondendo'
+    const status = UI.el('qrStatus'); if (status) status.textContent = '🟢 Bot ativo e respondendo'
   },
 
   renderQR(base64) {
-    const wrap = UI.el('qrWrap') || UI.el('qrCanvas')
-    if (!wrap) return
-    if (!base64) {
-      wrap.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--text-dim)"><div class="spinner" style="width:28px;height:28px;border-width:3px"></div><span style="font-size:12px">Gerando QR Code...</span></div>`
-      return
-    }
+    const wrap = UI.el('qrWrap') || UI.el('qrCanvas'); if (!wrap) return
+    if (!base64) { wrap.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--text-dim)"><div class="spinner" style="width:28px;height:28px;border-width:3px"></div><span style="font-size:12px">Gerando QR Code...</span></div>`; return }
     const clean = base64.replace(/^data:image\/[a-z]+;base64,/i, '')
     wrap.style.cssText = 'background:transparent;border:none;overflow:visible;'
-    wrap.innerHTML = `
-      <div style="background:#ffffff;border-radius:16px;padding:16px;display:inline-flex;align-items:center;
-                  justify-content:center;box-shadow:0 0 0 1px rgba(0,0,0,0.08),0 8px 32px rgba(0,0,0,0.4);
-                  position:relative;overflow:hidden;">
-        <img src="data:image/png;base64,${clean}" alt="QR Code WhatsApp" width="220" height="220"
-             style="display:block;image-rendering:pixelated;image-rendering:crisp-edges;">
-        <div style="position:absolute;left:10px;right:10px;height:2px;
-                    background:linear-gradient(90deg,transparent,rgba(0,212,106,0.8),transparent);
-                    box-shadow:0 0 8px rgba(0,212,106,0.6);animation:qr-scan 2.2s linear infinite;"></div>
-      </div>`
+    wrap.innerHTML = `<div style="background:#ffffff;border-radius:16px;padding:16px;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px rgba(0,0,0,0.08),0 8px 32px rgba(0,0,0,0.4);position:relative;overflow:hidden;"><img src="data:image/png;base64,${clean}" alt="QR Code WhatsApp" width="220" height="220" style="display:block;image-rendering:pixelated;image-rendering:crisp-edges;"><div style="position:absolute;left:10px;right:10px;height:2px;background:linear-gradient(90deg,transparent,rgba(0,212,106,0.8),transparent);box-shadow:0 0 8px rgba(0,212,106,0.6);animation:qr-scan 2.2s linear infinite;"></div></div>`
   },
 
   log(msg, type = '') {
@@ -720,17 +605,10 @@ const Connect = {
     const wrap = UI.el('qrWrap')
     if (wrap) {
       wrap.style.cssText = ''
-      wrap.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--text-dim)">
-          <div class="spinner" style="width:28px;height:28px;border-width:3px"></div>
-          <span style="font-size:12px">Gerando QR Code...</span>
-        </div>
-        <div class="qr-scan-line"></div>`
+      wrap.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--text-dim)"><div class="spinner" style="width:28px;height:28px;border-width:3px"></div><span style="font-size:12px">Gerando QR Code...</span></div><div class="qr-scan-line"></div>`
     }
-    const status = UI.el('qrStatus')
-    if (status) status.textContent = 'Aguardando QR Code...'
-    const log = UI.el('connectLog')
-    if (log) log.innerHTML = ''
+    const status = UI.el('qrStatus'); if (status) status.textContent = 'Aguardando QR Code...'
+    const log = UI.el('connectLog'); if (log) log.innerHTML = ''
   },
 }
 
@@ -791,83 +669,56 @@ const Analytics = {
 const Billing = {
   render() {
     const u = State.user; if (!u) return
-    const s    = State.stats
-    const plan = u.plan ?? 'starter'
-
+    const s = State.stats, plan = u.plan ?? 'starter'
     const planLabels = { starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' }
     const planPills  = { starter: 'GRÁTIS',  pro: 'PRO', enterprise: 'ENTERPRISE' }
-
-    const msgs         = s?.totalMessages ?? 0
-    const limit        = s?.messageLimit  ?? null     // null = ilimitado
-    const remaining    = s?.remainingMessages
-    const percent      = s?.usagePercent  ?? 0
-    const limitReached = s?.limitReached  ?? false
-
+    const msgs = s?.totalMessages ?? 0, limit = s?.messageLimit ?? null, remaining = s?.remainingMessages, percent = s?.usagePercent ?? 0, limitReached = s?.limitReached ?? false
     UI.el('bilPlan').textContent = planLabels[plan]
-    const pill = UI.el('bilPill')
-    if (pill) { pill.textContent = planPills[plan]; pill.className = `plan-pill ${plan}` }
-
-    // ── Uso de mensagens ──────────────────────────────────────────────────────
-    const limitLabel  = limit === null ? '∞' : limit.toLocaleString('pt-BR')
-    const usageEl     = UI.el('bilUsage')
-    if (usageEl) usageEl.textContent = `${msgs.toLocaleString('pt-BR')} / ${limitLabel}`
-
+    const pill = UI.el('bilPill'); if (pill) { pill.textContent = planPills[plan]; pill.className = `plan-pill ${plan}` }
+    const usageEl = UI.el('bilUsage'); if (usageEl) usageEl.textContent = `${msgs.toLocaleString('pt-BR')} / ${limit === null ? '∞' : limit.toLocaleString('pt-BR')}`
     const barEl = UI.el('bilBar')
-    if (barEl) {
-      barEl.style.width      = limit === null ? '4%' : `${percent}%`
-      barEl.style.background = limitReached ? 'var(--red)' : percent >= 80 ? 'var(--yellow)' : 'var(--green)'
-    }
-
-    // ── Alerta de uso alto ou bloqueio ────────────────────────────────────────
+    if (barEl) { barEl.style.width = limit === null ? '4%' : `${percent}%`; barEl.style.background = limitReached ? 'var(--red)' : percent >= 80 ? 'var(--yellow)' : 'var(--green)' }
     const usageAlertEl = UI.el('bilUsageAlert')
     if (usageAlertEl) {
       if (limitReached) {
         usageAlertEl.style.display = ''
-        usageAlertEl.innerHTML = `
-          <div style="background:rgba(240,80,96,0.08);border:1px solid rgba(240,80,96,0.3);border-left:4px solid var(--red);
-                      border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--text-muted)">
-            🚫 <strong style="color:var(--red)">Limite atingido!</strong>
-            Seu bot está pausado. Faça upgrade para continuar respondendo.
-          </div>`
+        usageAlertEl.innerHTML = `<div style="background:rgba(240,80,96,0.08);border:1px solid rgba(240,80,96,0.3);border-left:4px solid var(--red);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--text-muted)">🚫 <strong style="color:var(--red)">Limite atingido!</strong> Seu bot está pausado. Faça upgrade para continuar respondendo.</div>`
       } else if (percent >= 80 && limit !== null) {
         usageAlertEl.style.display = ''
-        usageAlertEl.innerHTML = `
-          <div style="background:rgba(240,179,64,0.08);border:1px solid rgba(240,179,64,0.3);border-left:4px solid var(--yellow);
-                      border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--text-muted)">
-            ⚠️ <strong style="color:var(--yellow)">Atenção:</strong>
-            Você usou ${percent}% do seu limite mensal.
-            Restam <strong style="color:var(--text)">${remaining?.toLocaleString('pt-BR') ?? 0} mensagens</strong>.
-          </div>`
-      } else {
-        usageAlertEl.style.display = 'none'
-      }
+        usageAlertEl.innerHTML = `<div style="background:rgba(240,179,64,0.08);border:1px solid rgba(240,179,64,0.3);border-left:4px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--text-muted)">⚠️ <strong style="color:var(--yellow)">Atenção:</strong> Você usou ${percent}% do seu limite mensal. Restam <strong style="color:var(--text)">${remaining?.toLocaleString('pt-BR') ?? 0} mensagens</strong>.</div>`
+      } else { usageAlertEl.style.display = 'none' }
     }
-
-    // ── Botão de upgrade (oculta se já pro/enterprise) ────────────────────────
     const upgradeBtn = UI.el('bilUpgradeBtn')
-    if (upgradeBtn) {
-      upgradeBtn.style.display = (plan === 'pro' || plan === 'enterprise') ? 'none' : ''
-    }
+    if (upgradeBtn) upgradeBtn.style.display = (plan === 'pro' || plan === 'enterprise') ? 'none' : ''
   },
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CHAT VIEWER
+// ✦ CHAT VIEWER — versão corrigida com ordem, typing do contato e nomes
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ChatViewer = {
-  _activeConvId: null,
+  _activeConvId:    null,
+  _activeConvPhone: null,
 
   async open(convId, contactName, contactPhone) {
-    ChatViewer._activeConvId = convId
+    ChatViewer._activeConvId    = convId
+    ChatViewer._activeConvPhone = contactPhone
+
     const conv = State.conversations.find(c => c.id === convId)
     const bot  = conv ? State.bots.find(b => b.id === conv.botId) : null
 
-    UI.el('chatContactName').textContent  = contactName || contactPhone
-    UI.el('chatContactPhone').textContent = contactPhone
+    // Nome legível do contato
+    const displayName = (contactName && contactName !== contactPhone)
+      ? contactName
+      : _formatPhone(contactPhone)
 
+    UI.el('chatContactName').textContent  = displayName
+    UI.el('chatContactPhone').textContent = _formatPhone(contactPhone)
+
+    // Nome do bot no badge
     const badge = UI.el('chatBotBadge')
-    if (badge) badge.textContent = bot ? bot.name : 'Bot'
+    if (badge) badge.textContent = bot ? `🤖 ${bot.name}` : '🤖 Bot'
 
     ChatViewer.updatePauseStatus(convId, conv?.isPaused ?? false, conv?.humanHandoff ?? false)
     document.getElementById('m-chat')?.classList.add('open')
@@ -880,7 +731,7 @@ const ChatViewer = {
 
     try {
       const messages = await Api.get(`/conversations/${convId}/messages`)
-      ChatViewer.render(messages)
+      ChatViewer.render(messages, bot, displayName)
     } catch (_) {
       UI.el('chatMessages').innerHTML = `
         <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:13px">
@@ -889,34 +740,66 @@ const ChatViewer = {
     }
   },
 
-  render(messages) {
+  /**
+   * Renderiza mensagens com:
+   * - Ordem garantida por createdAt ASC (vem do DB nesta ordem)
+   * - Nome do remetente acima de cada bloco de mensagens (agrupa consecutivas)
+   * - Bot → alinhado à direita em verde; Cliente → alinhado à esquerda em cinza
+   */
+  render(messages, bot, contactDisplayName) {
     const container = UI.el('chatMessages')
     const count     = UI.el('chatMsgCount')
     if (!container) return
 
+    const botName     = bot?.name ?? 'Bot'
+    const contactName = contactDisplayName ?? 'Cliente'
+
     if (!messages || messages.length === 0) {
-      container.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:13px">Nenhuma mensagem ainda</div>`
+      container.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:13px">
+          Nenhuma mensagem ainda
+        </div>`
       if (count) count.textContent = '0 mensagens'
       return
     }
 
     if (count) count.textContent = `${messages.length} mensagem${messages.length !== 1 ? 's' : ''}`
 
-    container.innerHTML = messages.map(m => {
-      const isUser  = m.role === 'user'
-      const time    = new Date(m.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-      const text    = Bots.escape(m.content)
-      const isError = m.role === 'assistant' && m.content.startsWith('⚠️')
+    container.innerHTML = messages.map((m, idx) => {
+      const isUser      = m.role === 'user'
+      const isError     = m.role === 'assistant' && m.content.startsWith('⚠️')
+      const time        = new Date(m.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      const text        = Bots.escape(m.content)
+      const senderName  = isUser ? contactName : botName
+      const senderEmoji = isUser ? '👤' : '🤖'
+      const senderColor = isUser ? 'var(--text-dim)' : 'var(--green)'
+
+      // Label do remetente só quando muda em relação à mensagem anterior
+      const prevMsg    = messages[idx - 1]
+      const sameRole   = prevMsg && prevMsg.role === m.role
+      const showLabel  = !sameRole
+
+      const labelHtml = showLabel
+        ? `<div style="font-size:10px;font-weight:700;color:${senderColor};margin-bottom:3px;padding:0 4px">
+             ${senderEmoji} ${Bots.escape(senderName)}
+           </div>`
+        : ''
 
       return `
-        <div style="display:flex;flex-direction:column;align-items:${isUser ? 'flex-start' : 'flex-end'};gap:2px">
-          <div style="max-width:80%;padding:9px 13px;border-radius:${isUser ? '4px 14px 14px 14px' : '14px 4px 14px 14px'};
+        <div style="display:flex;flex-direction:column;
+                    align-items:${isUser ? 'flex-start' : 'flex-end'};
+                    gap:1px;margin-top:${showLabel && idx > 0 ? '10px' : '2px'}">
+          ${labelHtml}
+          <div style="max-width:78%;padding:9px 13px;
+                      border-radius:${isUser ? '4px 14px 14px 14px' : '14px 4px 14px 14px'};
                       font-size:13px;line-height:1.55;word-break:break-word;
-                      ${isUser ? 'background:var(--surface3);color:var(--text);border:1px solid var(--border2);'
-                               : isError ? 'background:rgba(240,80,96,0.12);color:#f07080;border:1px solid rgba(240,80,96,0.25);'
-                                         : 'background:rgba(0,212,106,0.12);color:var(--text);border:1px solid rgba(0,212,106,0.2);'}
-          ">${text}</div>
-          <span style="font-size:10px;color:var(--text-dim);padding:0 4px">${isUser ? '👤' : '🤖'} ${time}</span>
+                      ${isUser
+                        ? 'background:var(--surface3);color:var(--text);border:1px solid var(--border2);'
+                        : isError
+                          ? 'background:rgba(240,80,96,0.12);color:#f07080;border:1px solid rgba(240,80,96,0.25);'
+                          : 'background:rgba(0,212,106,0.12);color:var(--text);border:1px solid rgba(0,212,106,0.2);'
+                      }">${text}</div>
+          <span style="font-size:10px;color:var(--text-dim);padding:0 4px">${time}</span>
         </div>`
     }).join('')
 
@@ -925,43 +808,74 @@ const ChatViewer = {
 
   updatePauseStatus(convId, isPaused, humanHandoff) {
     if (ChatViewer._activeConvId !== convId) return
-    const statusEl = UI.el('chatPauseStatus')
-    if (!statusEl) return
-
+    const statusEl = UI.el('chatPauseStatus'); if (!statusEl) return
     if (humanHandoff) {
-      statusEl.innerHTML =
-        `<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:100px;background:rgba(240,179,64,0.15);color:#f0c060;border:1px solid rgba(240,179,64,0.3)">👤 Aguardando humano</span>` +
-        `<button class="btn btn-ghost btn-sm" onclick="ChatViewer.resumeCurrentChat()" style="padding:3px 8px;font-size:10px">▶ Retomar</button>`
+      statusEl.innerHTML = `<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:100px;background:rgba(240,179,64,0.15);color:#f0c060;border:1px solid rgba(240,179,64,0.3)">👤 Aguardando humano</span><button class="btn btn-ghost btn-sm" onclick="ChatViewer.resumeCurrentChat()" style="padding:3px 8px;font-size:10px">▶ Retomar</button>`
     } else if (isPaused) {
-      statusEl.innerHTML =
-        `<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:100px;background:rgba(240,179,64,0.1);color:#f0b340;border:1px solid rgba(240,179,64,0.25)">⏸ Bot pausado</span>` +
-        `<button class="btn btn-ghost btn-sm" onclick="ChatViewer.resumeCurrentChat()" style="padding:3px 8px;font-size:10px">▶ Retomar</button>`
+      statusEl.innerHTML = `<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:100px;background:rgba(240,179,64,0.1);color:#f0b340;border:1px solid rgba(240,179,64,0.25)">⏸ Bot pausado</span><button class="btn btn-ghost btn-sm" onclick="ChatViewer.resumeCurrentChat()" style="padding:3px 8px;font-size:10px">▶ Retomar</button>`
     } else {
-      statusEl.innerHTML =
-        `<span style="font-size:11px;padding:3px 10px;border-radius:100px;background:rgba(0,212,106,0.08);color:var(--green);border:1px solid rgba(0,212,106,0.2)">🤖 Bot ativo</span>` +
-        `<button class="btn btn-ghost btn-sm" onclick="ChatViewer.pauseCurrentChat()" style="padding:3px 8px;font-size:10px">⏸ Pausar</button>`
+      statusEl.innerHTML = `<span style="font-size:11px;padding:3px 10px;border-radius:100px;background:rgba(0,212,106,0.08);color:var(--green);border:1px solid rgba(0,212,106,0.2)">🤖 Bot ativo</span><button class="btn btn-ghost btn-sm" onclick="ChatViewer.pauseCurrentChat()" style="padding:3px 8px;font-size:10px">⏸ Pausar</button>`
     }
   },
 
   async pauseCurrentChat()  { const id = ChatViewer._activeConvId; if (id) await Conversations.pause(id) },
   async resumeCurrentChat() { const id = ChatViewer._activeConvId; if (id) await Conversations.resume(id) },
 
+  // ── ✦ Feature 4 — IA digitando (bot-typing) ──────────────────────────────
+
   setTypingIndicator(convId, isTyping) {
     if (ChatViewer._activeConvId !== convId) return
-    const container = UI.el('chatMessages')
-    if (!container) return
-    const existing = container.querySelector('#typing-indicator')
+    const container = UI.el('chatMessages'); if (!container) return
+    const existing = container.querySelector('#typing-indicator-bot')
+
     if (isTyping && !existing) {
-      const indicator = document.createElement('div')
-      indicator.id = 'typing-indicator'
-      indicator.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:2px;animation:fade-up 0.2s ease'
-      indicator.innerHTML =
+      const conv = State.conversations.find(c => c.id === convId)
+      const bot  = conv ? State.bots.find(b => b.id === conv.botId) : null
+      const name = bot?.name ?? 'Bot'
+
+      const el = document.createElement('div')
+      el.id = 'typing-indicator-bot'
+      el.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:2px;animation:fade-up 0.2s ease;margin-top:10px'
+      el.innerHTML =
+        `<div style="font-size:10px;font-weight:700;color:var(--green);margin-bottom:3px;padding:0 4px">🤖 ${Bots.escape(name)}</div>` +
         `<div style="padding:10px 16px;border-radius:14px 4px 14px 14px;background:rgba(0,212,106,0.08);border:1px solid rgba(0,212,106,0.15);display:inline-flex;align-items:center;gap:5px;">` +
         `<span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;animation:typing-dot 1.2s infinite;animation-delay:0s"></span>` +
         `<span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;animation:typing-dot 1.2s infinite;animation-delay:0.2s"></span>` +
         `<span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;animation:typing-dot 1.2s infinite;animation-delay:0.4s"></span>` +
-        `</div><span style="font-size:10px;color:var(--text-dim);padding:0 4px">🤖 digitando...</span>`
-      container.appendChild(indicator)
+        `</div><span style="font-size:10px;color:var(--text-dim);padding:0 4px">digitando...</span>`
+      container.appendChild(el)
+      container.scrollTop = container.scrollHeight
+    } else if (!isTyping && existing) {
+      existing.remove()
+    }
+  },
+
+  // ── ✦ NOVO — cliente digitando no WhatsApp (contact-typing) ──────────────
+
+  setContactTypingIndicator(contactPhone, isTyping) {
+    if (ChatViewer._activeConvPhone !== contactPhone) return
+    const container = UI.el('chatMessages'); if (!container) return
+    const existing = container.querySelector('#typing-indicator-contact')
+
+    if (isTyping && !existing) {
+      const conv = State.conversations.find(
+        c => c.contactPhone === contactPhone && c.id === ChatViewer._activeConvId
+      )
+      const name = (conv?.contactName && conv.contactName !== contactPhone)
+        ? conv.contactName
+        : _formatPhone(contactPhone)
+
+      const el = document.createElement('div')
+      el.id = 'typing-indicator-contact'
+      el.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:2px;animation:fade-up 0.2s ease;margin-top:10px'
+      el.innerHTML =
+        `<div style="font-size:10px;font-weight:700;color:var(--text-dim);margin-bottom:3px;padding:0 4px">👤 ${Bots.escape(name)}</div>` +
+        `<div style="padding:10px 16px;border-radius:4px 14px 14px 14px;background:var(--surface3);border:1px solid var(--border2);display:inline-flex;align-items:center;gap:5px;">` +
+        `<span style="width:6px;height:6px;border-radius:50%;background:var(--text-muted);display:inline-block;animation:typing-dot 1.2s infinite;animation-delay:0s"></span>` +
+        `<span style="width:6px;height:6px;border-radius:50%;background:var(--text-muted);display:inline-block;animation:typing-dot 1.2s infinite;animation-delay:0.2s"></span>` +
+        `<span style="width:6px;height:6px;border-radius:50%;background:var(--text-muted);display:inline-block;animation:typing-dot 1.2s infinite;animation-delay:0.4s"></span>` +
+        `</div><span style="font-size:10px;color:var(--text-dim);padding:0 4px">digitando...</span>`
+      container.appendChild(el)
       container.scrollTop = container.scrollHeight
     } else if (!isTyping && existing) {
       existing.remove()
