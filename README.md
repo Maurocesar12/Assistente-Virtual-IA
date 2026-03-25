@@ -169,7 +169,3 @@ npm start
 - CORS configurado para o domínio do frontend
 
 ---
-
-## 📄 Licença
-
-MIT © Marcus Gonçalves
