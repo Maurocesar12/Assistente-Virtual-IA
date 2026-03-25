@@ -7,7 +7,7 @@ dist/
 tokens/
 Back-End/prisma/dev.db
 Back-End/prisma/dev.db-journal
-*.db
-*.db-journal
+db
+db-journal
 
 /src/generated/prisma
