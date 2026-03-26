@@ -80,9 +80,7 @@ botsRouter.delete('/:id', async (req, res, next) => {
   try {
     const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
-    if (whatsappManager.isRunning(bot.id)) {
-      await whatsappManager.stopSession(bot.id)
-    }
+    if (whatsappManager.isRunning(bot.id)) await whatsappManager.stopSession(bot.id)
     await db.deleteBot(bot.id)
     return noContent(res)
   } catch (err) { next(err) }
@@ -95,24 +93,12 @@ botsRouter.post('/:id/connect', async (req, res, next) => {
     const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
 
-    // 1. Para qualquer sessão ativa antes de iniciar uma nova.
-    //    Sem isso, wppconnect poderia restaurar tokens antigos e emitir
-    //    'isLogged' sem o usuário ter escaneado o QR.
-    if (whatsappManager.isRunning(bot.id)) {
-      await whatsappManager.stopSession(bot.id)
-    }
-
-    // 2. Reseta o estado no DB ANTES de iniciar wppconnect.
-    //    Garante que o evento 'bot' via SSE nunca carregue isConnected=true
-    //    de uma sessão anterior enquanto o novo QR ainda não foi escaneado.
+    if (whatsappManager.isRunning(bot.id)) await whatsappManager.stopSession(bot.id)
     await db.updateBot(bot.id, { isConnected: false, isActive: false })
 
-    // 3. Busca o bot com o estado já atualizado para passar ao startSession.
-    //    Evita passar o objeto antigo (com isConnected=true) para o serviço.
     const freshBot = await db.findBotById(bot.id)
     if (!freshBot) throw ApiError.notFound('Bot not found after reset')
 
-    // 4. Inicia assincronamente — QR chegará via SSE
     whatsappManager.startSession(freshBot).catch((err) => {
       console.error(`[Bots] Failed to start session for ${freshBot.id}:`, err)
       db.updateBot(freshBot.id, { isConnected: false, isActive: false })
@@ -150,25 +136,9 @@ botsRouter.get('/:id/events', async (req, res, next) => {
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
     }
 
-    // ── Máquina de estado da sessão SSE ──────────────────────────────────────
-    //
-    // qrShown:       true após o primeiro QR chegar ao frontend nesta sessão SSE.
-    // everConnected: true após inChat confirmado (QR foi escaneado).
-    //
-    // Regras de alerta:
-    //   - Antes do QR (fase 1): nenhum status gera alerta → são ruídos de bootstrap.
-    //   - Após QR (fase 2): falhas geram alerta → QR expirou ou erro real.
-    //   - Após conectar (fase 3): qualquer falha gera alerta → sessão caiu.
-    //
-    // Alinhado com whatsapp.ts:
-    //   - 'inChat'   → conexão real confirmada (QR escaneado)
-    //   - 'isLogged' → só confirmado se qrShown=true (guarda no serviço)
-    //   - 'notLogged', 'deleteToken' → agora em FAILED_STATUSES (reset limpo)
-
     let qrShown       = false
     let everConnected = false
 
-    // Status que geram alerta quando ocorrem DEPOIS que o QR foi mostrado
     const SESSION_ERROR_MESSAGES: Record<string, { title: string; message: string; action: string }> = {
       browserClose:       { title: 'Navegador fechado',     message: 'O navegador interno foi fechado inesperadamente.',        action: 'Clique em "Conectar" para reconectar o bot.' },
       qrReadError:        { title: 'QR Code não lido',      message: 'O QR Code expirou sem ser escaneado.',                   action: 'Clique em "Conectar" e escaneie o QR novamente.' },
@@ -183,6 +153,9 @@ botsRouter.get('/:id/events', async (req, res, next) => {
     const SESSION_FAILED_KEYS    = new Set(Object.keys(SESSION_ERROR_MESSAGES))
     const SESSION_CONNECTED_KEYS = new Set(['inChat', 'isLogged'])
 
+    // ✅ Status especial emitido APÓS getHostDevice() completar — bot já tem phone no DB
+    const CONNECTED_WITH_PHONE = 'connected_with_phone'
+
     const unsubQR = whatsappManager.onQRCodeForBot(bot.id, (e) => {
       qrShown = true
       sendEvent('qr', { qrBase64: e.qrBase64, qrAscii: e.qrAscii })
@@ -191,30 +164,36 @@ botsRouter.get('/:id/events', async (req, res, next) => {
     const unsubSession = whatsappManager.onSessionUpdate(async (e) => {
       if (e.botId !== bot.id) return
 
+      // ✅ connected_with_phone: emite 'connected' + 'bot' com phone já preenchido
+      if (e.status === CONNECTED_WITH_PHONE) {
+        everConnected = true
+        sendEvent('connected', { botId: e.botId, status: e.status })
+        // Busca bot DEPOIS do phone ter sido salvo pelo onSessionConnectedAsync
+        const updatedWithPhone = await db.findBotById(bot.id)
+        if (updatedWithPhone) sendEvent('bot', updatedWithPhone)
+        return
+      }
+
       sendEvent('status', { status: e.status })
 
-      // Conexão confirmada → evento imediato para o frontend mostrar tela de sucesso
+      // Conexão confirmada pelos status normais (qrShown garante scan real)
       if (SESSION_CONNECTED_KEYS.has(e.status) && qrShown) {
         everConnected = true
         sendEvent('connected', { botId: e.botId, status: e.status })
       }
 
-      // Alertas: só depois que o QR foi mostrado (fase 2 ou 3)
-      // Fase 1 (antes do QR): qualquer falha é ruído de bootstrap → silenciar
-      const isFailure    = SESSION_FAILED_KEYS.has(e.status)
-      const isAfterQR    = qrShown || everConnected
-      const shouldAlert  = isFailure && isAfterQR
+      const isFailure   = SESSION_FAILED_KEYS.has(e.status)
+      const isAfterQR   = qrShown || everConnected
+      const shouldAlert = isFailure && isAfterQR
 
       if (shouldAlert) {
         const info = SESSION_ERROR_MESSAGES[e.status] ?? {
-          title:   'Conexão perdida',
-          message: 'Erro inesperado na sessão do WhatsApp.',
-          action:  'Clique em "Conectar" para tentar reconectar.',
+          title: 'Conexão perdida', message: 'Erro inesperado na sessão do WhatsApp.',
+          action: 'Clique em "Conectar" para tentar reconectar.',
         }
         sendEvent('error-bot', { ...info, status: e.status, botId: e.botId })
       }
 
-      // Envia o estado atualizado do bot (DB) para o frontend
       const updated = await db.findBotById(bot.id)
       if (updated) sendEvent('bot', updated)
     })
@@ -246,6 +225,14 @@ botsRouter.get('/:id/events', async (req, res, next) => {
       })
     })
 
+    const unsubContactTyping = whatsappManager.onContactTyping((e) => {
+      if (e.botId !== bot.id) return
+      sendEvent('contact-typing', {
+        contactPhone: e.contactPhone,
+        isTyping:     e.isTyping,
+      })
+    })
+
     req.on('close', () => {
       unsubQR()
       unsubSession()
@@ -253,6 +240,7 @@ botsRouter.get('/:id/events', async (req, res, next) => {
       unsubPlanLimit()
       unsubPause()
       unsubTyping()
+      unsubContactTyping()
     })
   } catch (err) { next(err) }
 })
