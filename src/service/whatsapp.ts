@@ -434,16 +434,32 @@ private async onSessionConnectedAsync(bot: Bot, client: wppconnect.Whatsapp): Pr
 
   // ── Message pipeline ─────────────────────────────────────────────────────
 
-  private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
-    client.onMessage(message => {
-      const isValid =
-        message.type === 'chat' &&
-        !message.isGroupMsg &&
-        message.chatId !== 'status@broadcast'
-      if (!isValid) return
-      this.bufferMessage(bot, client, String(message.chatId), message.body ?? '', message.from)
-    })
-  }
+private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
+  client.onMessage(async (message) => {
+    // LOG 1: Recebimento bruto
+    console.log(`📩 [LOG] Mensagem recebida de: ${message.from} | Tipo: ${message.type}`);
+
+    const isValid =
+      message.type === 'chat' &&
+      !message.isGroupMsg &&
+      message.chatId !== 'status@broadcast';
+
+    if (!isValid) {
+      console.log(`⚠️ [LOG] Mensagem descartada (Grupo, Status ou Tipo inválido)`);
+      return;
+    }
+
+    console.log(`🚀 [LOG] Encaminhando para buffer: "${message.body}"`);
+
+    try {
+      // Importante: use message.from para identificar o chat de forma estável
+      const chatId = String(message.from); 
+      this.bufferMessage(bot, client, chatId, message.body ?? '', message.from);
+    } catch (err) {
+      console.error("❌ [LOG] Erro ao processar bufferMessage:", err);
+    }
+  });
+}
 
   private bufferMessage(
     bot: Bot, client: wppconnect.Whatsapp,
