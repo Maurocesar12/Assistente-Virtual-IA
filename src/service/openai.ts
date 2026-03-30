@@ -27,11 +27,13 @@ export class OpenAISessionManager {
   }
 
   async sendMessage(chatId: string, message: string, options: OpenAIOptions): Promise<string> {
+     console.log(`🤖 Iniciando sessão para chat: ${chatId}`);
     const openai = this.buildClient(options.apiKey)
     const threadId = await this.ensureThread(chatId, options)
-
+      console.log(`🧵 Thread utilizada: ${threadId}`);
     // Retrieve assistant info for instructions
     const assistant = await openai.beta.assistants.retrieve(options.assistantId)
+    console.log(`✅ Assistente encontrado: ${assistant.name}`);
 
     // Add message to thread
     await openai.beta.threads.messages.create(threadId, {
