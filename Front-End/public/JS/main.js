@@ -1,6 +1,6 @@
 'use strict'
 
-const API_URL = window.location.origin + '/api'
+const API_URL = 'https://assistente-virtual-ia-production.up.railway.app/api'
 
 const State = {
   token: null, user: null, bots: [], conversations: [],
