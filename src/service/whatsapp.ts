@@ -262,6 +262,14 @@ export class WhatsAppManager {
     try {
       const sessionPromise = wppconnect.create({
         session:        sessionName,
+        browserArgs: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage', // O MAIS IMPORTANTE: Impede o crash por falta de memória compartilhada
+          '--disable-extensions',
+          '--no-zygote',
+          '--single-process' // Faz o navegador usar apenas um processo, economizando RAM
+        ],
         headless:       'new' as any,
         logQR:          false,
         autoClose:      0,
