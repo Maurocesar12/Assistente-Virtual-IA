@@ -16,7 +16,6 @@ model User {
   plan                String   @default("starter")
   apiKeys             String   @default("{}")
   mustChangePassword  Boolean  @default(false)
-  openaiKey           String?
 
   bots                Bot[]
   conversations       Conversation[]
