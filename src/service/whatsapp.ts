@@ -436,33 +436,28 @@ private async onSessionConnectedAsync(bot: Bot, client: wppconnect.Whatsapp): Pr
 
 private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
   client.onMessage(async (message) => {
-    // 1. Log para saber exatamente o que está chegando
-    console.log(`📩 [DEBUG] Recebido de: ${message.from} | Tipo: ${message.type} | Corpo: ${message.body}`);
+    // Esse log precisa aparecer no Railway para TODO "Oi" que você receber
+    console.log(`📩 [DEBUG] Origem: ${message.from} | Tipo: ${message.type} | Msg: ${message.body}`);
 
-    // 2. Filtro simplificado: Ignora status e grupos, aceita o resto
-    const isStatus = message.from === 'status@broadcast' || message.chatId === 'status@broadcast';
-    const isGroup = message.isGroupMsg === true;
+    const isGroup = message.isGroupMsg || message.from.includes('@g.us');
+    const isStatus = message.from.includes('status@broadcast');
 
-    if (isStatus || isGroup) {
-      console.log(`⏩ [SKIP] Ignorando status ou grupo.`);
+    if (isGroup || isStatus) {
+      console.log(`⏩ [SKIP] Ignorando Status/Grupo (${message.from})`);
       return;
     }
 
-    // 3. Verifica se tem conteúdo para a IA ler
-    if (!message.body && message.type === 'chat') {
-      console.log(`⚠️ [SKIP] Mensagem de chat vazia.`);
-      return;
-    }
-
-    console.log(`✅ [OK] Mensagem válida! Enviando para o buffer...`);
-
-    try {
-      const chatId = String(message.from);
-      const text = message.body || `[Enviou um arquivo do tipo ${message.type}]`;
-      
-      this.bufferMessage(bot, client, chatId, text, message.from);
-    } catch (err) {
-      console.error("❌ [ERRO] Falha ao processar bufferMessage:", err);
+    // Se tiver corpo de mensagem, nós processamos!
+    if (message.body) {
+      console.log(`✅ [OK] Mensagem válida detectada!`);
+      try {
+        const chatId = String(message.from);
+        this.bufferMessage(bot, client, chatId, message.body, message.from);
+      } catch (err) {
+        console.error("❌ [ERRO] Falha ao chamar bufferMessage:", err);
+      }
+    } else {
+      console.log(`⚠️ [AVISO] Mensagem sem conteúdo textual recebida.`);
     }
   });
 }
