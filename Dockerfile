@@ -26,8 +26,13 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
 
-# Copia e instala dependências
+# Copia arquivos de configuração do NPM
 COPY package*.json ./
+
+# 🚨 O PULO DO GATO: Copia a pasta do Prisma antes de instalar!
+COPY prisma ./prisma/
+
+# Agora sim, instala as dependências (e o prisma generate vai rodar feliz da vida)
 RUN npm ci --omit=dev
 
 # Copia o resto do código
