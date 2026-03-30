@@ -1,8 +1,6 @@
 import express from 'express'
 import cors from 'cors'
 import rateLimit from 'express-rate-limit'
-import path from 'path'
-import { fileURLToPath } from 'url'
 import { env } from './config/env.js'
 import { authRouter } from './routes/auth.js'
 import { authResetRouter } from './routes/authReset.js'
@@ -11,7 +9,6 @@ import { botsRouter } from './routes/bots.js'
 import { conversationsRouter } from './routes/conversations.js'
 import { errorHandler } from './middleware/errorHandler.js'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export function createApp() {
   const app = express()
@@ -54,11 +51,8 @@ export function createApp() {
   app.use('/api/conversations', conversationsRouter)
 
   // Frontend estático
-  const publicDir = path.join(__dirname, '..', '/Front-End/public')
-  app.use(express.static(publicDir))
-  app.get('*', (req, res) => {
-    if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Not found' })
-    res.sendFile(path.join(publicDir, 'index.html'))
+  app.use('*', (req, res) => {
+    res.status(404).json({error: 'Rota de API não encontrada'}) 
   })
 
   app.use(errorHandler)
