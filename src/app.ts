@@ -13,6 +13,7 @@ import { errorHandler } from './middleware/errorHandler.js'
 export function createApp() {
   const app = express()
 
+ app.set('trust proxy', 1)
  app.use(cors({
   origin: (origin, callback) => {
     // Se não tiver origin (ex: Postman) ou se vier do seu domínio netlify, permite.
