@@ -5,7 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src --format cjs --dts",
+    "build": "tsup src --format esm",
     "start": "tsx src/index.ts",
     "setup": "node setup.js",
     "lint": "eslint src --ext .ts",
