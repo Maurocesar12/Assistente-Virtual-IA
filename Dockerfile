@@ -30,7 +30,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # 🚨 O PULO DO GATO: Copia a pasta do Prisma antes de instalar!
-COPY prisma ./prisma/
+COPY Back-End/prisma ./prisma/
 
 # Agora sim, instala as dependências (e o prisma generate vai rodar feliz da vida)
 RUN npm ci --omit=dev
