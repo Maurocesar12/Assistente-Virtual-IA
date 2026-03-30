@@ -13,10 +13,20 @@ import { errorHandler } from './middleware/errorHandler.js'
 export function createApp() {
   const app = express()
 
-  app.use(cors({
-    origin: [env.FRONTEND_URL, `${env.FRONTEND_URL}/`],
-    credentials: true
-  }))
+ app.use(cors({
+  origin: (origin, callback) => {
+    // Se não tiver origin (ex: Postman) ou se vier do seu domínio netlify, permite.
+    if (!origin || origin.includes('netlify.app') || origin.includes('localhost')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Bloqueado pelo CORS do Arquiteto!'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
   app.use(express.json({ limit: '1mb' }))
   app.use(express.urlencoded({ extended: true }))
   // ── Rate limit em camadas ───────────────────────────────────────────────────
