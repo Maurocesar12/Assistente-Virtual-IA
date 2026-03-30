@@ -436,31 +436,36 @@ private async onSessionConnectedAsync(bot: Bot, client: wppconnect.Whatsapp): Pr
 
 private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
   client.onMessage(async (message) => {
-    // LOG 1: Recebimento bruto
-    console.log(`📩 [LOG] Mensagem recebida de: ${message.from} | Tipo: ${message.type}`);
+    // 1. Log para saber exatamente o que está chegando
+    console.log(`📩 [DEBUG] Recebido de: ${message.from} | Tipo: ${message.type} | Corpo: ${message.body}`);
 
-    const isValid =
-      message.type === 'chat' &&
-      !message.isGroupMsg &&
-      message.chatId !== 'status@broadcast';
+    // 2. Filtro simplificado: Ignora status e grupos, aceita o resto
+    const isStatus = message.from === 'status@broadcast' || message.chatId === 'status@broadcast';
+    const isGroup = message.isGroupMsg === true;
 
-    if (!isValid) {
-      console.log(`⚠️ [LOG] Mensagem descartada (Grupo, Status ou Tipo inválido)`);
+    if (isStatus || isGroup) {
+      console.log(`⏩ [SKIP] Ignorando status ou grupo.`);
       return;
     }
 
-    console.log(`🚀 [LOG] Encaminhando para buffer: "${message.body}"`);
+    // 3. Verifica se tem conteúdo para a IA ler
+    if (!message.body && message.type === 'chat') {
+      console.log(`⚠️ [SKIP] Mensagem de chat vazia.`);
+      return;
+    }
+
+    console.log(`✅ [OK] Mensagem válida! Enviando para o buffer...`);
 
     try {
-      // Importante: use message.from para identificar o chat de forma estável
-      const chatId = String(message.from); 
-      this.bufferMessage(bot, client, chatId, message.body ?? '', message.from);
+      const chatId = String(message.from);
+      const text = message.body || `[Enviou um arquivo do tipo ${message.type}]`;
+      
+      this.bufferMessage(bot, client, chatId, text, message.from);
     } catch (err) {
-      console.error("❌ [LOG] Erro ao processar bufferMessage:", err);
+      console.error("❌ [ERRO] Falha ao processar bufferMessage:", err);
     }
   });
 }
-
   private bufferMessage(
     bot: Bot, client: wppconnect.Whatsapp,
     chatId: string, body: string, from: string,
