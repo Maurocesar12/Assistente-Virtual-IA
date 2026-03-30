@@ -33,7 +33,7 @@ COPY package*.json ./
 COPY Back-End/prisma ./prisma/
 
 # Agora sim, instala as dependências (e o prisma generate vai rodar feliz da vida)
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Copia o resto do código
 COPY . .
