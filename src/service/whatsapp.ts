@@ -107,20 +107,8 @@ function detectsHandoffIntent(message: string): boolean {
 // HELPERS
 // ═══════════════════════════════════════════════════════
 
-/**
- * Extrai o número de telefone do objeto device retornado por getHostDevice().
- * wppconnect pode retornar estruturas diferentes dependendo da versão:
- *   - device.wid.user          (mais comum)
- *   - device.wid._serialized   ("5511...@c.us")
- *   - device.id._serialized    (versões antigas)
- *   - device.id.user
- *   - device.me.user
- *   - device.jid
- */
 function extractPhoneFromDevice(device: any): string | null {
   if (!device) return null
-
-  // Tenta todos os campos conhecidos, nessa ordem de prioridade
   const candidates = [
     device?.wid?.user,
     device?.wid?._serialized,
@@ -129,16 +117,13 @@ function extractPhoneFromDevice(device: any): string | null {
     device?.me?.user,
     device?.jid,
   ]
-
   for (const candidate of candidates) {
     if (!candidate) continue
     const str = String(candidate).trim()
     if (!str) continue
-    // Extrai só os dígitos antes de "@" — descarta sufixo "@c.us"
     const digits = str.split('@')[0].replace(/\D/g, '')
-    if (digits.length >= 10) return digits  // mínimo DDD + 8 dígitos
+    if (digits.length >= 10) return digits
   }
-
   return null
 }
 
@@ -146,8 +131,13 @@ function extractPhoneFromDevice(device: any): string | null {
 // CONSTANTES
 // ═══════════════════════════════════════════════════════
 
-const MAX_RETRIES            = 3
-const MESSAGE_BUFFER_TIMEOUT = 15_000
+const MAX_RETRIES = 3
+
+// ✅ FIX 1: Reduzido de 15s para 3s.
+// 15 segundos é tempo demais — causa a impressão de "silêncio".
+// Com 3s, mensagens chegando rapidamente ainda são agrupadas,
+// mas a resposta sai em no máximo ~3s após a última mensagem.
+const MESSAGE_BUFFER_TIMEOUT = 3_000
 
 const CONFIRMED_CONNECTED_STATUSES = new Set(['inChat'])
 const MAYBE_CONNECTED_STATUSES     = new Set(['isLogged'])
@@ -265,10 +255,10 @@ export class WhatsAppManager {
         browserArgs: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage', // O MAIS IMPORTANTE: Impede o crash por falta de memória compartilhada
+          '--disable-dev-shm-usage',
           '--disable-extensions',
           '--no-zygote',
-          '--single-process' // Faz o navegador usar apenas um processo, economizando RAM
+          '--single-process',
         ],
         headless:       'new' as any,
         logQR:          false,
@@ -293,7 +283,6 @@ export class WhatsAppManager {
           this.sessionListeners.forEach(l => l({ botId: bot.id, status }))
 
           if (CONFIRMED_CONNECTED_STATUSES.has(status)) {
-            // ✅ Chama versão async — captura phone ANTES de emitir evento SSE final
             sessionPromise.then((resolvedClient) => {
               this.onSessionConnectedAsync(bot, resolvedClient).catch(err =>
                 console.error(`[WhatsApp] onSessionConnectedAsync error:`, err)
@@ -301,7 +290,7 @@ export class WhatsAppManager {
             })
             return
           }
-          
+
           if (MAYBE_CONNECTED_STATUSES.has(status)) {
             if (this.qrWasShown.get(bot.id) === true) {
               sessionPromise.then((resolvedClient) => {
@@ -334,52 +323,32 @@ export class WhatsAppManager {
     }
   }
 
-  /**
-   * ✅ FIX: versão async de onSessionConnected.
-   *
-   * ANTES: getHostDevice() era chamado com .then() fire-and-forget.
-   * O evento 'bot' SSE era emitido no statusFind, ANTES do getHostDevice completar.
-   * O frontend recebia phone=null mesmo após o bot conectar.
-   *
-   * AGORA: esperamos o getHostDevice(), salvamos o phone no DB,
-   * depois emitimos o evento SSE com o bot já atualizado (incluindo phone).
-   */
-private async onSessionConnectedAsync(bot: Bot, client: wppconnect.Whatsapp): Promise<void> {
+  private async onSessionConnectedAsync(bot: Bot, client: wppconnect.Whatsapp): Promise<void> {
     this.lastQR.delete(bot.id)
 
-    // 1. Marca como conectado imediatamente (sem phone ainda)
     await db.updateBot(bot.id, { isConnected: true, isActive: true }).catch(() => {})
     console.log(`[WhatsApp] ✅ Bot conectado: ${bot.name}`)
-      
-    // 2. Captura o número do bot com fallbacks robustos
+
     let phone: string | null = null
     try {
-      // CORREÇÃO 1: Nome da variável ajustado para rawWid (sem 'n')
-      let rawWid = await client.getWid() 
-      
-      if (rawWid && typeof rawWid === 'string') {
-        // Limpa tudo, tirando o "@c.us" e deixando apenas números
-        const digits = rawWid.replace(/@.*$/, '').replace(/\D/g, '');
+      const rawWid = await client.getWid()
 
+      if (rawWid && typeof rawWid === 'string') {
+        const digits = rawWid.replace(/@.*$/, '').replace(/\D/g, '')
         if (digits) {
-          phone = digits; // Salva LIMPO, sem @c.us (fundamental para o Front-end não quebrar)
+          phone = digits
           await db.updateBot(bot.id, { phone }).catch(() => {})
-          console.log(`[WhatsApp] 📱 Número capturado para ${bot.name}: ${phone}`)  
+          console.log(`[WhatsApp] 📱 Número capturado para ${bot.name}: ${phone}`)
         } else {
-          // CORREÇÃO 2: Removida a chamada à variável 'device', pois ela não existe mais aqui
-          console.warn(`[WhatsApp] O WID estava vazio ou inválido para ${bot.name}. WID bruto:`, rawWid)
+          console.warn(`[WhatsApp] WID vazio para ${bot.name}. WID bruto:`, rawWid)
         }
       } else {
-        console.warn(`[WhatsApp] wppconnect não retornou o WID para ${bot.name}. Retorno bruto:`, rawWid)
+        console.warn(`[WhatsApp] getWid() sem retorno para ${bot.name}. Retorno:`, rawWid)
       }
-
     } catch (err) {
-      console.warn(`[WhatsApp] Falha ao capturar o número para ${bot.name}:`, err)
+      console.warn(`[WhatsApp] Falha ao capturar número para ${bot.name}:`, err)
     }
-    
-    // 3. Emite sessionListeners com 'connected_with_phone' para que o SSE
-    //    do bots.ts busque o bot ATUALIZADO (já com phone) e envie ao frontend.
-    //    Usamos um status especial que o bots.ts reconhece.
+
     this.sessionListeners.forEach(l => l({ botId: bot.id, status: 'connected_with_phone' }))
   }
 
@@ -434,33 +403,42 @@ private async onSessionConnectedAsync(bot: Bot, client: wppconnect.Whatsapp): Pr
 
   // ── Message pipeline ─────────────────────────────────────────────────────
 
-private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
-  client.onMessage(async (message) => {
-    // Esse log precisa aparecer no Railway para TODO "Oi" que você receber
-    console.log(`📩 [DEBUG] Origem: ${message.from} | Tipo: ${message.type} | Msg: ${message.body}`);
+  private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
+    client.onMessage(async (message) => {
+      // ✅ FIX 2: Log completo para diagnóstico — aparece no Railway para TODA mensagem
+      console.log(`\n📩 [MSG RECEBIDA] Bot: ${bot.name}`)
+      console.log(`   from:      ${message.from}`)
+      console.log(`   chatId:    ${message.chatId}`)
+      console.log(`   type:      ${message.type}`)
+      console.log(`   isGroup:   ${message.isGroupMsg}`)
+      console.log(`   body:      ${message.body ?? '(vazio)'}`)
 
-    const isGroup = message.isGroupMsg || message.from.includes('@g.us');
-    const isStatus = message.from.includes('status@broadcast');
+      // Filtros de segurança
+      const isGroup  = message.isGroupMsg || String(message.from).includes('@g.us')
+      const isStatus = String(message.from).includes('status@broadcast')
 
-    if (isGroup || isStatus) {
-      console.log(`⏩ [SKIP] Ignorando Status/Grupo (${message.from})`);
-      return;
-    }
-
-    // Se tiver corpo de mensagem, nós processamos!
-    if (message.body) {
-      console.log(`✅ [OK] Mensagem válida detectada!`);
-      try {
-        const chatId = String(message.from);
-        this.bufferMessage(bot, client, chatId, message.body, message.from);
-      } catch (err) {
-        console.error("❌ [ERRO] Falha ao chamar bufferMessage:", err);
+      if (isGroup || isStatus) {
+        console.log(`   → SKIP: grupo ou status`)
+        return
       }
-    } else {
-      console.log(`⚠️ [AVISO] Mensagem sem conteúdo textual recebida.`);
-    }
-  });
-}
+
+      if (!message.body || !message.body.trim()) {
+        console.log(`   → SKIP: mensagem sem corpo de texto`)
+        return
+      }
+
+      console.log(`   → ✅ Válida! Enviando para buffer...`)
+
+      // ✅ FIX 3: Usa message.chatId como chave do buffer (mais correto para DMs)
+      // e message.from como destinatário da resposta — ambos são iguais em DM,
+      // mas usar chatId é semanticamente mais correto e evita edge cases.
+      const chatId = String(message.chatId ?? message.from)
+      const from   = String(message.from)
+
+      this.bufferMessage(bot, client, chatId, message.body, from)
+    })
+  }
+
   private bufferMessage(
     bot: Bot, client: wppconnect.Whatsapp,
     chatId: string, body: string, from: string,
@@ -472,12 +450,15 @@ private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
     const existing = this.messageTimers.get(chatId)
     if (existing) clearTimeout(existing)
 
+    console.log(`[Buffer:${bot.name}] "${body}" adicionado. Total buffered: ${buffer.length}. Timer: ${MESSAGE_BUFFER_TIMEOUT}ms`)
+
     const timer = setTimeout(() => {
       const combined = (this.messageBuffers.get(chatId) ?? []).join(' \n ')
       this.messageBuffers.delete(chatId)
       this.messageTimers.delete(chatId)
+      console.log(`[Buffer:${bot.name}] Timer disparou. Processando: "${combined}"`)
       this.processMessage(bot, client, chatId, combined, from)
-        .catch(err => console.error(`[Bot:${bot.name}] processMessage error:`, err))
+        .catch(err => console.error(`[Bot:${bot.name}] processMessage ERRO FATAL:`, err))
     }, MESSAGE_BUFFER_TIMEOUT)
 
     this.messageTimers.set(chatId, timer)
@@ -496,16 +477,28 @@ private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
     bot: Bot, client: wppconnect.Whatsapp,
     chatId: string, message: string, from: string,
   ): Promise<void> {
+
+    // ✅ FIX 4: Log de entrada em processMessage — diagnóstica "silêncio operacional"
+    console.log(`\n🔄 [PROCESS] Bot: ${bot.name} | chatId: ${chatId} | msg: "${message}"`)
+
     const user = await db.findUserById(bot.userId)
-    if (!user) return
+    if (!user) {
+      console.error(`[PROCESS] ❌ Usuário ${bot.userId} não encontrado no banco!`)
+      return
+    }
 
-    // Busca estado fresco do bot — única query, usada em todas as verificações abaixo
+    // ✅ FIX 5: Busca bot fresco E loga o estado — revela se isActive é false
     const freshBot = await db.findBotById(bot.id)
-    if (!freshBot) return
+    if (!freshBot) {
+      console.error(`[PROCESS] ❌ Bot ${bot.id} não encontrado no banco!`)
+      return
+    }
 
-    // ✅ Respeita isActive — bot desativado no painel não responde
+    console.log(`[PROCESS] Estado do bot: isActive=${freshBot.isActive} | isConnected=${freshBot.isConnected} | model=${freshBot.model}`)
+
     if (!freshBot.isActive) {
-      console.log(`[Bot:${freshBot.name}] Mensagem ignorada — bot desativado (isActive=false)`)
+      console.warn(`[PROCESS] ⚠️ Bot ${freshBot.name} está INATIVO (isActive=false). Mensagem ignorada.`)
+      console.warn(`[PROCESS] → Solução: vá em Editar Bot e ative o toggle "Bot ativo".`)
       return
     }
 
@@ -513,7 +506,7 @@ private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
     const stats = await db.getUserStats(bot.userId)
     if (isMessageLimitReached(user.plan, stats.totalMessages)) {
       const config = getPlanConfig(user.plan)
-      console.warn(`[Bot:${freshBot.name}] Limite de plano atingido (${stats.totalMessages}/${config.messageLimit})`)
+      console.warn(`[PROCESS] 🚫 Limite de plano atingido (${stats.totalMessages}/${config.messageLimit})`)
       this.planLimitListeners.forEach(l => l({
         botId: bot.id, userId: bot.userId, plan: user.plan,
         totalMessages: stats.totalMessages, messageLimit: config.messageLimit,
@@ -532,13 +525,14 @@ private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
             botId: bot.id, convId: updated.id, contactPhone: chatId,
             isPaused: true, humanHandoff: false, reason: 'manual_override',
           }))
-          console.log(`[Bot:${freshBot.name}] Override manual — bot pausado para: ${chatId}`)
+          console.log(`[PROCESS] Override manual — bot pausado para: ${chatId}`)
         }
       }
       return
     }
 
     const conv = await db.findConversationByBotAndPhone(bot.id, from)
+    console.log(`[PROCESS] Conversa existente: ${conv ? conv.id : 'não encontrada (nova conversa)'}`)
 
     // ── Feature 3: Human Handoff intent ───────────────────────────────────
     if (conv && !conv.humanHandoff && detectsHandoffIntent(message)) {
@@ -556,6 +550,7 @@ private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
 
     // ── Feature 2: bot pausado ────────────────────────────────────────────
     if (conv?.isPaused) {
+      console.log(`[PROCESS] Bot pausado para este chat. Mensagem salva sem resposta.`)
       await this.persistMessage(bot, client, from, message, null)
       return
     }
@@ -567,12 +562,18 @@ private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
       }))
     }
 
+    // ── Chamada da IA ─────────────────────────────────────────────────────
+    console.log(`[PROCESS] 🤖 Chamando IA (model: ${freshBot.model})...`)
+
     let answer: string
     try {
-      answer = await this.callAIWithRetry(bot, user.apiKeys, chatId, message)
+      // ✅ FIX 6: Passa freshBot (não bot) para callAIWithRetry — garante
+      // que o modelo correto é usado, mesmo que o bot tenha sido editado.
+      answer = await this.callAIWithRetry(freshBot, user.apiKeys, chatId, message)
+      console.log(`[PROCESS] ✅ IA respondeu (${answer.length} chars): "${answer.slice(0, 80)}..."`)
     } catch (raw) {
       const err = raw instanceof AIError ? raw : classifyError(raw)
-      console.error(`[Bot:${freshBot.name}] AI error [${err.kind}]: ${err.message}`)
+      console.error(`[PROCESS] ❌ IA falhou [${err.kind}]: ${err.message}`)
       this.emitAIError(bot, err)
       if (conv) {
         this.typingListeners.forEach(l => l({
@@ -590,7 +591,9 @@ private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
     }
 
     await this.persistMessage(bot, client, from, message, answer)
+    console.log(`[PROCESS] 📤 Enviando resposta para ${from}...`)
     await sendMessagesWithDelay(client, splitMessages(answer), from)
+    console.log(`[PROCESS] ✅ Resposta enviada com sucesso!`)
   }
 
   // ── AI with retry ────────────────────────────────────────────────────────
@@ -602,10 +605,12 @@ private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
     let lastError: AIError | undefined
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
+        console.log(`[AI] Tentativa ${attempt}/${MAX_RETRIES} — model: ${bot.model}`)
         return await this.callAI(bot, apiKeys, chatId, message)
       } catch (raw) {
         const err = raw instanceof AIError ? raw : classifyError(raw)
         lastError = err
+        console.error(`[AI] Tentativa ${attempt} falhou [${err.kind}]: ${err.message}`)
         if (err.kind === 'config' || err.kind === 'quota') throw err
         if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 1500 * attempt))
       }
@@ -617,14 +622,18 @@ private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
     bot: Bot, apiKeys: import('../models/database.js').ApiKeys,
     chatId: string, message: string,
   ): Promise<string> {
+    console.log(`[AI] callAI — model: ${bot.model} | geminiKey: ${apiKeys.geminiKey ? 'presente' : 'AUSENTE'} | openaiKey: ${apiKeys.openaiKey ? 'presente' : 'AUSENTE'}`)
+
     if (bot.model === 'gemini-2.5-flash' as any) {
       if (!apiKeys.geminiKey) throw new AIError('config', 'Gemini API key não configurada.')
       return geminiManager.sendMessage(chatId, message, {
         apiKey: apiKeys.geminiKey, model: bot.model, systemPrompt: bot.prompt,
       })
     }
-    if (!apiKeys.openaiKey || !apiKeys.openaiAssistantId)
+    if (!apiKeys.openaiKey || !apiKeys.openaiAssistantId) {
+      console.error(`[AI] OpenAI: key=${apiKeys.openaiKey ? 'ok' : 'FALTANDO'} | assistantId=${apiKeys.openaiAssistantId ? 'ok' : 'FALTANDO'}`)
       throw new AIError('config', 'Credenciais OpenAI não configuradas.')
+    }
     return openaiManager.sendMessage(chatId, message, {
       apiKey: apiKeys.openaiKey, assistantId: apiKeys.openaiAssistantId,
     })
@@ -647,12 +656,16 @@ private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
   ): Promise<void> {
     let contactName = from
     try {
-      const contact = await client.getContact(from)
+      // ✅ FIX 7: Timeout de 5s no getContact — evita travamento silencioso
+      const contact = await Promise.race([
+        client.getContact(from),
+        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('getContact timeout')), 5000)),
+      ]) as any
       const pushname = contact?.pushname ?? contact?.name ?? contact?.formattedName
       if (pushname && pushname.trim()) contactName = pushname.trim()
-    } catch (_) {}
-
-    const userCreatedAt = new Date()
+    } catch (err) {
+      console.warn(`[PERSIST] getContact falhou para ${from} (usando número como nome):`, (err as any)?.message)
+    }
 
     const conversation = await db.upsertConversation({
       botId:         bot.id,
