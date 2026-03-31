@@ -260,7 +260,7 @@ export class WhatsAppManager {
     try {
       const sessionPromise = wppconnect.create({
         session: sessionName,
-        whatsappVersion: '2.3000.101458',
+        whatsappVersion: '2.2412.54',
         browserArgs: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
