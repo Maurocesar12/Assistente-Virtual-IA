@@ -260,6 +260,7 @@ export class WhatsAppManager {
     try {
       const sessionPromise = wppconnect.create({
         session: sessionName,
+        whatsappVersion: '2.3000.101458',
         browserArgs: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -278,7 +279,6 @@ export class WhatsAppManager {
             '--disable-gpu', '--disable-extensions', `--user-data-dir=${sessionDir}`,
           ],
         },
-        whatsappVersion: '2.3000.101458',
         catchQR: (base64Qr: string, asciiQR: string) => {
           this.qrWasShown.set(bot.id, true)
           this.lastQR.set(bot.id, { qrBase64: base64Qr, qrAscii: asciiQR })
