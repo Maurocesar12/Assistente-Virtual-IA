@@ -255,18 +255,16 @@ export class WhatsAppManager {
         session: sessionName,
         browserArgs: [
           '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-          '--disable-extensions', '--no-zygote',
+          '--disable-extensions', '--no-zygote', '--single-process',
         ],
         headless:       'new' as any,
         logQR:          false,
         autoClose:      0,
         disableWelcome: true,
-        waitForLogin: true,
         puppeteerOptions: {
-          userDataDir: sessionDir,
           args: [
             '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-            '--disable-gpu',
+            '--disable-gpu', '--disable-extensions', `--user-data-dir=${sessionDir}`,
           ],
         },
 
@@ -281,26 +279,43 @@ export class WhatsAppManager {
           console.log(`[WhatsApp] Status [${bot.name}]: ${status}`)
           this.sessionListeners.forEach(l => l({ botId: bot.id, status }))
 
-          if (FAILED_STATUSES.has(status)){
-            this.onSessionFailed(bot);
+          if (CONFIRMED_CONNECTED_STATUSES.has(status)) {
+            sessionPromise.then((resolvedClient) => {
+              this.onSessionConnectedAsync(bot, resolvedClient).catch(err =>
+                console.error(`[WhatsApp] onSessionConnectedAsync error:`, err)
+              )
+            })
+            return
+          }
+
+          if (MAYBE_CONNECTED_STATUSES.has(status)) {
+            if (this.qrWasShown.get(bot.id) === true) {
+              sessionPromise.then((resolvedClient) => {
+                this.onSessionConnectedAsync(bot, resolvedClient).catch(err =>
+                  console.error(`[WhatsApp] onSessionConnectedAsync error:`, err)
+                )
+              })
+            } else {
+              console.warn(`[WhatsApp] 'isLogged' sem QR para ${bot.name} — forçando reset`)
+              this.onSessionFailed(bot)
+            }
+            return
+          }
+
+          if (FAILED_STATUSES.has(status)) {
+            this.onSessionFailed(bot)
           }
         },
       })
       const client = await sessionPromise
 
       this.clients.set(bot.id, client)
-      await this.onSessionConnectedAsync(bot, client).catch(err =>
-        console.error(`[WhatsApp] onSessionConnectedAsync error:`, err)
-      );
-
-      this.attachMessageListener(bot, client);
-      this.attachPresenceListener(bot, client);
-
+      this.attachMessageListener(bot, client)
+      this.attachPresenceListener(bot, client)
     } catch (err) {
       this.clients.delete(bot.id)
       this.qrWasShown.delete(bot.id)
       await db.updateBot(bot.id, { isConnected: false, isActive: false }).catch(() => {})
-      console.error(`[WhatsApp] Erro fatal ao iniciar sessão ${bot.name}:`, err);
       throw err
     }
   }
