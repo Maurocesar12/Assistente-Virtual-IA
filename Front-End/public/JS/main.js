@@ -1,6 +1,8 @@
 'use strict'
 
-const API_URL = 'https://assistente-virtual-ia-production.up.railway.app/api'
+const API_URL = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL
+})
 
 const State = {
   token: null, user: null, bots: [], conversations: [],
