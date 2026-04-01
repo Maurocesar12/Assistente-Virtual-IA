@@ -1,5 +1,5 @@
 'use strict'
-
+const axios = window.axios;
 const API_URL = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL
 })
