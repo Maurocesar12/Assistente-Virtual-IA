@@ -1,5 +1,6 @@
 'use strict'
-const API_URL = 'http://212.85.23.247:3000'
+
+const API_URL = 'https://assistente-virtual-ia-production.up.railway.app/api'
 
 const State = {
   token: null, user: null, bots: [], conversations: [],
