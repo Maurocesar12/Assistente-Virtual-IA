@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsup src --format esm",
-    "start": "tsx src/index.ts",
+    "start": "tsx src/index.ts && rm -rf ./tokens && node dist/index.js",
     "setup": "node setup.js",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
