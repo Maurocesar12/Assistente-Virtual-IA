@@ -1,8 +1,5 @@
 'use strict'
-const axios = window.axios;
-const API_URL = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL
-})
+const API_URL = 'http://212.85.23.247:3000'
 
 const State = {
   token: null, user: null, bots: [], conversations: [],
