@@ -36,7 +36,7 @@ async function transcribeWithWhisper(
   const response = await openai.audio.transcriptions.create({
     file,
     model:    'whisper-1',
-    language: 'pt',   // força português → melhor precisão
+    language: 'pt-br',   // força português → melhor precisão
   })
 
   const text = response.text?.trim()

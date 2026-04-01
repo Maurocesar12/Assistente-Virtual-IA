@@ -105,46 +105,41 @@ function detectsHandoffIntent(message: string): boolean {
 }
 
 // ═══════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════
-
-function extractPhoneFromDevice(device: any): string | null {
-  if (!device) return null
-  const candidates = [
-    device?.wid?.user,
-    device?.wid?._serialized,
-    device?.id?.user,
-    device?.id?._serialized,
-    device?.me?.user,
-    device?.jid,
-  ]
-  for (const candidate of candidates) {
-    if (!candidate) continue
-    const str = String(candidate).trim()
-    if (!str) continue
-    const digits = str.split('@')[0].replace(/\D/g, '')
-    if (digits.length >= 10) return digits
-  }
-  return null
-}
-
-// ═══════════════════════════════════════════════════════
 // CONSTANTES
 // ═══════════════════════════════════════════════════════
 
-const MAX_RETRIES         = 3
+const MAX_RETRIES            = 3
 const MESSAGE_BUFFER_TIMEOUT = 3_000
 
-// ✅ AUDIO: tipos de mensagem que contêm áudio do WhatsApp
-// 'ptt' = push-to-talk (gravado no app)
-// 'audio' = arquivo de áudio enviado
+// ✅ FIX PRINCIPAL: Único type aceito como texto puro.
+//
+// PROBLEMA QUE ESTAVA OCORRENDO:
+//   O wppconnect coloca o base64 do arquivo no campo `message.body`
+//   para imagens, vídeos e documentos. O código anterior só verificava
+//   se `message.body` existia — então base64 de imagens passava pelo filtro
+//   e era enviado para a IA como "texto", causando:
+//     1. A IA respondia com "não consigo interpretar essa mensagem"
+//     2. A thread OpenAI ficava contaminada com base64
+//     3. Mensagens de texto subsequentes não eram mais processadas
+//
+// SOLUÇÃO: Filtrar PRIMEIRO pelo type. Só type='chat' é texto puro.
+const TEXT_TYPE   = 'chat'
+
+// Tipos de áudio — transcrever e responder
 const AUDIO_TYPES = new Set(['ptt', 'audio'])
 
-// Mensagens de fallback para o usuário quando o áudio não pode ser processado
+// Tipos a ignorar — body pode conter base64 do mídia
+const IGNORED_TYPES = new Set([
+  'image', 'video', 'document', 'sticker',
+  'location', 'contact', 'contact_card',
+  'notification_template', 'e2e_notification',
+  'call_log', 'protocol', 'revoked', 'unknown',
+])
+
 const AUDIO_FALLBACK_MESSAGES = {
-  no_api_key:          '🎤 Recebi seu áudio! Para que eu possa respondê-lo, você precisa configurar uma chave de API (OpenAI ou Gemini) nas configurações.',
+  no_api_key:           '🎤 Recebi seu áudio! Para que eu possa respondê-lo, configure uma chave de API (OpenAI ou Gemini) nas configurações.',
   transcription_failed: '🎤 Recebi seu áudio, mas tive dificuldade em processá-lo. Poderia enviar sua mensagem em texto? 😊',
-  empty_audio:         '🎤 Recebi um áudio vazio. Por favor, tente enviar novamente.',
+  empty_audio:          '🎤 Recebi um áudio vazio. Por favor, tente enviar novamente.',
 }
 
 const CONFIRMED_CONNECTED_STATUSES = new Set(['inChat'])
@@ -195,8 +190,6 @@ export class WhatsAppManager {
   private typingListeners:        TypingListener[]        = []
   private contactTypingListeners: ContactTypingListener[] = []
   private planLimitListeners:     PlanLimitListener[]     = []
-
-  // ── Subscriptions ────────────────────────────────────────────────────────
 
   onQRCode(l: QRListener): () => void {
     this.qrListeners.push(l)
@@ -261,12 +254,8 @@ export class WhatsAppManager {
       const sessionPromise = wppconnect.create({
         session: sessionName,
         browserArgs: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-extensions',
-          '--no-zygote',
-          '--single-process',
+          '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+          '--disable-extensions', '--no-zygote', '--single-process',
         ],
         headless:       'new' as any,
         logQR:          false,
@@ -278,6 +267,7 @@ export class WhatsAppManager {
             '--disable-gpu', '--disable-extensions', `--user-data-dir=${sessionDir}`,
           ],
         },
+
         catchQR: (base64Qr: string, asciiQR: string) => {
           this.qrWasShown.set(bot.id, true)
           this.lastQR.set(bot.id, { qrBase64: base64Qr, qrAscii: asciiQR })
@@ -343,12 +333,12 @@ export class WhatsAppManager {
         if (digits) {
           phone = digits
           await db.updateBot(bot.id, { phone }).catch(() => {})
-          console.log(`[WhatsApp] 📱 Número capturado para ${bot.name}: ${phone}`)
+          console.log(`[WhatsApp] 📱 Número: ${phone}`)
         } else {
-          console.warn(`[WhatsApp] WID vazio para ${bot.name}. WID bruto:`, rawWid)
+          console.warn(`[WhatsApp] WID vazio para ${bot.name}:`, rawWid)
         }
       } else {
-        console.warn(`[WhatsApp] getWid() sem retorno para ${bot.name}. Retorno:`, rawWid)
+        console.warn(`[WhatsApp] getWid() sem retorno para ${bot.name}:`, rawWid)
       }
     } catch (err) {
       console.warn(`[WhatsApp] Falha ao capturar número para ${bot.name}:`, err)
@@ -375,7 +365,7 @@ export class WhatsAppManager {
     this.clearMessageBuffer(botId)
     await db.updateBot(botId, { isConnected: false, isActive: false })
     setTimeout(() => nukeAllBotTokens(botId).catch(() => {}), 3000)
-    console.log(`[WhatsApp] 🛑 Sessão parada manualmente: ${botId}`)
+    console.log(`[WhatsApp] 🛑 Sessão parada: ${botId}`)
   }
 
   isRunning(botId: string): boolean { return this.clients.has(botId) }
@@ -410,122 +400,116 @@ export class WhatsAppManager {
 
   private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
     client.onMessage(async (message) => {
-      console.log(`\n📩 [MSG RECEBIDA] Bot: ${bot.name}`)
-      console.log(`   from:      ${message.from}`)
-      console.log(`   chatId:    ${message.chatId}`)
-      console.log(`   type:      ${message.type}`)
-      console.log(`   isGroup:   ${message.isGroupMsg}`)
-      console.log(`   body:      ${message.body ?? '(vazio)'}`)
+      const type   = String(message.type ?? '')
+      const from   = String(message.from ?? '')
+      const chatId = String(message.chatId ?? message.from ?? '')
 
-      // Filtros de segurança
-      const isGroup  = message.isGroupMsg || String(message.from).includes('@g.us')
-      const isStatus = String(message.from).includes('status@broadcast')
+      // Log compacto — não imprime base64 de imagens
+      const bodyPreview = IGNORED_TYPES.has(type) || AUDIO_TYPES.has(type)
+        ? `[${type} — ${String(message.body ?? '').length} chars]`
+        : String(message.body ?? '').slice(0, 60)
+
+      console.log(`\n📩 [MSG] Bot:${bot.name} | type:${type} | from:${from.slice(0,30)} | body:${bodyPreview}`)
+
+      // ── Filtros básicos ───────────────────────────────────────────────────
+      const isGroup  = message.isGroupMsg || from.includes('@g.us')
+      const isStatus = from.includes('status@broadcast')
 
       if (isGroup || isStatus) {
         console.log(`   → SKIP: grupo ou status`)
         return
       }
 
-      const chatId = String(message.chatId ?? message.from)
-      const from   = String(message.from)
-      const type   = String(message.type)
-
-      // ── ✅ ÁUDIO: ptt (gravado no app) ou audio (arquivo enviado) ──────────
+      // ── ✅ ROTEAMENTO POR TYPE ────────────────────────────────────────────
       if (AUDIO_TYPES.has(type)) {
-        console.log(`   → 🎤 Mensagem de áudio detectada! Iniciando transcrição...`)
-        // Processamento de áudio é assíncrono e direto (sem buffer de texto)
+        console.log(`   → 🎤 Áudio (${type}) — transcrevendo...`)
         this.handleAudioMessage(bot, client, chatId, from, message)
           .catch(err => console.error(`[Bot:${bot.name}] handleAudioMessage ERRO:`, err))
         return
       }
 
-      // ── Texto normal ─────────────────────────────────────────────────────
-      if (!message.body || !message.body.trim()) {
-        console.log(`   → SKIP: mensagem sem corpo de texto`)
+      if (IGNORED_TYPES.has(type)) {
+        console.log(`   → SKIP: mídia não suportada (${type})`)
         return
       }
 
-      console.log(`   → ✅ Texto válido! Enviando para buffer...`)
-      this.bufferMessage(bot, client, chatId, message.body, from)
+      if (type !== TEXT_TYPE) {
+        console.log(`   → SKIP: tipo desconhecido "${type}"`)
+        return
+      }
+
+      // ── type === 'chat' — texto puro ──────────────────────────────────────
+      const bodyText = String(message.body ?? '').trim()
+      if (!bodyText) {
+        console.log(`   → SKIP: body vazio`)
+        return
+      }
+
+      console.log(`   → ✅ Texto: "${bodyText.slice(0, 60)}"`)
+      this.bufferMessage(bot, client, chatId, bodyText, from)
     })
   }
 
-  // ── ✅ NOVO: Processamento de áudio ──────────────────────────────────────
+  // ── Processamento de áudio ────────────────────────────────────────────────
 
   private async handleAudioMessage(
-    bot: Bot,
-    client: wppconnect.Whatsapp,
-    chatId: string,
-    from: string,
-    message: any,
+    bot: Bot, client: wppconnect.Whatsapp,
+    chatId: string, from: string, message: any,
   ): Promise<void> {
-    // Busca user e bot frescos para ter as apiKeys
     const user = await db.findUserById(bot.userId)
     if (!user) return
 
     const freshBot = await db.findBotById(bot.id)
     if (!freshBot || !freshBot.isActive) {
-      console.log(`[Audio] Bot inativo — áudio ignorado`)
+      console.log(`[Audio] Bot inativo — ignorado`)
       return
     }
 
-    // Determina o MIME type do áudio
-    // wppconnect expõe mimetype na mensagem quando disponível
-    const mimeType: string = (message.mimetype ?? message.mimeType ?? 'audio/ogg')
-      .split(';')[0]  // remove sufixos como "; codecs=opus"
-      .trim()
+    const mimeType: string = String(message.mimetype ?? message.mimeType ?? 'audio/ogg')
+      .split(';')[0].trim()
 
-    console.log(`[Audio] MIME detectado: "${mimeType}"`)
+    console.log(`[Audio] MIME: "${mimeType}"`)
 
-    // Baixa o arquivo de áudio como Buffer
     let audioBuffer: Buffer
     try {
-      console.log(`[Audio] Baixando áudio via decryptFile...`)
+      console.log(`[Audio] decryptFile...`)
       const decrypted = await client.decryptFile(message)
       audioBuffer = Buffer.isBuffer(decrypted) ? decrypted : Buffer.from(decrypted as any)
-      console.log(`[Audio] ✅ Buffer obtido: ${(audioBuffer.length / 1024).toFixed(1)}KB`)
+      console.log(`[Audio] ✅ ${(audioBuffer.length / 1024).toFixed(1)}KB`)
     } catch (err) {
-      console.error(`[Audio] ❌ Falha ao baixar áudio:`, err)
-      // Tenta usar base64 embutido na mensagem como fallback
-      if (message.body && message.body.length > 100) {
+      console.error(`[Audio] ❌ decryptFile falhou:`, err)
+      const bodyStr = String(message.body ?? '')
+      if (bodyStr.length > 100) {
         try {
-          audioBuffer = Buffer.from(message.body, 'base64')
-          console.log(`[Audio] Usando base64 embutido: ${(audioBuffer.length / 1024).toFixed(1)}KB`)
+          audioBuffer = Buffer.from(bodyStr, 'base64')
+          console.log(`[Audio] Usando base64 do body: ${(audioBuffer.length / 1024).toFixed(1)}KB`)
         } catch (_) {
           await client.sendText(from, AUDIO_FALLBACK_MESSAGES.transcription_failed).catch(() => {})
-          await this.persistAudioMessage(bot, client, from, '🎤 [áudio não processado]', null)
+          await this.persistMessage(bot, client, from, '🎤 [áudio não processado]', null)
           return
         }
       } else {
         await client.sendText(from, AUDIO_FALLBACK_MESSAGES.transcription_failed).catch(() => {})
-        await this.persistAudioMessage(bot, client, from, '🎤 [áudio não processado]', null)
+        await this.persistMessage(bot, client, from, '🎤 [áudio não processado]', null)
         return
       }
     }
 
-    // Transcreve o áudio
     const result = await transcribeAudio(audioBuffer, mimeType, user.apiKeys)
 
     if (!result.success) {
-      console.warn(`[Audio] Transcrição falhou: ${result.reason}`)
+      console.warn(`[Audio] Falhou: ${result.reason}`)
       const fallbackMsg = AUDIO_FALLBACK_MESSAGES[result.reason] ?? AUDIO_FALLBACK_MESSAGES.transcription_failed
       await client.sendText(from, fallbackMsg).catch(() => {})
-      // Persiste no histórico como áudio não transcrito
-      await this.persistAudioMessage(bot, client, from, '🎤 [áudio não transcrito]', null)
+      await this.persistMessage(bot, client, from, '🎤 [áudio não transcrito]', null)
       return
     }
 
-    const transcribedText = result.text
-    console.log(`[Audio] ✅ Texto transcrito: "${transcribedText}"`)
-
-    // Passa o texto transcrito para o buffer com prefixo visual
-    // O prefixo "🎤 " aparece no painel mas a IA recebe o texto puro
-    const textForBuffer = transcribedText
-    const textForPanel  = `🎤 ${transcribedText}`
-
-    // Envia diretamente para processMessage (sem buffer — áudio é único por natureza)
-    await this.processMessage(bot, client, chatId, textForBuffer, from, textForPanel)
+    console.log(`[Audio] ✅ Transcrito: "${result.text}"`)
+    await this.processMessage(bot, client, chatId, result.text, from, `🎤 ${result.text}`)
   }
+
+  // ── Buffer de texto ───────────────────────────────────────────────────────
 
   private bufferMessage(
     bot: Bot, client: wppconnect.Whatsapp,
@@ -538,15 +522,15 @@ export class WhatsAppManager {
     const existing = this.messageTimers.get(chatId)
     if (existing) clearTimeout(existing)
 
-    console.log(`[Buffer:${bot.name}] "${body}" adicionado. Total: ${buffer.length}. Timer: ${MESSAGE_BUFFER_TIMEOUT}ms`)
+    console.log(`[Buffer:${bot.name}] "${body.slice(0, 50)}" — total: ${buffer.length}`)
 
     const timer = setTimeout(() => {
       const combined = (this.messageBuffers.get(chatId) ?? []).join(' \n ')
       this.messageBuffers.delete(chatId)
       this.messageTimers.delete(chatId)
-      console.log(`[Buffer:${bot.name}] Timer disparou. Processando: "${combined}"`)
+      console.log(`[Buffer:${bot.name}] Timer → "${combined.slice(0, 80)}"`)
       this.processMessage(bot, client, chatId, combined, from)
-        .catch(err => console.error(`[Bot:${bot.name}] processMessage ERRO FATAL:`, err))
+        .catch(err => console.error(`[Bot:${bot.name}] processMessage ERRO:`, err))
     }, MESSAGE_BUFFER_TIMEOUT)
 
     this.messageTimers.set(chatId, timer)
@@ -560,49 +544,41 @@ export class WhatsAppManager {
   }
 
   // ── Core: processMessage ─────────────────────────────────────────────────
-  // panelText: texto exibido no painel/histórico (pode ser diferente do que vai para IA)
-  // Se não passado, usa o mesmo `message` para ambos
 
   private async processMessage(
     bot: Bot, client: wppconnect.Whatsapp,
     chatId: string, message: string, from: string,
     panelText?: string,
   ): Promise<void> {
-    console.log(`\n🔄 [PROCESS] Bot: ${bot.name} | chatId: ${chatId} | msg: "${message}"`)
+    console.log(`\n🔄 [PROCESS] Bot:${bot.name} | from:${from.slice(0,30)} | msg:"${message.slice(0, 60)}"`)
 
     const user = await db.findUserById(bot.userId)
-    if (!user) {
-      console.error(`[PROCESS] ❌ Usuário ${bot.userId} não encontrado no banco!`)
-      return
-    }
+    if (!user) { console.error(`[PROCESS] ❌ Usuário não encontrado`); return }
 
     const freshBot = await db.findBotById(bot.id)
-    if (!freshBot) {
-      console.error(`[PROCESS] ❌ Bot ${bot.id} não encontrado no banco!`)
-      return
-    }
+    if (!freshBot) { console.error(`[PROCESS] ❌ Bot não encontrado`); return }
 
-    console.log(`[PROCESS] Estado: isActive=${freshBot.isActive} | model=${freshBot.model}`)
+    console.log(`[PROCESS] isActive=${freshBot.isActive} | model=${freshBot.model}`)
 
     if (!freshBot.isActive) {
-      console.warn(`[PROCESS] ⚠️ Bot INATIVO — mensagem ignorada.`)
+      console.warn(`[PROCESS] ⚠️ Bot INATIVO`)
       return
     }
 
-    // ── Plan limit check ──────────────────────────────────────────────────
+    // Plan limit
     const stats = await db.getUserStats(bot.userId)
     if (isMessageLimitReached(user.plan, stats.totalMessages)) {
       const config = getPlanConfig(user.plan)
-      console.warn(`[PROCESS] 🚫 Limite de plano atingido (${stats.totalMessages}/${config.messageLimit})`)
+      console.warn(`[PROCESS] 🚫 Limite (${stats.totalMessages}/${config.messageLimit})`)
       this.planLimitListeners.forEach(l => l({
         botId: bot.id, userId: bot.userId, plan: user.plan,
         totalMessages: stats.totalMessages, messageLimit: config.messageLimit,
       }))
-      await this.persistAudioMessage(bot, client, from, panelText ?? message, null)
+      await this.persistMessage(bot, client, from, panelText ?? message, null)
       return
     }
 
-    // ── Feature 2: intervenção manual do operador ─────────────────────────
+    // Intervenção manual
     if (freshBot.phone && from === freshBot.phone) {
       const targetConv = await db.findConversationByBotAndPhone(bot.id, chatId)
       if (targetConv && !targetConv.isPaused) {
@@ -620,7 +596,7 @@ export class WhatsAppManager {
     const conv = await db.findConversationByBotAndPhone(bot.id, from)
     console.log(`[PROCESS] Conversa: ${conv ? conv.id : 'nova'}`)
 
-    // ── Feature 3: Human Handoff ──────────────────────────────────────────
+    // Human Handoff
     if (conv && !conv.humanHandoff && detectsHandoffIntent(message)) {
       const updated = await db.setConversationHandoff(conv.id, true)
       if (updated) {
@@ -630,41 +606,39 @@ export class WhatsAppManager {
         }))
       }
       await client.sendText(from, '👤 Vou transferir você para um de nossos atendentes. Aguarde um momento!').catch(() => {})
-      await this.persistAudioMessage(bot, client, from, panelText ?? message, null)
+      await this.persistMessage(bot, client, from, panelText ?? message, null)
       return
     }
 
-    // ── Feature 2: bot pausado ────────────────────────────────────────────
+    // Bot pausado
     if (conv?.isPaused) {
-      console.log(`[PROCESS] Bot pausado — mensagem salva sem resposta.`)
-      await this.persistAudioMessage(bot, client, from, panelText ?? message, null)
+      await this.persistMessage(bot, client, from, panelText ?? message, null)
       return
     }
 
-    // ── Typing indicator ──────────────────────────────────────────────────
+    // Typing
     if (conv) {
       this.typingListeners.forEach(l => l({
         botId: bot.id, convId: conv.id, contactPhone: from, isTyping: true,
       }))
     }
 
-    // ── Chamada da IA ─────────────────────────────────────────────────────
-    console.log(`[PROCESS] 🤖 Chamando IA (model: ${freshBot.model})...`)
-
+    // IA
+    console.log(`[PROCESS] 🤖 Chamando IA (${freshBot.model})...`)
     let answer: string
     try {
       answer = await this.callAIWithRetry(freshBot, user.apiKeys, chatId, message)
-      console.log(`[PROCESS] ✅ IA respondeu: "${answer.slice(0, 80)}..."`)
+      console.log(`[PROCESS] ✅ IA: "${answer.slice(0, 80)}"`)
     } catch (raw) {
       const err = raw instanceof AIError ? raw : classifyError(raw)
-      console.error(`[PROCESS] ❌ IA falhou [${err.kind}]: ${err.message}`)
+      console.error(`[PROCESS] ❌ IA [${err.kind}]: ${err.message}`)
       this.emitAIError(bot, err)
       if (conv) {
         this.typingListeners.forEach(l => l({
           botId: bot.id, convId: conv.id, contactPhone: from, isTyping: false,
         }))
       }
-      await this.persistAudioMessage(bot, client, from, panelText ?? message, null)
+      await this.persistMessage(bot, client, from, panelText ?? message, null)
       return
     }
 
@@ -674,14 +648,13 @@ export class WhatsAppManager {
       }))
     }
 
-    // Persiste com o texto do painel (ex: "🎤 texto transcrito")
-    await this.persistAudioMessage(bot, client, from, panelText ?? message, answer)
-    console.log(`[PROCESS] 📤 Enviando resposta para ${from}...`)
+    await this.persistMessage(bot, client, from, panelText ?? message, answer)
+    console.log(`[PROCESS] 📤 Enviando para ${from.slice(0,30)}...`)
     await sendMessagesWithDelay(client, splitMessages(answer), from)
-    console.log(`[PROCESS] ✅ Resposta enviada!`)
+    console.log(`[PROCESS] ✅ Enviado!`)
   }
 
-  // ── AI with retry ────────────────────────────────────────────────────────
+  // ── AI ────────────────────────────────────────────────────────────────────
 
   private async callAIWithRetry(
     bot: Bot, apiKeys: import('../models/database.js').ApiKeys,
@@ -690,12 +663,12 @@ export class WhatsAppManager {
     let lastError: AIError | undefined
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        console.log(`[AI] Tentativa ${attempt}/${MAX_RETRIES} — model: ${bot.model}`)
+        console.log(`[AI] Tentativa ${attempt}/${MAX_RETRIES}`)
         return await this.callAI(bot, apiKeys, chatId, message)
       } catch (raw) {
         const err = raw instanceof AIError ? raw : classifyError(raw)
         lastError = err
-        console.error(`[AI] Tentativa ${attempt} falhou [${err.kind}]: ${err.message}`)
+        console.error(`[AI] ${attempt} falhou [${err.kind}]: ${err.message}`)
         if (err.kind === 'config' || err.kind === 'quota') throw err
         if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 1500 * attempt))
       }
@@ -707,7 +680,7 @@ export class WhatsAppManager {
     bot: Bot, apiKeys: import('../models/database.js').ApiKeys,
     chatId: string, message: string,
   ): Promise<string> {
-    console.log(`[AI] model: ${bot.model} | geminiKey: ${apiKeys.geminiKey ? '✓' : '✗'} | openaiKey: ${apiKeys.openaiKey ? '✓' : '✗'}`)
+    console.log(`[AI] model:${bot.model} | gemini:${apiKeys.geminiKey ? '✓' : '✗'} | openai:${apiKeys.openaiKey ? '✓' : '✗'}`)
 
     if (bot.model === 'gemini-2.5-flash' as any) {
       if (!apiKeys.geminiKey) throw new AIError('config', 'Gemini API key não configurada.')
@@ -716,7 +689,6 @@ export class WhatsAppManager {
       })
     }
     if (!apiKeys.openaiKey || !apiKeys.openaiAssistantId) {
-      console.error(`[AI] OpenAI: key=${apiKeys.openaiKey ? 'ok' : 'FALTANDO'} | assistantId=${apiKeys.openaiAssistantId ? 'ok' : 'FALTANDO'}`)
       throw new AIError('config', 'Credenciais OpenAI não configuradas.')
     }
     return openaiManager.sendMessage(chatId, message, {
@@ -732,15 +704,11 @@ export class WhatsAppManager {
     }))
   }
 
-  // ── persistAudioMessage: versão unificada de persistMessage ──────────────
-  // Aceita qualquer texto para o campo user (texto normal ou "🎤 transcrito")
+  // ── Persist ───────────────────────────────────────────────────────────────
 
-  private async persistAudioMessage(
-    bot: Bot,
-    client: wppconnect.Whatsapp,
-    from: string,
-    userText: string,   // o que aparece no painel como mensagem do usuário
-    answer: string | null,
+  private async persistMessage(
+    bot: Bot, client: wppconnect.Whatsapp,
+    from: string, userText: string, answer: string | null,
   ): Promise<void> {
     let contactName = from
     try {
@@ -750,44 +718,22 @@ export class WhatsAppManager {
       ]) as any
       const pushname = contact?.pushname ?? contact?.name ?? contact?.formattedName
       if (pushname && pushname.trim()) contactName = pushname.trim()
-    } catch (err) {
-      console.warn(`[PERSIST] getContact timeout para ${from}`)
-    }
+    } catch (_) {}
 
     const conversation = await db.upsertConversation({
-      botId:         bot.id,
-      userId:        bot.userId,
-      contactName,
-      contactPhone:  from,
-      lastMessage:   answer ?? userText,
+      botId: bot.id, userId: bot.userId,
+      contactName, contactPhone: from,
+      lastMessage: answer ?? userText,
       lastMessageAt: new Date(),
-      unreadCount:   1,
-      messageCount:  1,
+      unreadCount: 1, messageCount: 1,
     })
 
-    await db.createMessage({
-      conversationId: conversation.id,
-      role:           'user',
-      content:        userText,
-    })
-
+    await db.createMessage({ conversationId: conversation.id, role: 'user', content: userText })
     await db.updateBot(bot.id, { messageCount: bot.messageCount + 1 })
 
     if (answer !== null) {
-      await db.createMessage({
-        conversationId: conversation.id,
-        role:           'assistant',
-        content:        answer,
-      })
+      await db.createMessage({ conversationId: conversation.id, role: 'assistant', content: answer })
     }
-  }
-
-  // Mantém alias para compatibilidade com chamadas de texto puro
-  private async persistMessage(
-    bot: Bot, client: wppconnect.Whatsapp,
-    from: string, message: string, answer: string | null,
-  ): Promise<void> {
-    return this.persistAudioMessage(bot, client, from, message, answer)
   }
 }
 
