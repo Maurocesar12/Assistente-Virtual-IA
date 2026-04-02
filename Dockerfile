@@ -1,6 +1,7 @@
 FROM node:20-slim
 
-# Dependências do Chromium para o wppconnect/Puppeteer
+# ── Dependências mínimas do Chromium ─────────────────────────────────────────
+# Removemos pacotes desnecessários para reduzir a imagem e o uso de RAM
 RUN apt-get update && apt-get install -y \
     chromium \
     fonts-liberation \
@@ -26,22 +27,19 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
 
-# Copia arquivos de configuração do NPM
 COPY package*.json ./
-
-# 🚨 O PULO DO GATO: Copia a pasta do Prisma antes de instalar!
 COPY Back-End/prisma ./prisma/
 
-# Agora sim, instala as dependências (e o prisma generate vai rodar feliz da vida)
 RUN npm install
 
-# Copia o resto do código
 COPY . .
 
-# Compila o TypeScript
 RUN npm run build
 
-# Expõe a porta que o Express usa
 EXPOSE 3000
 
-CMD ["node", "dist/index.js"]
+# ✅ FIX MEMÓRIA: Limita o heap do Node.js a 350MB.
+# Sem este limite, o V8 pode alocar até 2GB antes de rodar o GC.
+# Com Chromium também em memória, ultrapassamos o limite do Railway (512MB).
+# 350MB para Node + ~150MB para Chromium = ~500MB total (seguro para 512MB).
+CMD ["node", "--max-old-space-size=350", "dist/index.js"]
