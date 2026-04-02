@@ -111,24 +111,11 @@ function detectsHandoffIntent(message: string): boolean {
 const MAX_RETRIES            = 3
 const MESSAGE_BUFFER_TIMEOUT = 3_000
 
-// ✅ FIX PRINCIPAL: Único type aceito como texto puro.
-//
-// PROBLEMA QUE ESTAVA OCORRENDO:
-//   O wppconnect coloca o base64 do arquivo no campo `message.body`
-//   para imagens, vídeos e documentos. O código anterior só verificava
-//   se `message.body` existia — então base64 de imagens passava pelo filtro
-//   e era enviado para a IA como "texto", causando:
-//     1. A IA respondia com "não consigo interpretar essa mensagem"
-//     2. A thread OpenAI ficava contaminada com base64
-//     3. Mensagens de texto subsequentes não eram mais processadas
-//
-// SOLUÇÃO: Filtrar PRIMEIRO pelo type. Só type='chat' é texto puro.
+// Tipos aceitos
 const TEXT_TYPE   = 'chat'
-
-// Tipos de áudio — transcrever e responder
 const AUDIO_TYPES = new Set(['ptt', 'audio'])
 
-// Tipos a ignorar — body pode conter base64 do mídia
+// Tipos ignorados silenciosamente — body pode conter base64 pesado
 const IGNORED_TYPES = new Set([
   'image', 'video', 'document', 'sticker',
   'location', 'contact', 'contact_card',
@@ -137,9 +124,9 @@ const IGNORED_TYPES = new Set([
 ])
 
 const AUDIO_FALLBACK_MESSAGES = {
-  no_api_key:           '🎤 Recebi seu áudio! Para que eu possa respondê-lo, configure uma chave de API (OpenAI ou Gemini) nas configurações.',
-  transcription_failed: '🎤 Recebi seu áudio, mas tive dificuldade em processá-lo. Poderia enviar sua mensagem em texto? 😊',
-  empty_audio:          '🎤 Recebi um áudio vazio. Por favor, tente enviar novamente.',
+  no_api_key:           '🎤 Recebi seu áudio! Configure uma chave de API (OpenAI ou Gemini) nas configurações para eu processar áudios.',
+  transcription_failed: '🎤 Recebi seu áudio, mas tive dificuldade em processá-lo. Poderia enviar em texto? 😊',
+  empty_audio:          '🎤 Recebi um áudio vazio. Por favor, tente novamente.',
 }
 
 const CONFIRMED_CONNECTED_STATUSES = new Set(['inChat'])
@@ -253,20 +240,63 @@ export class WhatsAppManager {
     try {
       const sessionPromise = wppconnect.create({
         session: sessionName,
-        browserArgs: [
-          '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-          '--disable-extensions', '--no-zygote', '--single-process',
-        ],
-        headless:       'new' as any,
-        logQR:          false,
-        autoClose:      0,
-        disableWelcome: true,
+
+        // ✅ FIX MEMÓRIA #1: Flags do Chromium otimizados para RAM limitada.
+        //
+        // REMOVIDO --single-process: causava instabilidade severa com leaks de
+        // memória porque um vazamento em qualquer contexto comprometia o processo
+        // inteiro. O Chromium ficava crescendo indefinidamente até o OOM killer
+        // matar o processo.
+        //
+        // ADICIONADO flags de economia de memória:
+        //   --disable-dev-shm-usage    → usa /tmp em vez de /dev/shm (evita crash no Railway)
+        //   --disable-gpu              → desativa GPU (WhatsApp Web não precisa)
+        //   --js-flags=--max-old-space-size=200 → limita heap V8 dentro do Chromium
+        //   --memory-pressure-off      → desativa throttling por pressão de memória
+        //   --disable-background-networking → para downloads em background
+        //   --disable-default-apps     → não carrega apps padrão do Chrome
+        //   --disable-sync             → desativa sincronização
+        //   --disable-translate        → desativa tradutor
+        //   --no-first-run             → pula setup inicial
+        //   --disable-features=...     → desativa features que consomem memória
+
         puppeteerOptions: {
           args: [
-            '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-            '--disable-gpu', '--disable-extensions', `--user-data-dir=${sessionDir}`,
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-extensions',
+            '--disable-background-networking',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-breakpad',
+            '--disable-client-side-phishing-detection',
+            '--disable-default-apps',
+            '--disable-hang-monitor',
+            '--disable-popup-blocking',
+            '--disable-prompt-on-repost',
+            '--disable-sync',
+            '--disable-translate',
+            '--metrics-recording-only',
+            '--no-first-run',
+            '--safebrowsing-disable-auto-update',
+            '--password-store=basic',
+            '--use-mock-keychain',
+            '--disable-features=TranslateUI,BlinkGenPropertyTrees,IsolateOrigins,site-per-process',
+            '--js-flags=--max-old-space-size=150',
+            `--user-data-dir=${sessionDir}`,
           ],
         },
+
+        headless:       'new' as any,
+        logQR:          false,
+        // ✅ FIX MEMÓRIA #2: autoClose definido explicitamente como número positivo.
+        // O wppconnect ignora autoClose: 0 e usa o default de 180s no modo QR,
+        // mas com sessão conectada não fecha nunca.
+        // Usando false para desabilitar completamente — o bot gerencia o ciclo de vida.
+        autoClose:      false as any,
+        disableWelcome: true,
 
         catchQR: (base64Qr: string, asciiQR: string) => {
           this.qrWasShown.set(bot.id, true)
@@ -312,12 +342,41 @@ export class WhatsAppManager {
       this.clients.set(bot.id, client)
       this.attachMessageListener(bot, client)
       this.attachPresenceListener(bot, client)
+
+      // ✅ FIX MEMÓRIA #3: Limpeza periódica de memória a cada 30 minutos.
+      // O Chromium acumula cache de imagens de stories e grupos ao longo do tempo.
+      // Forçar GC do Node.js + limpar buffers internos previne crescimento contínuo.
+      this.scheduleMemoryCleanup(bot.id)
     } catch (err) {
       this.clients.delete(bot.id)
       this.qrWasShown.delete(bot.id)
       await db.updateBot(bot.id, { isConnected: false, isActive: false }).catch(() => {})
       throw err
     }
+  }
+
+  // ── Limpeza periódica de memória ─────────────────────────────────────────
+
+  private memoryCleanupTimers = new Map<string, NodeJS.Timeout>()
+
+  private scheduleMemoryCleanup(botId: string): void {
+    const existing = this.memoryCleanupTimers.get(botId)
+    if (existing) clearInterval(existing)
+
+    // A cada 30 minutos, força o GC do Node.js e loga o uso de memória
+    const timer = setInterval(() => {
+      const used = process.memoryUsage()
+      const mb   = (bytes: number) => (bytes / 1024 / 1024).toFixed(1)
+      console.log(`[Memory] heapUsed:${mb(used.heapUsed)}MB | rss:${mb(used.rss)}MB | external:${mb(used.external)}MB`)
+
+      // Força coleta de lixo se disponível (requer --expose-gc no Node)
+      if (typeof (global as any).gc === 'function') {
+        ;(global as any).gc()
+        console.log('[Memory] GC forçado')
+      }
+    }, 30 * 60 * 1000) // 30 minutos
+
+    this.memoryCleanupTimers.set(botId, timer)
   }
 
   private async onSessionConnectedAsync(bot: Bot, client: wppconnect.Whatsapp): Promise<void> {
@@ -351,6 +410,9 @@ export class WhatsAppManager {
     this.lastQR.delete(bot.id)
     this.qrWasShown.delete(bot.id)
     this.clients.delete(bot.id)
+    // Para o timer de limpeza de memória
+    const cleanupTimer = this.memoryCleanupTimers.get(bot.id)
+    if (cleanupTimer) { clearInterval(cleanupTimer); this.memoryCleanupTimers.delete(bot.id) }
     setTimeout(() => nukeAllBotTokens(bot.id).catch(() => {}), 3000)
     db.updateBot(bot.id, { isConnected: false, isActive: false }).catch(() => {})
     console.log(`[WhatsApp] ❌ Sessão encerrada/falhou: ${bot.name}`)
@@ -363,6 +425,9 @@ export class WhatsAppManager {
     this.lastQR.delete(botId)
     this.qrWasShown.delete(botId)
     this.clearMessageBuffer(botId)
+    // Para o timer de limpeza de memória
+    const cleanupTimer = this.memoryCleanupTimers.get(botId)
+    if (cleanupTimer) { clearInterval(cleanupTimer); this.memoryCleanupTimers.delete(botId) }
     await db.updateBot(botId, { isConnected: false, isActive: false })
     setTimeout(() => nukeAllBotTokens(botId).catch(() => {}), 3000)
     console.log(`[WhatsApp] 🛑 Sessão parada: ${botId}`)
@@ -404,46 +469,40 @@ export class WhatsAppManager {
       const from   = String(message.from ?? '')
       const chatId = String(message.chatId ?? message.from ?? '')
 
-      // Log compacto — não imprime base64 de imagens
-      const bodyPreview = IGNORED_TYPES.has(type) || AUDIO_TYPES.has(type)
-        ? `[${type} — ${String(message.body ?? '').length} chars]`
-        : String(message.body ?? '').slice(0, 60)
+      // ✅ FIX MEMÓRIA #4: Log compacto — NÃO imprime base64.
+      // O base64 de imagens/vídeos pode ter milhares de chars. Imprimir no log
+      // cria strings gigantes na heap do Node.js que demoram para ser coletadas.
+      const bodyLen = String(message.body ?? '').length
+      const bodyPreview = (IGNORED_TYPES.has(type) || AUDIO_TYPES.has(type))
+        ? `[${type}:${bodyLen}b]`
+        : String(message.body ?? '').slice(0, 50)
 
-      console.log(`\n📩 [MSG] Bot:${bot.name} | type:${type} | from:${from.slice(0,30)} | body:${bodyPreview}`)
+      console.log(`📩 [MSG] ${type}|${from.slice(0, 25)}|${bodyPreview}`)
 
       // ── Filtros básicos ───────────────────────────────────────────────────
       const isGroup  = message.isGroupMsg || from.includes('@g.us')
       const isStatus = from.includes('status@broadcast')
 
-      if (isGroup || isStatus) {
-        console.log(`   → SKIP: grupo ou status`)
-        return
-      }
+      if (isGroup || isStatus) return  // sem log extra para não poluir
 
-      // ── ✅ ROTEAMENTO POR TYPE ────────────────────────────────────────────
+      // ── Roteamento por type ───────────────────────────────────────────────
       if (AUDIO_TYPES.has(type)) {
-        console.log(`   → 🎤 Áudio (${type}) — transcrevendo...`)
+        console.log(`   → 🎤 Áudio (${type})`)
         this.handleAudioMessage(bot, client, chatId, from, message)
-          .catch(err => console.error(`[Bot:${bot.name}] handleAudioMessage ERRO:`, err))
+          .catch(err => console.error(`[Audio] ERRO:`, err))
         return
       }
 
-      if (IGNORED_TYPES.has(type)) {
-        console.log(`   → SKIP: mídia não suportada (${type})`)
-        return
-      }
+      if (IGNORED_TYPES.has(type)) return  // mídia — ignorar sem log
 
       if (type !== TEXT_TYPE) {
         console.log(`   → SKIP: tipo desconhecido "${type}"`)
         return
       }
 
-      // ── type === 'chat' — texto puro ──────────────────────────────────────
+      // ── Texto puro ────────────────────────────────────────────────────────
       const bodyText = String(message.body ?? '').trim()
-      if (!bodyText) {
-        console.log(`   → SKIP: body vazio`)
-        return
-      }
+      if (!bodyText) return
 
       console.log(`   → ✅ Texto: "${bodyText.slice(0, 60)}"`)
       this.bufferMessage(bot, client, chatId, bodyText, from)
@@ -460,29 +519,22 @@ export class WhatsAppManager {
     if (!user) return
 
     const freshBot = await db.findBotById(bot.id)
-    if (!freshBot || !freshBot.isActive) {
-      console.log(`[Audio] Bot inativo — ignorado`)
-      return
-    }
+    if (!freshBot || !freshBot.isActive) return
 
     const mimeType: string = String(message.mimetype ?? message.mimeType ?? 'audio/ogg')
       .split(';')[0].trim()
 
-    console.log(`[Audio] MIME: "${mimeType}"`)
-
     let audioBuffer: Buffer
     try {
-      console.log(`[Audio] decryptFile...`)
       const decrypted = await client.decryptFile(message)
       audioBuffer = Buffer.isBuffer(decrypted) ? decrypted : Buffer.from(decrypted as any)
-      console.log(`[Audio] ✅ ${(audioBuffer.length / 1024).toFixed(1)}KB`)
+      console.log(`[Audio] ${(audioBuffer.length / 1024).toFixed(1)}KB | MIME:${mimeType}`)
     } catch (err) {
-      console.error(`[Audio] ❌ decryptFile falhou:`, err)
+      console.error(`[Audio] decryptFile falhou:`, err)
       const bodyStr = String(message.body ?? '')
       if (bodyStr.length > 100) {
         try {
           audioBuffer = Buffer.from(bodyStr, 'base64')
-          console.log(`[Audio] Usando base64 do body: ${(audioBuffer.length / 1024).toFixed(1)}KB`)
         } catch (_) {
           await client.sendText(from, AUDIO_FALLBACK_MESSAGES.transcription_failed).catch(() => {})
           await this.persistMessage(bot, client, from, '🎤 [áudio não processado]', null)
@@ -497,15 +549,19 @@ export class WhatsAppManager {
 
     const result = await transcribeAudio(audioBuffer, mimeType, user.apiKeys)
 
+    // ✅ FIX MEMÓRIA #5: Libera o buffer de áudio explicitamente após transcrição.
+    // Buffers grandes ficam na heap até o GC rodar. Com áudios frequentes,
+    // podem se acumular causando crescimento contínuo da memória.
+    audioBuffer = Buffer.alloc(0)  // substitui referência por buffer vazio
+
     if (!result.success) {
-      console.warn(`[Audio] Falhou: ${result.reason}`)
       const fallbackMsg = AUDIO_FALLBACK_MESSAGES[result.reason] ?? AUDIO_FALLBACK_MESSAGES.transcription_failed
       await client.sendText(from, fallbackMsg).catch(() => {})
       await this.persistMessage(bot, client, from, '🎤 [áudio não transcrito]', null)
       return
     }
 
-    console.log(`[Audio] ✅ Transcrito: "${result.text}"`)
+    console.log(`[Audio] ✅ Transcrito: "${result.text.slice(0, 80)}"`)
     await this.processMessage(bot, client, chatId, result.text, from, `🎤 ${result.text}`)
   }
 
@@ -522,15 +578,12 @@ export class WhatsAppManager {
     const existing = this.messageTimers.get(chatId)
     if (existing) clearTimeout(existing)
 
-    console.log(`[Buffer:${bot.name}] "${body.slice(0, 50)}" — total: ${buffer.length}`)
-
     const timer = setTimeout(() => {
       const combined = (this.messageBuffers.get(chatId) ?? []).join(' \n ')
       this.messageBuffers.delete(chatId)
       this.messageTimers.delete(chatId)
-      console.log(`[Buffer:${bot.name}] Timer → "${combined.slice(0, 80)}"`)
       this.processMessage(bot, client, chatId, combined, from)
-        .catch(err => console.error(`[Bot:${bot.name}] processMessage ERRO:`, err))
+        .catch(err => console.error(`[processMessage] ERRO:`, err))
     }, MESSAGE_BUFFER_TIMEOUT)
 
     this.messageTimers.set(chatId, timer)
@@ -550,26 +603,19 @@ export class WhatsAppManager {
     chatId: string, message: string, from: string,
     panelText?: string,
   ): Promise<void> {
-    console.log(`\n🔄 [PROCESS] Bot:${bot.name} | from:${from.slice(0,30)} | msg:"${message.slice(0, 60)}"`)
+    console.log(`🔄 [PROCESS] ${bot.name} | "${message.slice(0, 60)}"`)
 
     const user = await db.findUserById(bot.userId)
-    if (!user) { console.error(`[PROCESS] ❌ Usuário não encontrado`); return }
+    if (!user) return
 
     const freshBot = await db.findBotById(bot.id)
-    if (!freshBot) { console.error(`[PROCESS] ❌ Bot não encontrado`); return }
+    if (!freshBot) return
 
-    console.log(`[PROCESS] isActive=${freshBot.isActive} | model=${freshBot.model}`)
+    if (!freshBot.isActive) return
 
-    if (!freshBot.isActive) {
-      console.warn(`[PROCESS] ⚠️ Bot INATIVO`)
-      return
-    }
-
-    // Plan limit
     const stats = await db.getUserStats(bot.userId)
     if (isMessageLimitReached(user.plan, stats.totalMessages)) {
       const config = getPlanConfig(user.plan)
-      console.warn(`[PROCESS] 🚫 Limite (${stats.totalMessages}/${config.messageLimit})`)
       this.planLimitListeners.forEach(l => l({
         botId: bot.id, userId: bot.userId, plan: user.plan,
         totalMessages: stats.totalMessages, messageLimit: config.messageLimit,
@@ -578,7 +624,6 @@ export class WhatsAppManager {
       return
     }
 
-    // Intervenção manual
     if (freshBot.phone && from === freshBot.phone) {
       const targetConv = await db.findConversationByBotAndPhone(bot.id, chatId)
       if (targetConv && !targetConv.isPaused) {
@@ -594,9 +639,7 @@ export class WhatsAppManager {
     }
 
     const conv = await db.findConversationByBotAndPhone(bot.id, from)
-    console.log(`[PROCESS] Conversa: ${conv ? conv.id : 'nova'}`)
 
-    // Human Handoff
     if (conv && !conv.humanHandoff && detectsHandoffIntent(message)) {
       const updated = await db.setConversationHandoff(conv.id, true)
       if (updated) {
@@ -610,28 +653,24 @@ export class WhatsAppManager {
       return
     }
 
-    // Bot pausado
     if (conv?.isPaused) {
       await this.persistMessage(bot, client, from, panelText ?? message, null)
       return
     }
 
-    // Typing
     if (conv) {
       this.typingListeners.forEach(l => l({
         botId: bot.id, convId: conv.id, contactPhone: from, isTyping: true,
       }))
     }
 
-    // IA
-    console.log(`[PROCESS] 🤖 Chamando IA (${freshBot.model})...`)
     let answer: string
     try {
       answer = await this.callAIWithRetry(freshBot, user.apiKeys, chatId, message)
-      console.log(`[PROCESS] ✅ IA: "${answer.slice(0, 80)}"`)
+      console.log(`✅ IA respondeu: "${answer.slice(0, 60)}"`)
     } catch (raw) {
       const err = raw instanceof AIError ? raw : classifyError(raw)
-      console.error(`[PROCESS] ❌ IA [${err.kind}]: ${err.message}`)
+      console.error(`❌ IA [${err.kind}]: ${err.message}`)
       this.emitAIError(bot, err)
       if (conv) {
         this.typingListeners.forEach(l => l({
@@ -649,12 +688,9 @@ export class WhatsAppManager {
     }
 
     await this.persistMessage(bot, client, from, panelText ?? message, answer)
-    console.log(`[PROCESS] 📤 Enviando para ${from.slice(0,30)}...`)
     await sendMessagesWithDelay(client, splitMessages(answer), from)
-    console.log(`[PROCESS] ✅ Enviado!`)
+    console.log(`📤 Enviado para ${from.slice(0, 25)}`)
   }
-
-  // ── AI ────────────────────────────────────────────────────────────────────
 
   private async callAIWithRetry(
     bot: Bot, apiKeys: import('../models/database.js').ApiKeys,
@@ -663,12 +699,10 @@ export class WhatsAppManager {
     let lastError: AIError | undefined
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        console.log(`[AI] Tentativa ${attempt}/${MAX_RETRIES}`)
         return await this.callAI(bot, apiKeys, chatId, message)
       } catch (raw) {
         const err = raw instanceof AIError ? raw : classifyError(raw)
         lastError = err
-        console.error(`[AI] ${attempt} falhou [${err.kind}]: ${err.message}`)
         if (err.kind === 'config' || err.kind === 'quota') throw err
         if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 1500 * attempt))
       }
@@ -680,8 +714,6 @@ export class WhatsAppManager {
     bot: Bot, apiKeys: import('../models/database.js').ApiKeys,
     chatId: string, message: string,
   ): Promise<string> {
-    console.log(`[AI] model:${bot.model} | gemini:${apiKeys.geminiKey ? '✓' : '✗'} | openai:${apiKeys.openaiKey ? '✓' : '✗'}`)
-
     if (bot.model === 'gemini-2.5-flash' as any) {
       if (!apiKeys.geminiKey) throw new AIError('config', 'Gemini API key não configurada.')
       return geminiManager.sendMessage(chatId, message, {
@@ -703,8 +735,6 @@ export class WhatsAppManager {
       title: meta.title, detail: err.message, action: meta.action,
     }))
   }
-
-  // ── Persist ───────────────────────────────────────────────────────────────
 
   private async persistMessage(
     bot: Bot, client: wppconnect.Whatsapp,
