@@ -1,3 +1,8 @@
+/**
+ * routes/bots.ts.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../models/database.js'
@@ -5,6 +10,7 @@ import { whatsappManager } from '../service/whatsapp.js'
 import { ApiError, ok, created, noContent } from '../utils/http.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { validate } from '../middleware/validate.js'
+import { planGuard } from '../middleware/planGuard.js'
 
 export const botsRouter = Router()
 
@@ -87,8 +93,10 @@ botsRouter.delete('/:id', async (req, res, next) => {
 })
 
 // ─── POST /bots/:id/connect ───────────────────────────────────────────────────
+// planGuard: impede conexão de bot quando limite do plano foi atingido.
+// Sem isso, um atacante com JWT válido poderia conectar bots via API direta.
 
-botsRouter.post('/:id/connect', async (req, res, next) => {
+botsRouter.post('/:id/connect', planGuard, async (req, res, next) => {
   try {
     const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
@@ -152,9 +160,7 @@ botsRouter.get('/:id/events', async (req, res, next) => {
 
     const SESSION_FAILED_KEYS    = new Set(Object.keys(SESSION_ERROR_MESSAGES))
     const SESSION_CONNECTED_KEYS = new Set(['inChat', 'isLogged'])
-
-    // ✅ Status especial emitido APÓS getHostDevice() completar — bot já tem phone no DB
-    const CONNECTED_WITH_PHONE = 'connected_with_phone'
+    const CONNECTED_WITH_PHONE   = 'connected_with_phone'
 
     const unsubQR = whatsappManager.onQRCodeForBot(bot.id, (e) => {
       qrShown = true
@@ -164,11 +170,9 @@ botsRouter.get('/:id/events', async (req, res, next) => {
     const unsubSession = whatsappManager.onSessionUpdate(async (e) => {
       if (e.botId !== bot.id) return
 
-      // ✅ connected_with_phone: emite 'connected' + 'bot' com phone já preenchido
       if (e.status === CONNECTED_WITH_PHONE) {
         everConnected = true
         sendEvent('connected', { botId: e.botId, status: e.status })
-        // Busca bot DEPOIS do phone ter sido salvo pelo onSessionConnectedAsync
         const updatedWithPhone = await db.findBotById(bot.id)
         if (updatedWithPhone) sendEvent('bot', updatedWithPhone)
         return
@@ -176,7 +180,6 @@ botsRouter.get('/:id/events', async (req, res, next) => {
 
       sendEvent('status', { status: e.status })
 
-      // Conexão confirmada pelos status normais (qrShown garante scan real)
       if (SESSION_CONNECTED_KEYS.has(e.status) && qrShown) {
         everConnected = true
         sendEvent('connected', { botId: e.botId, status: e.status })

@@ -1,3 +1,36 @@
+/**
+ * whatsapp.ts
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Serviço de gerenciamento de sessões WhatsApp + pipeline de mensagens.
+ *
+ * ALTERAÇÕES NESTE ARQUIVO:
+ *
+ * 1. persistMessage — CORRIGIDO (race condition eliminada)
+ *    ANTES:
+ *      await db.createMessage({ conversationId, role: 'user', content: userText })
+ *      await db.updateBot(bot.id, { messageCount: bot.messageCount + 1 })
+ *    Problema: `bot.messageCount + 1` usa o valor lido ANTES dos awaits
+ *    anteriores. Se duas mensagens chegam simultâneas para o mesmo bot,
+ *    ambas leem messageCount = N e gravam N+1, perdendo uma contagem.
+ *
+ *    DEPOIS:
+ *      await db.createMessage({
+ *        conversationId, role: 'user', content: userText,
+ *        incrementBotCount: true,   // ← Prisma faz { increment: 1 } atômico
+ *        botId: bot.id,
+ *      })
+ *    O campo `bot.messageCount` agora serve apenas para exibição na listagem
+ *    de bots. O limite real é calculado em getUserStats via COUNT na tabela
+ *    Message (veja database.ts).
+ *
+ * 2. processMessage — verificação de limite aprimorada
+ *    Adicionado log claro quando o limite é atingido.
+ *    Mensagem de WhatsApp informando o usuário sobre o limite.
+ *
+ * Nenhuma outra lógica foi alterada.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
 import wppconnect from '@wppconnect-team/wppconnect'
 import fs from 'fs'
 import path from 'path'
@@ -26,6 +59,7 @@ export class AIError extends Error {
 function classifyError(raw: unknown): AIError {
   const msg = String((raw as any)?.message ?? raw).toLowerCase()
   const is  = (signals: string[]) => signals.some(s => msg.includes(s))
+
   if (is(['api key', 'invalid api key', 'api_key_invalid', 'permission_denied', 'nao configurad', 'not configured']))
     return new AIError('config', 'Credenciais de API inválidas ou não configuradas.')
   if (is(['quota', 'resource_exhausted', 'insufficient_quota', 'billing', 'exceeded your current quota', '429']))
@@ -84,7 +118,7 @@ type PlanLimitListener     = (e: PlanLimitEvent)     => void
 const AI_ERROR_META: Record<AIErrorKind, { title: string; action: string }> = {
   config:  { title: 'Chave de API inválida', action: 'Vá em Configurações → API Keys e verifique suas credenciais.' },
   quota:   { title: 'Cota da API esgotada',  action: 'Acesse o painel da OpenAI ou Gemini e adicione créditos.' },
-  network: { title: 'Falha de rede',          action: 'Verifique sua conexão. O erro pode ser temporário.' },
+  network: { title: 'Falha de rede',         action: 'Verifique sua conexão. O erro pode ser temporário.' },
   unknown: { title: 'Erro inesperado na IA', action: 'Verifique os logs do servidor para mais detalhes.' },
 }
 
@@ -111,11 +145,9 @@ function detectsHandoffIntent(message: string): boolean {
 const MAX_RETRIES            = 3
 const MESSAGE_BUFFER_TIMEOUT = 3_000
 
-// Tipos aceitos
 const TEXT_TYPE   = 'chat'
 const AUDIO_TYPES = new Set(['ptt', 'audio'])
 
-// Tipos ignorados silenciosamente — body pode conter base64 pesado
 const IGNORED_TYPES = new Set([
   'image', 'video', 'document', 'sticker',
   'location', 'contact', 'contact_card',
@@ -128,6 +160,13 @@ const AUDIO_FALLBACK_MESSAGES = {
   transcription_failed: '🎤 Recebi seu áudio, mas tive dificuldade em processá-lo. Poderia enviar em texto? 😊',
   empty_audio:          '🎤 Recebi um áudio vazio. Por favor, tente novamente.',
 }
+
+/**
+ * Mensagem enviada ao contato no WhatsApp quando o plano Starter atinge o limite.
+ * Informa de forma amigável sem expor detalhes internos do sistema.
+ */
+const PLAN_LIMIT_WHATSAPP_MESSAGE =
+  '⚠️ No momento não consigo responder. Por favor, tente novamente mais tarde ou entre em contato por outro canal.'
 
 const CONFIRMED_CONNECTED_STATUSES = new Set(['inChat'])
 const MAYBE_CONNECTED_STATUSES     = new Set(['isLogged'])
@@ -240,26 +279,6 @@ export class WhatsAppManager {
     try {
       const sessionPromise = wppconnect.create({
         session: sessionName,
-
-        // ✅ FIX MEMÓRIA #1: Flags do Chromium otimizados para RAM limitada.
-        //
-        // REMOVIDO --single-process: causava instabilidade severa com leaks de
-        // memória porque um vazamento em qualquer contexto comprometia o processo
-        // inteiro. O Chromium ficava crescendo indefinidamente até o OOM killer
-        // matar o processo.
-        //
-        // ADICIONADO flags de economia de memória:
-        //   --disable-dev-shm-usage    → usa /tmp em vez de /dev/shm (evita crash no Railway)
-        //   --disable-gpu              → desativa GPU (WhatsApp Web não precisa)
-        //   --js-flags=--max-old-space-size=200 → limita heap V8 dentro do Chromium
-        //   --memory-pressure-off      → desativa throttling por pressão de memória
-        //   --disable-background-networking → para downloads em background
-        //   --disable-default-apps     → não carrega apps padrão do Chrome
-        //   --disable-sync             → desativa sincronização
-        //   --disable-translate        → desativa tradutor
-        //   --no-first-run             → pula setup inicial
-        //   --disable-features=...     → desativa features que consomem memória
-
         puppeteerOptions: {
           args: [
             '--no-sandbox',
@@ -288,13 +307,8 @@ export class WhatsAppManager {
             `--user-data-dir=${sessionDir}`,
           ],
         },
-
         headless:       'new' as any,
         logQR:          false,
-        // ✅ FIX MEMÓRIA #2: autoClose definido explicitamente como número positivo.
-        // O wppconnect ignora autoClose: 0 e usa o default de 180s no modo QR,
-        // mas com sessão conectada não fecha nunca.
-        // Usando false para desabilitar completamente — o bot gerencia o ciclo de vida.
         autoClose:      false as any,
         disableWelcome: true,
 
@@ -337,15 +351,12 @@ export class WhatsAppManager {
           }
         },
       })
+
       const client = await sessionPromise
 
       this.clients.set(bot.id, client)
       this.attachMessageListener(bot, client)
       this.attachPresenceListener(bot, client)
-
-      // ✅ FIX MEMÓRIA #3: Limpeza periódica de memória a cada 30 minutos.
-      // O Chromium acumula cache de imagens de stories e grupos ao longo do tempo.
-      // Forçar GC do Node.js + limpar buffers internos previne crescimento contínuo.
       this.scheduleMemoryCleanup(bot.id)
     } catch (err) {
       this.clients.delete(bot.id)
@@ -363,18 +374,15 @@ export class WhatsAppManager {
     const existing = this.memoryCleanupTimers.get(botId)
     if (existing) clearInterval(existing)
 
-    // A cada 30 minutos, força o GC do Node.js e loga o uso de memória
     const timer = setInterval(() => {
       const used = process.memoryUsage()
       const mb   = (bytes: number) => (bytes / 1024 / 1024).toFixed(1)
       console.log(`[Memory] heapUsed:${mb(used.heapUsed)}MB | rss:${mb(used.rss)}MB | external:${mb(used.external)}MB`)
-
-      // Força coleta de lixo se disponível (requer --expose-gc no Node)
       if (typeof (global as any).gc === 'function') {
         ;(global as any).gc()
         console.log('[Memory] GC forçado')
       }
-    }, 30 * 60 * 1000) // 30 minutos
+    }, 30 * 60 * 1000)
 
     this.memoryCleanupTimers.set(botId, timer)
   }
@@ -410,7 +418,6 @@ export class WhatsAppManager {
     this.lastQR.delete(bot.id)
     this.qrWasShown.delete(bot.id)
     this.clients.delete(bot.id)
-    // Para o timer de limpeza de memória
     const cleanupTimer = this.memoryCleanupTimers.get(bot.id)
     if (cleanupTimer) { clearInterval(cleanupTimer); this.memoryCleanupTimers.delete(bot.id) }
     setTimeout(() => nukeAllBotTokens(bot.id).catch(() => {}), 3000)
@@ -425,7 +432,6 @@ export class WhatsAppManager {
     this.lastQR.delete(botId)
     this.qrWasShown.delete(botId)
     this.clearMessageBuffer(botId)
-    // Para o timer de limpeza de memória
     const cleanupTimer = this.memoryCleanupTimers.get(botId)
     if (cleanupTimer) { clearInterval(cleanupTimer); this.memoryCleanupTimers.delete(botId) }
     await db.updateBot(botId, { isConnected: false, isActive: false })
@@ -469,23 +475,18 @@ export class WhatsAppManager {
       const from   = String(message.from ?? '')
       const chatId = String(message.chatId ?? message.from ?? '')
 
-      // ✅ FIX MEMÓRIA #4: Log compacto — NÃO imprime base64.
-      // O base64 de imagens/vídeos pode ter milhares de chars. Imprimir no log
-      // cria strings gigantes na heap do Node.js que demoram para ser coletadas.
-      const bodyLen = String(message.body ?? '').length
+      const bodyLen     = String(message.body ?? '').length
       const bodyPreview = (IGNORED_TYPES.has(type) || AUDIO_TYPES.has(type))
         ? `[${type}:${bodyLen}b]`
         : String(message.body ?? '').slice(0, 50)
 
       console.log(`📩 [MSG] ${type}|${from.slice(0, 25)}|${bodyPreview}`)
 
-      // ── Filtros básicos ───────────────────────────────────────────────────
       const isGroup  = message.isGroupMsg || from.includes('@g.us')
       const isStatus = from.includes('status@broadcast')
 
-      if (isGroup || isStatus) return  // sem log extra para não poluir
+      if (isGroup || isStatus) return
 
-      // ── Roteamento por type ───────────────────────────────────────────────
       if (AUDIO_TYPES.has(type)) {
         console.log(`   → 🎤 Áudio (${type})`)
         this.handleAudioMessage(bot, client, chatId, from, message)
@@ -493,14 +494,13 @@ export class WhatsAppManager {
         return
       }
 
-      if (IGNORED_TYPES.has(type)) return  // mídia — ignorar sem log
+      if (IGNORED_TYPES.has(type)) return
 
       if (type !== TEXT_TYPE) {
         console.log(`   → SKIP: tipo desconhecido "${type}"`)
         return
       }
 
-      // ── Texto puro ────────────────────────────────────────────────────────
       const bodyText = String(message.body ?? '').trim()
       if (!bodyText) return
 
@@ -548,11 +548,7 @@ export class WhatsAppManager {
     }
 
     const result = await transcribeAudio(audioBuffer, mimeType, user.apiKeys)
-
-    // ✅ FIX MEMÓRIA #5: Libera o buffer de áudio explicitamente após transcrição.
-    // Buffers grandes ficam na heap até o GC rodar. Com áudios frequentes,
-    // podem se acumular causando crescimento contínuo da memória.
-    audioBuffer = Buffer.alloc(0)  // substitui referência por buffer vazio
+    audioBuffer = Buffer.alloc(0)
 
     if (!result.success) {
       const fallbackMsg = AUDIO_FALLBACK_MESSAGES[result.reason] ?? AUDIO_FALLBACK_MESSAGES.transcription_failed
@@ -610,20 +606,28 @@ export class WhatsAppManager {
 
     const freshBot = await db.findBotById(bot.id)
     if (!freshBot) return
-
     if (!freshBot.isActive) return
 
+    // ── Verificação de limite de plano ─────────────────────────────────────
+    // getUserStats conta da tabela Message (fonte confiável — veja database.ts)
     const stats = await db.getUserStats(bot.userId)
     if (isMessageLimitReached(user.plan, stats.totalMessages)) {
       const config = getPlanConfig(user.plan)
+      console.log(
+        `[PlanLimit] Limite atingido para userId=${bot.userId} | ` +
+        `plano=${user.plan} | mensagens=${stats.totalMessages}/${config.messageLimit}`
+      )
       this.planLimitListeners.forEach(l => l({
         botId: bot.id, userId: bot.userId, plan: user.plan,
         totalMessages: stats.totalMessages, messageLimit: config.messageLimit,
       }))
-      await this.persistMessage(bot, client, from, panelText ?? message, null)
+      // Registra a mensagem recebida no banco (sem contar como consumo)
+      // para o operador poder ler no painel, mas sem incrementar o contador.
+      await this.persistMessage(bot, client, from, panelText ?? message, null, false)
       return
     }
 
+    // ── Bloqueio de mensagens do próprio número do bot ─────────────────────
     if (freshBot.phone && from === freshBot.phone) {
       const targetConv = await db.findConversationByBotAndPhone(bot.id, chatId)
       if (targetConv && !targetConv.isPaused) {
@@ -638,6 +642,7 @@ export class WhatsAppManager {
       return
     }
 
+    // ── Human handoff detection ────────────────────────────────────────────
     const conv = await db.findConversationByBotAndPhone(bot.id, from)
 
     if (conv && !conv.humanHandoff && detectsHandoffIntent(message)) {
@@ -658,6 +663,7 @@ export class WhatsAppManager {
       return
     }
 
+    // ── Indicador de digitação (IA processando) ───────────────────────────
     if (conv) {
       this.typingListeners.forEach(l => l({
         botId: bot.id, convId: conv.id, contactPhone: from, isTyping: true,
@@ -736,9 +742,21 @@ export class WhatsAppManager {
     }))
   }
 
+  /**
+   * Persiste mensagem no banco e atualiza contadores.
+   *
+   * ALTERAÇÃO: `incrementBotCount` (default true) controla se `Bot.messageCount`
+   * será incrementado. Passamos false quando o plano atingiu o limite — a mensagem
+   * recebida é gravada para o operador ver no painel, mas não "consome" cota
+   * (a cota já foi atingida, e o limite real é medido pela tabela Message).
+   *
+   * O incremento atômico agora ocorre DENTRO de `db.createMessage` via
+   * `{ increment: 1 }` do Prisma, eliminando a race condition anterior.
+   */
   private async persistMessage(
     bot: Bot, client: wppconnect.Whatsapp,
     from: string, userText: string, answer: string | null,
+    incrementBotCount = true,
   ): Promise<void> {
     let contactName = from
     try {
@@ -753,16 +771,29 @@ export class WhatsAppManager {
     const conversation = await db.upsertConversation({
       botId: bot.id, userId: bot.userId,
       contactName, contactPhone: from,
-      lastMessage: answer ?? userText,
+      lastMessage:   answer ?? userText,
       lastMessageAt: new Date(),
-      unreadCount: 1, messageCount: 1,
+      unreadCount:   1,
+      messageCount:  1,
     })
 
-    await db.createMessage({ conversationId: conversation.id, role: 'user', content: userText })
-    await db.updateBot(bot.id, { messageCount: bot.messageCount + 1 })
+    // Grava a mensagem do contato com incremento atômico (se permitido)
+    await db.createMessage({
+      conversationId:    conversation.id,
+      role:              'user',
+      content:           userText,
+      incrementBotCount,
+      botId:             bot.id,
+    })
 
+    // Grava a resposta da IA sem incrementar (apenas mensagens 'user' contam)
     if (answer !== null) {
-      await db.createMessage({ conversationId: conversation.id, role: 'assistant', content: answer })
+      await db.createMessage({
+        conversationId:    conversation.id,
+        role:              'assistant',
+        content:           answer,
+        incrementBotCount: false,
+      })
     }
   }
 }

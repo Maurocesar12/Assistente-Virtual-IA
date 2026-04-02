@@ -1,3 +1,7 @@
+/**
+ * routes/users.ts
+ */
+
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../models/database.js'
@@ -26,6 +30,7 @@ const updateApiKeysSchema = z.object({
 
 // ─── GET /users/me/stats ──────────────────────────────────────────────────────
 // Retorna stats com informações de limite de plano enriquecidas.
+// totalMessages agora conta da tabela Message (fonte de verdade) — veja database.ts
 
 usersRouter.get('/me/stats', async (req, res, next) => {
   try {
@@ -37,7 +42,6 @@ usersRouter.get('/me/stats', async (req, res, next) => {
 
     return ok(res, {
       ...stats,
-      // ── Dados de plano expostos ao frontend ───────────────────────────────
       plan:              user.plan,
       planLabel:         planConfig.label,
       planPrice:         planConfig.price,

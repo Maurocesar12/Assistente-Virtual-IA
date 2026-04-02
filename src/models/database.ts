@@ -1,5 +1,9 @@
+/**
+ * database.ts
+ */
+
 import { PrismaClient } from '@prisma/client'
-import { any } from 'zod/v4'
+import { COUNTABLE_MESSAGE_ROLES } from '../utils/planLimits.js'
 
 const prisma = new PrismaClient()
 
@@ -40,7 +44,6 @@ export interface Bot {
   updatedAt:    Date
 }
 
-// ─── Conversation agora carrega isPaused e humanHandoff ───────────────────────
 export interface Conversation {
   id:            string
   botId:         string
@@ -51,13 +54,30 @@ export interface Conversation {
   lastMessageAt: Date
   unreadCount:   number
   messageCount:  number
-
-  // ✦ Feature 2 & 3 — intervenção humana e transbordo
-  isPaused:      boolean   // true = bot silenciado para este chat
-  humanHandoff:  boolean   // true = aguardando atendimento humano
+  isPaused:      boolean
+  humanHandoff:  boolean
 }
 
+// ─── Parâmetros para createMessage ───────────────────────────────────────────
+
+export interface CreateMessageParams {
+  conversationId:    string
+  role:              'user' | 'assistant'
+  content:           string
+  /**
+   * Quando true (padrão), incrementa `Bot.messageCount` atomicamente via
+   * Prisma `{ increment: 1 }`. Deve ser false para mensagens de erro/sistema
+   * que não representam consumo real de cota.
+   */
+  incrementBotCount?: boolean
+  /** ID do bot — obrigatório quando incrementBotCount = true. */
+  botId?:            string
+}
+
+// ─── Database Class ───────────────────────────────────────────────────────────
+
 class Database {
+
   // ── Users ──────────────────────────────────────────────────────────────────
 
   async createUser(data: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
@@ -192,8 +212,6 @@ class Database {
         unreadCount:   { increment: data.unreadCount },
         messageCount:  { increment: data.messageCount },
       },
-      // isPaused e humanHandoff NÃO devem ser passados no create:
-      // o schema os define com @default(false) — Prisma os inicializa automaticamente.
       create: {
         botId:         data.botId,
         userId:        data.userId,
@@ -229,13 +247,11 @@ class Database {
     return row ? this.parseConversation(row) : null
   }
 
-  // ✦ Feature 1 — Delete Chat
   async deleteConversation(id: string): Promise<void> {
     await prisma.message.deleteMany({ where: { conversationId: id } })
     await prisma.conversation.delete({ where: { id } })
   }
 
-  // ✦ Feature 2 & 3 — pause / resume / handoff
   async setConversationPaused(id: string, isPaused: boolean): Promise<Conversation | null> {
     const row = await prisma.conversation.update({
       where: { id },
@@ -247,12 +263,11 @@ class Database {
   async setConversationHandoff(id: string, humanHandoff: boolean): Promise<Conversation | null> {
     const row = await prisma.conversation.update({
       where: { id },
-      data:  { humanHandoff, isPaused: humanHandoff }, // handoff sempre pausa o bot
+      data:  { humanHandoff, isPaused: humanHandoff },
     })
     return this.parseConversation(row)
   }
 
-  // Busca a conversa por botId+phone (usada pelo whatsapp service)
   async findConversationByBotAndPhone(botId: string, contactPhone: string): Promise<Conversation | null> {
     const row = await prisma.conversation.findUnique({
       where: { botId_contactPhone: { botId, contactPhone } },
@@ -262,12 +277,32 @@ class Database {
 
   // ── Messages ───────────────────────────────────────────────────────────────
 
-  async createMessage(data: {
-    conversationId: string
-    role:           'user' | 'assistant'
-    content:        string
-  }) {
-    return prisma.message.create({ data })
+  /**
+   * Grava uma mensagem no banco.
+   *
+   * ALTERAÇÃO: quando `incrementBotCount` é true (padrão para mensagens 'user'),
+   * o `Bot.messageCount` é incrementado atomicamente via `{ increment: 1 }`,
+   * eliminando a race condition do código anterior que fazia:
+   *   db.updateBot(bot.id, { messageCount: bot.messageCount + 1 })
+   *
+   * O incremento atômico garante que contagens concorrentes nunca se percam.
+   */
+  async createMessage(params: CreateMessageParams) {
+    const { conversationId, role, content, incrementBotCount = true, botId } = params
+
+    const message = await prisma.message.create({
+      data: { conversationId, role, content },
+    })
+
+    // Incrementa o contador do bot atomicamente se solicitado
+    if (incrementBotCount && botId) {
+      await prisma.bot.update({
+        where: { id: botId },
+        data:  { messageCount: { increment: 1 } },
+      })
+    }
+
+    return message
   }
 
   async findMessagesByConversationId(conversationId: string) {
@@ -279,22 +314,53 @@ class Database {
 
   // ── Stats ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Retorna estatísticas do usuário com contagem de mensagens confiável.
+   *
+   *
+   *   Conta diretamente da tabela `Message` filtrando por conversas do userId
+   *   e apenas os papéis definidos em COUNTABLE_MESSAGE_ROLES ('user').
+   *   Isso garante:
+   *   a) Contagem imutável — mensagens no banco nunca desaparecem.
+   *   b) Impossível de manipular via API — o cliente não controla essa tabela.
+   *   c) Consistente — mesmo resultado independente do estado do bot.
+   *
+   * O campo `Bot.messageCount` é mantido para exibição na listagem de bots
+   * (quantas mensagens cada bot respondeu), mas NÃO é mais usado para limite.
+   */
   async getUserStats(userId: string) {
-    const [bots, conversations] = await Promise.all([
+    if (!userId || userId === 'undefined') {
+      return {
+        totalBots: 0, activeBots: 0, totalConversations: 0,
+        totalMessages: 0, tokensUsed: 0,
+      }
+    }
+
+    const [bots, conversations, messageCount] = await Promise.all([
       prisma.bot.findMany({ where: { userId } }),
       prisma.conversation.findMany({ where: { userId } }),
+
+      // ─── FONTE DE VERDADE: conta mensagens diretamente da tabela Message ───
+      // JOIN implícito via relação Prisma: Message → Conversation → userId
+      // Filtra apenas os papéis contáveis (ex: 'user') definidos em planLimits.ts
+      prisma.message.count({
+        where: {
+          role: { in: [...COUNTABLE_MESSAGE_ROLES] },
+          conversation: { userId },
+        },
+      }),
     ])
-    const totalMessages = bots.reduce((s: any, b: { messageCount: any }) => s + (b.messageCount ?? 0), 0)
+
     return {
       totalBots:          bots.length,
-      activeBots:         bots.filter((b: { isActive: any; isConnected: any }) => b.isActive && b.isConnected).length,
+      activeBots:         bots.filter((b: any) => b.isActive && b.isConnected).length,
       totalConversations: conversations.length,
-      totalMessages,
-      tokensUsed:         totalMessages * 142,
+      totalMessages:      messageCount,       // ← agora conta da tabela Message
+      tokensUsed:         messageCount * 142, // estimativa por mensagem
     }
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers privados ───────────────────────────────────────────────────────
 
   private parseUser(u: any): User {
     return {
@@ -318,32 +384,40 @@ class Database {
   }
 }
 
+// ─── Singleton exportado ──────────────────────────────────────────────────────
+
 const instance = new Database()
 
 export const db = {
-  createUser:                       instance.createUser.bind(instance),
-  findUserById:                     instance.findUserById.bind(instance),
-  findUserByEmail:                  instance.findUserByEmail.bind(instance),
-  updateUser:                       instance.updateUser.bind(instance),
-  createPasswordResetToken:         instance.createPasswordResetToken.bind(instance),
-  findValidResetToken:              instance.findValidResetToken.bind(instance),
-  markResetTokenUsed:               instance.markResetTokenUsed.bind(instance),
-  invalidatePreviousResetTokens:    instance.invalidatePreviousResetTokens.bind(instance),
-  findPendingResetTokensForUser:    instance.findPendingResetTokensForUser.bind(instance),
-  createBot:                        instance.createBot.bind(instance),
-  findBotById:                      instance.findBotById.bind(instance),
-  findBotsByUserId:                 instance.findBotsByUserId.bind(instance),
-  updateBot:                        instance.updateBot.bind(instance),
-  deleteBot:                        instance.deleteBot.bind(instance),
-  upsertConversation:               instance.upsertConversation.bind(instance),
-  findConversationsByUserId:        instance.findConversationsByUserId.bind(instance),
-  findConversationsByBotId:         instance.findConversationsByBotId.bind(instance),
-  findConversationById:             instance.findConversationById.bind(instance),
-  deleteConversation:               instance.deleteConversation.bind(instance),
-  setConversationPaused:            instance.setConversationPaused.bind(instance),
-  setConversationHandoff:           instance.setConversationHandoff.bind(instance),
-  findConversationByBotAndPhone:    instance.findConversationByBotAndPhone.bind(instance),
-  createMessage:                    instance.createMessage.bind(instance),
-  findMessagesByConversationId:     instance.findMessagesByConversationId.bind(instance),
-  getUserStats:                     instance.getUserStats.bind(instance),
+  // Users
+  createUser:                    instance.createUser.bind(instance),
+  findUserById:                  instance.findUserById.bind(instance),
+  findUserByEmail:               instance.findUserByEmail.bind(instance),
+  updateUser:                    instance.updateUser.bind(instance),
+  // Password reset
+  createPasswordResetToken:      instance.createPasswordResetToken.bind(instance),
+  findValidResetToken:           instance.findValidResetToken.bind(instance),
+  markResetTokenUsed:            instance.markResetTokenUsed.bind(instance),
+  invalidatePreviousResetTokens: instance.invalidatePreviousResetTokens.bind(instance),
+  findPendingResetTokensForUser: instance.findPendingResetTokensForUser.bind(instance),
+  // Bots
+  createBot:                     instance.createBot.bind(instance),
+  findBotById:                   instance.findBotById.bind(instance),
+  findBotsByUserId:              instance.findBotsByUserId.bind(instance),
+  updateBot:                     instance.updateBot.bind(instance),
+  deleteBot:                     instance.deleteBot.bind(instance),
+  // Conversations
+  upsertConversation:            instance.upsertConversation.bind(instance),
+  findConversationsByUserId:     instance.findConversationsByUserId.bind(instance),
+  findConversationsByBotId:      instance.findConversationsByBotId.bind(instance),
+  findConversationById:          instance.findConversationById.bind(instance),
+  deleteConversation:            instance.deleteConversation.bind(instance),
+  setConversationPaused:         instance.setConversationPaused.bind(instance),
+  setConversationHandoff:        instance.setConversationHandoff.bind(instance),
+  findConversationByBotAndPhone: instance.findConversationByBotAndPhone.bind(instance),
+  // Messages
+  createMessage:                 instance.createMessage.bind(instance),
+  findMessagesByConversationId:  instance.findMessagesByConversationId.bind(instance),
+  // Stats
+  getUserStats:                  instance.getUserStats.bind(instance),
 }
