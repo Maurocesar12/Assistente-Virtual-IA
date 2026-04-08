@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ZapGPT — WhatsApp AI Automation</title>
+<title>Assistente Virtual AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
@@ -22,11 +22,11 @@
 ══════════════════════════════════════════════════════ -->
 <div id="landing" class="page active">
   <nav class="l-nav">
-    <div class="logo" onclick="UI.page('landing')"><div class="logo-dot"></div> ZapGPT</div>
+    <div class="logo" onclick="UI.page('landing')"><div class="logo-dot"></div> Assistente IA</div>
     <ul class="l-nav-links">
       <li><a href="#features">Funcionalidades</a></li>
       <li><a href="#pricing">Preços</a></li>
-      <li><a href="https://wa.me/" target="_blank">Suporte</a></li>
+      <li><a href="https://wa.me/21996562335" target="_blank">Suporte</a></li>
     </ul>
     <div class="l-nav-right">
       <button class="btn btn-ghost" onclick="UI.page('login')">Entrar</button>
@@ -37,17 +37,19 @@
   <section class="l-hero">
     <div class="hero-pill">🤖 Integrado com GPT-4 e Gemini 2.5</div>
     <h1>Automatize seu<br>WhatsApp com <em>IA</em></h1>
-    <p>Configure em minutos um assistente de IA no seu WhatsApp. Atenda clientes 24/7, humanize conversas e escale sem esforço.</p>
+    <p>Configure em minutos um assistente de IA no seu WhatsApp. Atenda clientes 24/7, humanize conversas e escale sem esforço. Tudo isso com total controle da IA.</p>
     <div class="hero-actions">
       <button class="btn btn-primary btn-lg" onclick="UI.page('register')">Criar conta grátis →</button>
       <button class="btn btn-ghost btn-lg" onclick="Auth.demoLogin()">Ver demonstração</button>
     </div>
+    <!--
     <div class="hero-stats">
       <div><div class="h-stat-val">12k+</div><div class="h-stat-label">Usuários ativos</div></div>
       <div><div class="h-stat-val">4.8M</div><div class="h-stat-label">Mensagens/mês</div></div>
       <div><div class="h-stat-val">99.9%</div><div class="h-stat-label">Uptime garantido</div></div>
       <div><div class="h-stat-val">&lt;2s</div><div class="h-stat-label">Tempo de resposta</div></div>
     </div>
+    -->
   </section>
 
   <div class="section-sep"></div>
@@ -78,7 +80,7 @@
         <ul class="price-features">
           <li>1 número de WhatsApp</li>
           <li>50 mensagens/mês</li>
-          <li>GPT-3.5 ou Gemini</li>
+          <li>GPT-4 ou Gemini</li>
           <li>Suporte por email</li>
         </ul>
         <button class="btn btn-ghost btn-full" onclick="UI.page('register')">Começar grátis</button>
@@ -89,7 +91,7 @@
         <ul class="price-features">
           <li>5 números de WhatsApp</li>
           <li>Mensagens ilimitadas</li>
-          <li>GPT-4 & Gemini 2.5</li>
+          <li>GPT-4 & Gemini</li>
           <li>Analytics avançado</li>
           <li>Suporte prioritário</li>
         </ul>
@@ -119,7 +121,7 @@
   </section>
 
   <footer class="l-footer">
-    © 2026 ZapGPT &nbsp;·&nbsp; Feito por MauroGuimaraes
+    © 2026 Assistente IA &nbsp;·&nbsp; Feito por Mauro Guimarães
     &nbsp;·&nbsp; <a href="#">Privacidade</a> &nbsp;·&nbsp; <a href="#">Termos</a>
   </footer>
 </div>
@@ -131,7 +133,7 @@
   <div class="bg-grid"></div>
   <div class="auth-wrap" style="position:relative;z-index:1">
     <div class="auth-brand" onclick="UI.page('landing')">
-      <div class="logo"><div class="logo-dot"></div>ZapGPT</div>
+      <div class="logo"><div class="logo-dot"></div>Assistente IA</div>
     </div>
     <div class="auth-card">
       <h2>Bem-vindo de volta</h2>
@@ -163,7 +165,7 @@
   <div class="bg-grid"></div>
   <div class="auth-wrap" style="position:relative;z-index:1">
     <div class="auth-brand" onclick="UI.page('login')">
-      <div class="logo"><div class="logo-dot"></div>ZapGPT</div>
+      <div class="logo"><div class="logo-dot"></div>Assistente IA</div>
     </div>
     <div class="auth-card">
       <h2>Recuperar acesso</h2>
@@ -201,7 +203,7 @@
   <div class="bg-grid"></div>
   <div class="auth-wrap wide" style="position:relative;z-index:1">
     <div class="auth-brand" onclick="UI.page('landing')">
-      <div class="logo"><div class="logo-dot"></div>ZapGPT</div>
+      <div class="logo"><div class="logo-dot"></div>Assistente IA</div>
     </div>
     <div class="auth-card">
       <h2>Crie sua conta</h2>
@@ -215,8 +217,8 @@
       <div class="form-group">
         <label class="field-label">Plano inicial</label>
         <select class="field" id="r-plan">
-          <option value="starter">Starter — Grátis (50 mensagens/mês)</option>
-          <option value="pro">Pro — R$9,99/mês (ilimitado)</option>
+          <option value="starter">Starter — Grátis (50 mensagens)</option>
+          <option value="pro">Pro — R$10,99/mês (ilimitado)</option>
         </select>
       </div>
       <button class="btn btn-primary btn-full btn-lg" id="registerBtn" onclick="Auth.register()">Criar conta grátis →</button>
@@ -236,7 +238,7 @@
   <aside class="sidebar">
     <div class="sb-brand">
       <div class="logo" style="font-size:18px" onclick="UI.page('landing')">
-        <div class="logo-dot"></div>ZapGPT
+        <div class="logo-dot"></div>Assistente IA
       </div>
     </div>
     <nav class="sb-nav">
