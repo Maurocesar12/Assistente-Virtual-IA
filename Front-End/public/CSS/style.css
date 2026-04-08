@@ -540,7 +540,7 @@ textarea.field { resize: vertical; line-height: 1.6; }
   position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
 }
 .sb-brand {
-  padding: 0 18px 20px; margin-bottom: 4px;
+  padding: 26px 14px 19px; margin-bottom: 4px;
   border-bottom: 1px solid var(--border);
   height: 62px; display: flex; align-items: center; flex-shrink: 0;
 }
