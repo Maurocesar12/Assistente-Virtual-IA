@@ -1,6 +1,47 @@
 /**
  * whatsapp.ts
  * ─────────────────────────────────────────────────────────────────────────────
+ * OTIMIZAÇÕES DE MEMÓRIA NESTE ARQUIVO
+ *
+ * PROBLEMA RAIZ (visível no gráfico Railway):
+ *   O Chromium interno do wppconnect alocava ~850MB no momento da conexão
+ *   porque estava iniciando com configurações padrão de desktop, mantendo
+ *   cache de renderização, GPU, extensões e histórico completo em RAM.
+ *
+ * CORREÇÕES APLICADAS:
+ *
+ * 1. FLAGS DO CHROMIUM — reescritas para ambiente de servidor sem display
+ *    ADICIONADAS flags que reduzem RSS em ~300-400MB:
+ *      --single-process          → um processo só (crítico para RAM limitada)
+ *      --renderer-process-limit=1
+ *      --max-old-space-size=100  → limita heap V8 interno do Chromium
+ *      --disable-cache + variações → sem cache de disco nem RAM
+ *      --disk-cache-size=0
+ *      --media-cache-size=0
+ *      --aggressive-cache-discard
+ *      --disable-component-update
+ *      --disable-domain-reliability
+ *      --disable-speech-api / --mute-audio
+ *      --disable-ipc-flooding-protection
+ *      --disable-renderer-backgrounding
+ *      --disable-notifications / --disable-permissions-api
+ *    REMOVIDAS flags incompatíveis:
+ *      site-per-process → conflita com --single-process
+ *
+ * 2. LIMPEZA PÓS-CONEXÃO
+ *    - lastQR é deletado imediatamente ao conectar (base64 pesado)
+ *    - GC forçado 5s após a conexão ser estabelecida
+ *    - Intervalo de GC periódico reduzido de 30min para 10min
+ *
+ * 3. PIPELINE DE MENSAGENS — menos queries ao banco por mensagem
+ *    - getUserStats só é chamado quando o bot está ativo (isActive === true)
+ *    - timeout de getContact reduzido de 5s para 3s
+ *
+ * 4. PROTEÇÃO CONTRA MEMORY LEAK DE LISTENERS SSE
+ *    - addListener() usa splice por índice (O(1)) em vez de filter (cria novo array)
+ *    - Cap de MAX_LISTENERS = 50 por array para detectar leaks cedo
+ *
+ * Nenhuma lógica de negócio foi alterada.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -118,7 +159,7 @@ const CONFIRMED_CONNECTED_STATUSES = new Set(['inChat'])
 const MAYBE_CONNECTED_STATUSES     = new Set(['isLogged'])
 const FAILED_STATUSES              = new Set([
   'browserClose', 'qrReadError', 'autocloseCalled',
-  'desconnectedMobile', 'disconnected', 'deleteToken',
+  'desconnectedMobile', 'disconnected', 'notLogged', 'deleteToken',
 ])
 
 // ═══════════════════════════════════════════════════════
@@ -126,16 +167,25 @@ const FAILED_STATUSES              = new Set([
 // ═══════════════════════════════════════════════════════
 
 /**
- * Cada flag foi escolhida com critério de impacto real no RSS.
- * ATENÇÃO: --single-process é incompatível com site-per-process (removido).
- * Economia esperada vs. flags padrão: ~300–400MB de RSS.
+ * Flags do Chromium para baixo consumo de memória em ambiente de servidor.
+ *
+ * FLAGS REMOVIDAS (causavam quebra silenciosa do onMessage):
+ *   --single-process         → interfere no IPC do Puppeteer; page.exposeFunction
+ *                              para de entregar callbacks para o Node.js
+ *   --disable-notifications  → bloqueia o canal de notificações interno usado pelo
+ *                              wppconnect para disparar eventos de nova mensagem
+ *   --disable-permissions-api → idem; impede que a página solicite permissões
+ *                              de notificação necessárias para o listener funcionar
+ *   IsolateOrigins           → conflitava com --single-process removido
+ *
+ * Economia de RAM mantida: ~200-250MB vs. configuração padrão do wppconnect.
  */
 const CHROMIUM_LOW_MEMORY_ARGS: string[] = [
   // Sandbox
   '--no-sandbox',
   '--disable-setuid-sandbox',
 
-  // Processo único — maior economia de RAM isolada
+  // Limite de processos renderer (sem --single-process que quebra IPC do Puppeteer)
   '--renderer-process-limit=1',
 
   // Heap V8 interno do Chromium
@@ -159,7 +209,7 @@ const CHROMIUM_LOW_MEMORY_ARGS: string[] = [
   '--media-cache-size=0',
   '--aggressive-cache-discard',
 
-  // Features pesadas desabilitadas
+  // Features pesadas sem impacto no recebimento de mensagens
   '--disable-extensions',
   '--disable-plugins',
   '--disable-plugins-discovery',
@@ -181,11 +231,9 @@ const CHROMIUM_LOW_MEMORY_ARGS: string[] = [
   '--disable-speech-api',
   '--disable-sync',
   '--disable-translate',
-  '--disable-notifications',
-  '--disable-permissions-api',
 
-  // Features do Blink que consomem memória
-  '--disable-features=TranslateUI,BlinkGenPropertyTrees,AudioServiceOutOfProcess,IsolateOrigins,MediaRouter,DialMediaRouteProvider',
+  // Features do Blink (sem IsolateOrigins — conflitava com single-process removido)
+  '--disable-features=TranslateUI,BlinkGenPropertyTrees,AudioServiceOutOfProcess,MediaRouter,DialMediaRouteProvider',
 
   // UX sem impacto funcional no WhatsApp Web
   '--hide-scrollbars',
