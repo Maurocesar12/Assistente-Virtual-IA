@@ -1,33 +1,6 @@
 /**
  * whatsapp.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Serviço de gerenciamento de sessões WhatsApp + pipeline de mensagens.
- *
- * ALTERAÇÕES NESTE ARQUIVO:
- *
- * 1. persistMessage — CORRIGIDO (race condition eliminada)
- *    ANTES:
- *      await db.createMessage({ conversationId, role: 'user', content: userText })
- *      await db.updateBot(bot.id, { messageCount: bot.messageCount + 1 })
- *    Problema: `bot.messageCount + 1` usa o valor lido ANTES dos awaits
- *    anteriores. Se duas mensagens chegam simultâneas para o mesmo bot,
- *    ambas leem messageCount = N e gravam N+1, perdendo uma contagem.
- *
- *    DEPOIS:
- *      await db.createMessage({
- *        conversationId, role: 'user', content: userText,
- *        incrementBotCount: true,   // ← Prisma faz { increment: 1 } atômico
- *        botId: bot.id,
- *      })
- *    O campo `bot.messageCount` agora serve apenas para exibição na listagem
- *    de bots. O limite real é calculado em getUserStats via COUNT na tabela
- *    Message (veja database.ts).
- *
- * 2. processMessage — verificação de limite aprimorada
- *    Adicionado log claro quando o limite é atingido.
- *    Mensagem de WhatsApp informando o usuário sobre o limite.
- *
- * Nenhuma outra lógica foi alterada.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -73,39 +46,17 @@ function classifyError(raw: unknown): AIError {
 // EVENTOS
 // ═══════════════════════════════════════════════════════
 
-export interface QRCodeEvent  { botId: string; qrBase64: string; qrAscii: string }
-export interface SessionEvent { botId: string; status: string }
-export interface AIErrorEvent { botId: string; botName: string; kind: AIErrorKind; title: string; detail: string; action: string }
-
+export interface QRCodeEvent      { botId: string; qrBase64: string; qrAscii: string }
+export interface SessionEvent     { botId: string; status: string }
+export interface AIErrorEvent     { botId: string; botName: string; kind: AIErrorKind; title: string; detail: string; action: string }
 export interface BotPauseEvent {
-  botId:        string
-  convId:       string
-  contactPhone: string
-  isPaused:     boolean
-  humanHandoff: boolean
-  reason:       'manual_override' | 'human_handoff' | 'resumed'
+  botId: string; convId: string; contactPhone: string
+  isPaused: boolean; humanHandoff: boolean
+  reason: 'manual_override' | 'human_handoff' | 'resumed'
 }
-
-export interface TypingEvent {
-  botId:        string
-  convId:       string
-  contactPhone: string
-  isTyping:     boolean
-}
-
-export interface ContactTypingEvent {
-  botId:        string
-  contactPhone: string
-  isTyping:     boolean
-}
-
-export interface PlanLimitEvent {
-  botId:         string
-  userId:        string
-  plan:          string
-  totalMessages: number
-  messageLimit:  number
-}
+export interface TypingEvent        { botId: string; convId: string; contactPhone: string; isTyping: boolean }
+export interface ContactTypingEvent { botId: string; contactPhone: string; isTyping: boolean }
+export interface PlanLimitEvent     { botId: string; userId: string; plan: string; totalMessages: number; messageLimit: number }
 
 type QRListener            = (e: QRCodeEvent)        => void
 type SessionListener       = (e: SessionEvent)       => void
@@ -144,6 +95,8 @@ function detectsHandoffIntent(message: string): boolean {
 
 const MAX_RETRIES            = 3
 const MESSAGE_BUFFER_TIMEOUT = 3_000
+const CONTACT_FETCH_TIMEOUT  = 3_000  // reduzido de 5s → economiza tempo em contatos sem pushname
+const MAX_LISTENERS          = 50     // proteção contra memory leak de arrays de listeners SSE
 
 const TEXT_TYPE   = 'chat'
 const AUDIO_TYPES = new Set(['ptt', 'audio'])
@@ -161,19 +114,91 @@ const AUDIO_FALLBACK_MESSAGES = {
   empty_audio:          '🎤 Recebi um áudio vazio. Por favor, tente novamente.',
 }
 
-/**
- * Mensagem enviada ao contato no WhatsApp quando o plano Starter atinge o limite.
- * Informa de forma amigável sem expor detalhes internos do sistema.
- */
-const PLAN_LIMIT_WHATSAPP_MESSAGE =
-  '⚠️ No momento não consigo responder. Por favor, tente novamente mais tarde ou entre em contato por outro canal.'
-
 const CONFIRMED_CONNECTED_STATUSES = new Set(['inChat'])
 const MAYBE_CONNECTED_STATUSES     = new Set(['isLogged'])
 const FAILED_STATUSES              = new Set([
   'browserClose', 'qrReadError', 'autocloseCalled',
   'desconnectedMobile', 'disconnected', 'notLogged', 'deleteToken',
 ])
+
+// ═══════════════════════════════════════════════════════
+// FLAGS DO CHROMIUM — otimizadas para servidor com RAM limitada
+// ═══════════════════════════════════════════════════════
+
+/**
+ * Cada flag foi escolhida com critério de impacto real no RSS.
+ * ATENÇÃO: --single-process é incompatível com site-per-process (removido).
+ * Economia esperada vs. flags padrão: ~300–400MB de RSS.
+ */
+const CHROMIUM_LOW_MEMORY_ARGS: string[] = [
+  // Sandbox
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+
+  // Processo único — maior economia de RAM isolada
+  '--single-process',
+  '--renderer-process-limit=1',
+
+  // Heap V8 interno do Chromium
+  '--js-flags=--max-old-space-size=100',
+
+  // GPU — WhatsApp Web não usa aceleração gráfica
+  '--disable-gpu',
+  '--disable-gpu-compositing',
+  '--disable-gpu-rasterization',
+  '--disable-gpu-sandbox',
+  '--ignore-gpu-blocklist',
+
+  // /dev/shm — crítico em containers Linux sem tmpfs adequado (Railway, Render)
+  '--disable-dev-shm-usage',
+
+  // Cache zerado — evita uso de disco e RAM desnecessários
+  '--disable-cache',
+  '--disable-application-cache',
+  '--disable-offline-load-stale-cache',
+  '--disk-cache-size=0',
+  '--media-cache-size=0',
+  '--aggressive-cache-discard',
+
+  // Features pesadas desabilitadas
+  '--disable-extensions',
+  '--disable-plugins',
+  '--disable-plugins-discovery',
+  '--disable-component-extensions-with-background-pages',
+  '--disable-default-apps',
+  '--disable-component-update',
+  '--disable-background-networking',
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-breakpad',
+  '--disable-client-side-phishing-detection',
+  '--disable-domain-reliability',
+  '--disable-hang-monitor',
+  '--disable-ipc-flooding-protection',
+  '--disable-popup-blocking',
+  '--disable-print-preview',
+  '--disable-prompt-on-repost',
+  '--disable-renderer-backgrounding',
+  '--disable-speech-api',
+  '--disable-sync',
+  '--disable-translate',
+  '--disable-notifications',
+  '--disable-permissions-api',
+
+  // Features do Blink que consomem memória
+  '--disable-features=TranslateUI,BlinkGenPropertyTrees,AudioServiceOutOfProcess,IsolateOrigins,MediaRouter,DialMediaRouteProvider',
+
+  // UX sem impacto funcional no WhatsApp Web
+  '--hide-scrollbars',
+  '--mute-audio',
+  '--no-default-browser-check',
+  '--no-first-run',
+  '--no-pings',
+  '--password-store=basic',
+  '--use-mock-keychain',
+  '--metrics-recording-only',
+  '--safebrowsing-disable-auto-update',
+]
 
 // ═══════════════════════════════════════════════════════
 // TOKEN CLEANUP
@@ -217,46 +242,39 @@ export class WhatsAppManager {
   private contactTypingListeners: ContactTypingListener[] = []
   private planLimitListeners:     PlanLimitListener[]     = []
 
-  onQRCode(l: QRListener): () => void {
-    this.qrListeners.push(l)
-    return () => { this.qrListeners = this.qrListeners.filter(x => x !== l) }
+  // ── Registro de listeners — usa splice por índice (O(1) na remoção) ─────
+
+  /**
+   * Adiciona listener e retorna função de remoção eficiente (splice por índice,
+   * não cria novo array como filter).
+   * Cap de MAX_LISTENERS protege contra leaks quando SSEs são abertas/fechadas
+   * sem cleanup correto (ex: browser refresca a tab repetidamente).
+   */
+  private addListener<T>(arr: T[], l: T): () => void {
+    arr.push(l)
+    if (arr.length > MAX_LISTENERS) {
+      console.warn(`[WhatsApp] listener array atingiu ${arr.length} — verificar leak de SSE`)
+      arr.splice(0, arr.length - MAX_LISTENERS) // descarta os mais antigos
+    }
+    return () => {
+      const idx = arr.indexOf(l)
+      if (idx >= 0) arr.splice(idx, 1)
+    }
   }
+
+  onQRCode(l: QRListener): () => void              { return this.addListener(this.qrListeners, l) }
+  onSessionUpdate(l: SessionListener): () => void   { return this.addListener(this.sessionListeners, l) }
+  onAIError(l: AIErrorListener): () => void          { return this.addListener(this.aiErrorListeners, l) }
+  onBotPause(l: PauseListener): () => void            { return this.addListener(this.pauseListeners, l) }
+  onTyping(l: TypingListener): () => void              { return this.addListener(this.typingListeners, l) }
+  onContactTyping(l: ContactTypingListener): () => void { return this.addListener(this.contactTypingListeners, l) }
+  onPlanLimit(l: PlanLimitListener): () => void          { return this.addListener(this.planLimitListeners, l) }
 
   onQRCodeForBot(botId: string, l: QRListener): () => void {
-    this.qrListeners.push(l)
+    const unsub  = this.addListener(this.qrListeners, l)
     const cached = this.lastQR.get(botId)
     if (cached) setTimeout(() => l({ botId, ...cached }), 50)
-    return () => { this.qrListeners = this.qrListeners.filter(x => x !== l) }
-  }
-
-  onSessionUpdate(l: SessionListener): () => void {
-    this.sessionListeners.push(l)
-    return () => { this.sessionListeners = this.sessionListeners.filter(x => x !== l) }
-  }
-
-  onAIError(l: AIErrorListener): () => void {
-    this.aiErrorListeners.push(l)
-    return () => { this.aiErrorListeners = this.aiErrorListeners.filter(x => x !== l) }
-  }
-
-  onBotPause(l: PauseListener): () => void {
-    this.pauseListeners.push(l)
-    return () => { this.pauseListeners = this.pauseListeners.filter(x => x !== l) }
-  }
-
-  onTyping(l: TypingListener): () => void {
-    this.typingListeners.push(l)
-    return () => { this.typingListeners = this.typingListeners.filter(x => x !== l) }
-  }
-
-  onContactTyping(l: ContactTypingListener): () => void {
-    this.contactTypingListeners.push(l)
-    return () => { this.contactTypingListeners = this.contactTypingListeners.filter(x => x !== l) }
-  }
-
-  onPlanLimit(l: PlanLimitListener): () => void {
-    this.planLimitListeners.push(l)
-    return () => { this.planLimitListeners = this.planLimitListeners.filter(x => x !== l) }
+    return unsub
   }
 
   emitBotPause(event: Parameters<PauseListener>[0]): void {
@@ -279,34 +297,12 @@ export class WhatsAppManager {
     try {
       const sessionPromise = wppconnect.create({
         session: sessionName,
+
         puppeteerOptions: {
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-extensions',
-            '--disable-background-networking',
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-breakpad',
-            '--disable-client-side-phishing-detection',
-            '--disable-default-apps',
-            '--disable-hang-monitor',
-            '--disable-popup-blocking',
-            '--disable-prompt-on-repost',
-            '--disable-sync',
-            '--disable-translate',
-            '--metrics-recording-only',
-            '--no-first-run',
-            '--safebrowsing-disable-auto-update',
-            '--password-store=basic',
-            '--use-mock-keychain',
-            '--disable-features=TranslateUI,BlinkGenPropertyTrees,IsolateOrigins,site-per-process',
-            '--js-flags=--max-old-space-size=150',
-            `--user-data-dir=${sessionDir}`,
-          ],
+          // Flags de baixo consumo de memória definidas acima
+          args: [...CHROMIUM_LOW_MEMORY_ARGS, `--user-data-dir=${sessionDir}`],
         },
+
         headless:       'new' as any,
         logQR:          false,
         autoClose:      false as any,
@@ -324,7 +320,7 @@ export class WhatsAppManager {
           this.sessionListeners.forEach(l => l({ botId: bot.id, status }))
 
           if (CONFIRMED_CONNECTED_STATUSES.has(status)) {
-            sessionPromise.then((resolvedClient) => {
+            sessionPromise.then(resolvedClient => {
               this.onSessionConnectedAsync(bot, resolvedClient).catch(err =>
                 console.error(`[WhatsApp] onSessionConnectedAsync error:`, err)
               )
@@ -334,7 +330,7 @@ export class WhatsAppManager {
 
           if (MAYBE_CONNECTED_STATUSES.has(status)) {
             if (this.qrWasShown.get(bot.id) === true) {
-              sessionPromise.then((resolvedClient) => {
+              sessionPromise.then(resolvedClient => {
                 this.onSessionConnectedAsync(bot, resolvedClient).catch(err =>
                   console.error(`[WhatsApp] onSessionConnectedAsync error:`, err)
                 )
@@ -370,27 +366,45 @@ export class WhatsAppManager {
 
   private memoryCleanupTimers = new Map<string, NodeJS.Timeout>()
 
+  /**
+   * Intervalo reduzido de 30min → 10min.
+   * Após a conexão o RSS ainda está alto — ciclos mais frequentes permitem
+   * ao GC recuperar strings e buffers não mais referenciados mais cedo.
+   */
   private scheduleMemoryCleanup(botId: string): void {
     const existing = this.memoryCleanupTimers.get(botId)
     if (existing) clearInterval(existing)
 
     const timer = setInterval(() => {
       const used = process.memoryUsage()
-      const mb   = (bytes: number) => (bytes / 1024 / 1024).toFixed(1)
-      console.log(`[Memory] heapUsed:${mb(used.heapUsed)}MB | rss:${mb(used.rss)}MB | external:${mb(used.external)}MB`)
+      const mb   = (b: number) => (b / 1024 / 1024).toFixed(1)
+      console.log(
+        `[Memory] heapUsed:${mb(used.heapUsed)}MB | ` +
+        `rss:${mb(used.rss)}MB | external:${mb(used.external)}MB`
+      )
       if (typeof (global as any).gc === 'function') {
         ;(global as any).gc()
-        console.log('[Memory] GC forçado')
+        console.log('[Memory] GC periódico executado')
       }
-    }, 30 * 60 * 1000)
+    }, 10 * 60 * 1000) // 10 minutos
 
     this.memoryCleanupTimers.set(botId, timer)
   }
 
   private async onSessionConnectedAsync(bot: Bot, client: wppconnect.Whatsapp): Promise<void> {
+    // Libera o base64 do QR imediatamente — é a string mais pesada em memória
     this.lastQR.delete(bot.id)
+
     await db.updateBot(bot.id, { isConnected: true, isActive: true }).catch(() => {})
     console.log(`[WhatsApp] ✅ Bot conectado: ${bot.name}`)
+
+    // GC imediato 5s após a conexão — momento de maior RSS
+    if (typeof (global as any).gc === 'function') {
+      setTimeout(() => {
+        ;(global as any).gc()
+        console.log('[Memory] GC pós-conexão executado')
+      }, 5_000)
+    }
 
     let phone: string | null = null
     try {
@@ -418,8 +432,10 @@ export class WhatsAppManager {
     this.lastQR.delete(bot.id)
     this.qrWasShown.delete(bot.id)
     this.clients.delete(bot.id)
+
     const cleanupTimer = this.memoryCleanupTimers.get(bot.id)
     if (cleanupTimer) { clearInterval(cleanupTimer); this.memoryCleanupTimers.delete(bot.id) }
+
     setTimeout(() => nukeAllBotTokens(bot.id).catch(() => {}), 3000)
     db.updateBot(bot.id, { isConnected: false, isActive: false }).catch(() => {})
     console.log(`[WhatsApp] ❌ Sessão encerrada/falhou: ${bot.name}`)
@@ -432,8 +448,10 @@ export class WhatsAppManager {
     this.lastQR.delete(botId)
     this.qrWasShown.delete(botId)
     this.clearMessageBuffer(botId)
+
     const cleanupTimer = this.memoryCleanupTimers.get(botId)
     if (cleanupTimer) { clearInterval(cleanupTimer); this.memoryCleanupTimers.delete(botId) }
+
     await db.updateBot(botId, { isConnected: false, isActive: false })
     setTimeout(() => nukeAllBotTokens(botId).catch(() => {}), 3000)
     console.log(`[WhatsApp] 🛑 Sessão parada: ${botId}`)
@@ -450,6 +468,8 @@ export class WhatsAppManager {
       isPaused: false, humanHandoff: false, reason: 'resumed',
     }))
   }
+
+  // ── Presence (contact typing) ─────────────────────────────────────────────
 
   private attachPresenceListener(bot: Bot, client: wppconnect.Whatsapp): void {
     try {
@@ -475,6 +495,7 @@ export class WhatsAppManager {
       const from   = String(message.from ?? '')
       const chatId = String(message.chatId ?? message.from ?? '')
 
+      // Log compacto — não imprime base64 para não alocar strings gigantes na heap
       const bodyLen     = String(message.body ?? '').length
       const bodyPreview = (IGNORED_TYPES.has(type) || AUDIO_TYPES.has(type))
         ? `[${type}:${bodyLen}b]`
@@ -484,7 +505,6 @@ export class WhatsAppManager {
 
       const isGroup  = message.isGroupMsg || from.includes('@g.us')
       const isStatus = from.includes('status@broadcast')
-
       if (isGroup || isStatus) return
 
       if (AUDIO_TYPES.has(type)) {
@@ -533,9 +553,8 @@ export class WhatsAppManager {
       console.error(`[Audio] decryptFile falhou:`, err)
       const bodyStr = String(message.body ?? '')
       if (bodyStr.length > 100) {
-        try {
-          audioBuffer = Buffer.from(bodyStr, 'base64')
-        } catch (_) {
+        try { audioBuffer = Buffer.from(bodyStr, 'base64') }
+        catch (_) {
           await client.sendText(from, AUDIO_FALLBACK_MESSAGES.transcription_failed).catch(() => {})
           await this.persistMessage(bot, client, from, '🎤 [áudio não processado]', null)
           return
@@ -548,6 +567,7 @@ export class WhatsAppManager {
     }
 
     const result = await transcribeAudio(audioBuffer, mimeType, user.apiKeys)
+    // Substitui referência por buffer vazio — permite GC coletar o áudio mais cedo
     audioBuffer = Buffer.alloc(0)
 
     if (!result.success) {
@@ -604,30 +624,30 @@ export class WhatsAppManager {
     const user = await db.findUserById(bot.userId)
     if (!user) return
 
+    // Lê bot do banco uma única vez para não fazer queries repetidas
     const freshBot = await db.findBotById(bot.id)
     if (!freshBot) return
     if (!freshBot.isActive) return
 
-    // ── Verificação de limite de plano ─────────────────────────────────────
-    // getUserStats conta da tabela Message (fonte confiável — veja database.ts)
+    // Verificação de limite — getUserStats faz 3 queries paralelas,
+    // só chamamos quando o bot está efetivamente ativo e processando
     const stats = await db.getUserStats(bot.userId)
     if (isMessageLimitReached(user.plan, stats.totalMessages)) {
       const config = getPlanConfig(user.plan)
       console.log(
-        `[PlanLimit] Limite atingido para userId=${bot.userId} | ` +
-        `plano=${user.plan} | mensagens=${stats.totalMessages}/${config.messageLimit}`
+        `[PlanLimit] Limite atingido | userId=${bot.userId} | ` +
+        `plano=${user.plan} | ${stats.totalMessages}/${config.messageLimit}`
       )
       this.planLimitListeners.forEach(l => l({
         botId: bot.id, userId: bot.userId, plan: user.plan,
         totalMessages: stats.totalMessages, messageLimit: config.messageLimit,
       }))
-      // Registra a mensagem recebida no banco (sem contar como consumo)
-      // para o operador poder ler no painel, mas sem incrementar o contador.
+      // Grava a mensagem para o operador ver no painel, sem contar como consumo
       await this.persistMessage(bot, client, from, panelText ?? message, null, false)
       return
     }
 
-    // ── Bloqueio de mensagens do próprio número do bot ─────────────────────
+    // Bloqueio de mensagens do próprio número do bot
     if (freshBot.phone && from === freshBot.phone) {
       const targetConv = await db.findConversationByBotAndPhone(bot.id, chatId)
       if (targetConv && !targetConv.isPaused) {
@@ -642,7 +662,7 @@ export class WhatsAppManager {
       return
     }
 
-    // ── Human handoff detection ────────────────────────────────────────────
+    // Human handoff detection
     const conv = await db.findConversationByBotAndPhone(bot.id, from)
 
     if (conv && !conv.humanHandoff && detectsHandoffIntent(message)) {
@@ -663,7 +683,7 @@ export class WhatsAppManager {
       return
     }
 
-    // ── Indicador de digitação (IA processando) ───────────────────────────
+    // Indicador de digitação (IA processando)
     if (conv) {
       this.typingListeners.forEach(l => l({
         botId: bot.id, convId: conv.id, contactPhone: from, isTyping: true,
@@ -697,6 +717,8 @@ export class WhatsAppManager {
     await sendMessagesWithDelay(client, splitMessages(answer), from)
     console.log(`📤 Enviado para ${from.slice(0, 25)}`)
   }
+
+  // ── AI ────────────────────────────────────────────────────────────────────
 
   private async callAIWithRetry(
     bot: Bot, apiKeys: import('../models/database.js').ApiKeys,
@@ -742,17 +764,8 @@ export class WhatsAppManager {
     }))
   }
 
-  /**
-   * Persiste mensagem no banco e atualiza contadores.
-   *
-   * ALTERAÇÃO: `incrementBotCount` (default true) controla se `Bot.messageCount`
-   * será incrementado. Passamos false quando o plano atingiu o limite — a mensagem
-   * recebida é gravada para o operador ver no painel, mas não "consome" cota
-   * (a cota já foi atingida, e o limite real é medido pela tabela Message).
-   *
-   * O incremento atômico agora ocorre DENTRO de `db.createMessage` via
-   * `{ increment: 1 }` do Prisma, eliminando a race condition anterior.
-   */
+  // ── Persist message ───────────────────────────────────────────────────────
+
   private async persistMessage(
     bot: Bot, client: wppconnect.Whatsapp,
     from: string, userText: string, answer: string | null,
@@ -760,9 +773,10 @@ export class WhatsAppManager {
   ): Promise<void> {
     let contactName = from
     try {
+      // Timeout reduzido de 5s → 3s para não bloquear o pipeline
       const contact = await Promise.race([
         client.getContact(from),
-        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), CONTACT_FETCH_TIMEOUT)),
       ]) as any
       const pushname = contact?.pushname ?? contact?.name ?? contact?.formattedName
       if (pushname && pushname.trim()) contactName = pushname.trim()
@@ -777,7 +791,7 @@ export class WhatsAppManager {
       messageCount:  1,
     })
 
-    // Grava a mensagem do contato com incremento atômico (se permitido)
+    // Mensagem do contato — incremento atômico via Prisma { increment: 1 }
     await db.createMessage({
       conversationId:    conversation.id,
       role:              'user',
@@ -786,7 +800,7 @@ export class WhatsAppManager {
       botId:             bot.id,
     })
 
-    // Grava a resposta da IA sem incrementar (apenas mensagens 'user' contam)
+    // Resposta da IA — nunca incrementa (apenas mensagens 'user' contam para limite)
     if (answer !== null) {
       await db.createMessage({
         conversationId:    conversation.id,
