@@ -118,7 +118,7 @@ const CONFIRMED_CONNECTED_STATUSES = new Set(['inChat'])
 const MAYBE_CONNECTED_STATUSES     = new Set(['isLogged'])
 const FAILED_STATUSES              = new Set([
   'browserClose', 'qrReadError', 'autocloseCalled',
-  'desconnectedMobile', 'disconnected', 'notLogged', 'deleteToken',
+  'desconnectedMobile', 'disconnected', 'deleteToken',
 ])
 
 // ═══════════════════════════════════════════════════════
