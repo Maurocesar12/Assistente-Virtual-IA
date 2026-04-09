@@ -136,7 +136,6 @@ const CHROMIUM_LOW_MEMORY_ARGS: string[] = [
   '--disable-setuid-sandbox',
 
   // Processo único — maior economia de RAM isolada
-  '--single-process',
   '--renderer-process-limit=1',
 
   // Heap V8 interno do Chromium
