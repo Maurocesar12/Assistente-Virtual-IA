@@ -501,13 +501,7 @@ export class WhatsAppManager {
       const from   = String(message.from ?? '')
       const chatId = String(message.chatId ?? message.from ?? '')
 
-      // Log compacto — não imprime base64 para não alocar strings gigantes na heap
-      const bodyLen     = String(message.body ?? '').length
-      const bodyPreview = (IGNORED_TYPES.has(type) || AUDIO_TYPES.has(type))
-        ? `[${type}:${bodyLen}b]`
-        : String(message.body ?? '').slice(0, 50)
-
-      console.log(`📩 [MSG] fromMe=${message.fromMe}|${type}|${from.slice(0, 25)}|${bodyPreview}`)
+      console.log(`📩 [MSG] fromMe=${message.fromMe}|${type}|${from.slice(0, 25)}`)
 
       // Ignora mensagens enviadas pelo próprio bot — evita loop de auto-resposta
       if (message.fromMe) return
@@ -517,7 +511,7 @@ export class WhatsAppManager {
       if (isGroup || isStatus) return
 
       if (AUDIO_TYPES.has(type)) {
-        console.log(`   → 🎤 Áudio (${type})`)
+        console.log(` → 🎤 Áudio (${type})`)
         this.handleAudioMessage(bot, client, chatId, from, message)
           .catch(err => console.error(`[Audio] ERRO:`, err))
         return
@@ -533,7 +527,7 @@ export class WhatsAppManager {
       const bodyText = String(message.body ?? '').trim()
       if (!bodyText) return
 
-      console.log(`   → ✅ Texto: "${bodyText.slice(0, 60)}"`)
+      console.log(`→ ✅ Texto: "${bodyText.slice(0, 260)}"`)
       this.bufferMessage(bot, client, chatId, bodyText, from)
     })
   }
