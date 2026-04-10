@@ -537,6 +537,7 @@ export class WhatsAppManager {
   // ── Message pipeline ─────────────────────────────────────────────────────
 
   private attachMessageListener(bot: Bot, client: wppconnect.Whatsapp): void {
+    console.log(`[WhatsApp] 🎧 Registrando onMessage para: ${bot.name}`)
     client.onMessage(async (message) => {
       const type   = String(message.type ?? '')
       const from   = String(message.from ?? '')
@@ -548,7 +549,10 @@ export class WhatsAppManager {
         ? `[${type}:${bodyLen}b]`
         : String(message.body ?? '').slice(0, 50)
 
-      console.log(`📩 [MSG] ${type}|${from.slice(0, 25)}|${bodyPreview}`)
+      console.log(`📩 [MSG] fromMe=${message.fromMe}|${type}|${from.slice(0, 25)}|${bodyPreview}`)
+
+      // Ignora mensagens enviadas pelo próprio bot — evita loop de auto-resposta
+      if (message.fromMe) return
 
       const isGroup  = message.isGroupMsg || from.includes('@g.us')
       const isStatus = from.includes('status@broadcast')
@@ -695,7 +699,9 @@ export class WhatsAppManager {
     }
 
     // Bloqueio de mensagens do próprio número do bot
-    if (freshBot.phone && from === freshBot.phone) {
+    // from vem como "5521999@c.us"; phone salvo sem sufixo — normaliza antes de comparar
+    const fromDigits = from.replace(/@.*$/, '')
+    if (freshBot.phone && fromDigits === freshBot.phone) {
       const targetConv = await db.findConversationByBotAndPhone(bot.id, chatId)
       if (targetConv && !targetConv.isPaused) {
         const updated = await db.setConversationPaused(targetConv.id, true)
