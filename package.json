@@ -31,7 +31,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.2.1",
     "@prisma/client": "^6.19.2",
-    "@wppconnect-team/wppconnect": "^1.41.1",
+    "@wppconnect-team/wppconnect": "github:wppconnect-team/wppconnect",
     "axios": "^1.6.5",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
