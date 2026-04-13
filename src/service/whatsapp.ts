@@ -327,17 +327,23 @@ export class WhatsAppManager {
 
         statusFind: (status: string) => {
           console.log(`[WhatsApp] Status [${bot.name}]: ${status}`)
-          this.sessionListeners.forEach(l => l({ botId: bot.id, status }))
 
           // Marca que o QR foi lido — a partir daqui erros de sessão são pós-conexão
           if (status === 'qrReadSuccess') {
             qrScanned = true
-            return
+            this.sessionListeners.forEach(l => l({ botId: bot.id, status }));
+            return;
           }
-          // Se estiver apenas aguardando logar ou em transição, não faça nada, apenas espere.
-          if (status === 'notLogged' || status === 'desconnectedMobile' || status === 'waitingChat') {
-            return; 
+          // 2. FILTRO "ANTI-MENSAGEM FALSA" (A CORREÇÃO ENTRA AQUI)
+          // Se o QR ainda NÃO foi escaneado, o wppconnect joga eventos de 
+          // "desconectado" apenas porque está limpando a sessão velha.
+          // Ignoramos isso para não assustar o frontend nem acionar falhas prematuras.
+          if (!qrScanned && ['notLogged', 'disconnected', 'desconnectedMobile', 'deleteToken'].includes(status)) {
+            console.log(`[WhatsApp] Preparando QR... ignorando alerta falso de: ${status}`);
+            return;
           }
+          // Envia o status para o frontend (somente os eventos reais que passarem do filtro)
+          this.sessionListeners.forEach(l => l({ botId: bot.id, status }));
 
           if (CONFIRMED_CONNECTED_STATUSES.has(status)) {
             sessionPromise.then(resolvedClient => {
@@ -348,6 +354,7 @@ export class WhatsAppManager {
             return;
           }
 
+          // 4. SUCESSO PARCIAL (isLogged)
           if (MAYBE_CONNECTED_STATUSES.has(status)) {
             if (this.qrWasShown.get(bot.id) === true) {
               sessionPromise.then(resolvedClient => {
@@ -362,14 +369,12 @@ export class WhatsAppManager {
             return
           }
 
+        // 5. FALHA REAL (Crash do navegador, etc)
           if (FAILED_STATUSES.has(status)) {
+          console.warn(`[WhatsApp] Falha fatal detectada (${status}) para ${bot.name}`);
             this.onSessionFailed(bot);
-            }
-            if (qrScanned && (status === 'notLogged' || status === 'desconnectedMobile' || status === 'disconnectedMobile')) {
-              console.log(`[WhatsApp] Ignorando '${status}' pós-scan para ${bot.name} (handshake normal)`)
-              return
-        }
-        this.onSessionFailed(bot)
+          }
+          return;
         },
       })
 
