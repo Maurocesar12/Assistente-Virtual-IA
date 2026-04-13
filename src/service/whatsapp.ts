@@ -1,48 +1,6 @@
 /**
  * whatsapp.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * OTIMIZAÇÕES DE MEMÓRIA NESTE ARQUIVO
- *
- * PROBLEMA RAIZ (visível no gráfico Railway):
- *   O Chromium interno do wppconnect alocava ~850MB no momento da conexão
- *   porque estava iniciando com configurações padrão de desktop, mantendo
- *   cache de renderização, GPU, extensões e histórico completo em RAM.
- *
- * CORREÇÕES APLICADAS:
- *
- * 1. FLAGS DO CHROMIUM — reescritas para ambiente de servidor sem display
- *    ADICIONADAS flags que reduzem RSS em ~300-400MB:
- *      --single-process          → um processo só (crítico para RAM limitada)
- *      --renderer-process-limit=1
- *      --max-old-space-size=100  → limita heap V8 interno do Chromium
- *      --disable-cache + variações → sem cache de disco nem RAM
- *      --disk-cache-size=0
- *      --media-cache-size=0
- *      --aggressive-cache-discard
- *      --disable-component-update
- *      --disable-domain-reliability
- *      --disable-speech-api / --mute-audio
- *      --disable-ipc-flooding-protection
- *      --disable-renderer-backgrounding
- *      --disable-notifications / --disable-permissions-api
- *    REMOVIDAS flags incompatíveis:
- *      site-per-process → conflita com --single-process
- *
- * 2. LIMPEZA PÓS-CONEXÃO
- *    - lastQR é deletado imediatamente ao conectar (base64 pesado)
- *    - GC forçado 5s após a conexão ser estabelecida
- *    - Intervalo de GC periódico reduzido de 30min para 10min
- *
- * 3. PIPELINE DE MENSAGENS — menos queries ao banco por mensagem
- *    - getUserStats só é chamado quando o bot está ativo (isActive === true)
- *    - timeout de getContact reduzido de 5s para 3s
- *
- * 4. PROTEÇÃO CONTRA MEMORY LEAK DE LISTENERS SSE
- *    - addListener() usa splice por índice (O(1)) em vez de filter (cria novo array)
- *    - Cap de MAX_LISTENERS = 50 por array para detectar leaks cedo
- *
- * Nenhuma lógica de negócio foi alterada.
- * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import wppconnect from '@wppconnect-team/wppconnect'
@@ -158,8 +116,7 @@ const AUDIO_FALLBACK_MESSAGES = {
 const CONFIRMED_CONNECTED_STATUSES = new Set(['inChat'])
 const MAYBE_CONNECTED_STATUSES     = new Set(['isLogged'])
 const FAILED_STATUSES              = new Set([
-  'browserClose', 'qrReadError', 'autocloseCalled',
-  'desconnectedMobile', 'disconnected', 'notLogged', 'deleteToken',
+  'browserClose', 'qrReadError', 'autocloseCalled', 'disconnected', 'deleteToken',
 ])
 
 // ═══════════════════════════════════════════════════════
@@ -377,14 +334,18 @@ export class WhatsAppManager {
             qrScanned = true
             return
           }
+          // Se estiver apenas aguardando logar ou em transição, não faça nada, apenas espere.
+          if (status === 'notLogged' || status === 'desconnectedMobile' || status === 'waitingChat') {
+            return; 
+          }
 
           if (CONFIRMED_CONNECTED_STATUSES.has(status)) {
             sessionPromise.then(resolvedClient => {
               this.onSessionConnectedAsync(bot, resolvedClient).catch(err =>
                 console.error(`[WhatsApp] onSessionConnectedAsync error:`, err)
               )
-            })
-            return
+            });
+            return;
           }
 
           if (MAYBE_CONNECTED_STATUSES.has(status)) {
@@ -402,15 +363,13 @@ export class WhatsAppManager {
           }
 
           if (FAILED_STATUSES.has(status)) {
-            // Se o QR acabou de ser escaneado (qrScanned=true), o wppconnect emite
-            // 'notLogged' / 'disconnectedMobile' como parte normal do handshake
-            // ANTES de emitir 'inChat'. Ignorar esses falsos positivos.
+            this.onSessionFailed(bot);
+            }
             if (qrScanned && (status === 'notLogged' || status === 'desconnectedMobile' || status === 'disconnectedMobile')) {
               console.log(`[WhatsApp] Ignorando '${status}' pós-scan para ${bot.name} (handshake normal)`)
               return
-            }
-            this.onSessionFailed(bot)
-          }
+        }
+        this.onSessionFailed(bot)
         },
       })
 
