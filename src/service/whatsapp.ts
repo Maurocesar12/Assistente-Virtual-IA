@@ -146,7 +146,7 @@ const CHROMIUM_LOW_MEMORY_ARGS: string[] = [
   '--renderer-process-limit=1',
 
   // Heap V8 interno do Chromium
-  '--js-flags=--max-old-space-size=100',
+  '--js-flags=--max-old-space-size=250',
 
   // GPU — WhatsApp Web não usa aceleração gráfica
   '--disable-gpu',
@@ -315,7 +315,7 @@ export class WhatsAppManager {
 
         headless:       'new' as any,
         logQR:          false,
-        autoClose:      false as any,
+        autoClose:      0,
         disableWelcome: true,
 
         catchQR: (base64Qr: string, asciiQR: string) => {
