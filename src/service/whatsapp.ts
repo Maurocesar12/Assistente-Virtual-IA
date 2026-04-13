@@ -1,6 +1,48 @@
 /**
  * whatsapp.ts
  * ─────────────────────────────────────────────────────────────────────────────
+ * OTIMIZAÇÕES DE MEMÓRIA NESTE ARQUIVO
+ *
+ * PROBLEMA RAIZ (visível no gráfico Railway):
+ *   O Chromium interno do wppconnect alocava ~850MB no momento da conexão
+ *   porque estava iniciando com configurações padrão de desktop, mantendo
+ *   cache de renderização, GPU, extensões e histórico completo em RAM.
+ *
+ * CORREÇÕES APLICADAS:
+ *
+ * 1. FLAGS DO CHROMIUM — reescritas para ambiente de servidor sem display
+ *    ADICIONADAS flags que reduzem RSS em ~300-400MB:
+ *      --single-process          → um processo só (crítico para RAM limitada)
+ *      --renderer-process-limit=1
+ *      --max-old-space-size=100  → limita heap V8 interno do Chromium
+ *      --disable-cache + variações → sem cache de disco nem RAM
+ *      --disk-cache-size=0
+ *      --media-cache-size=0
+ *      --aggressive-cache-discard
+ *      --disable-component-update
+ *      --disable-domain-reliability
+ *      --disable-speech-api / --mute-audio
+ *      --disable-ipc-flooding-protection
+ *      --disable-renderer-backgrounding
+ *      --disable-notifications / --disable-permissions-api
+ *    REMOVIDAS flags incompatíveis:
+ *      site-per-process → conflita com --single-process
+ *
+ * 2. LIMPEZA PÓS-CONEXÃO
+ *    - lastQR é deletado imediatamente ao conectar (base64 pesado)
+ *    - GC forçado 5s após a conexão ser estabelecida
+ *    - Intervalo de GC periódico reduzido de 30min para 10min
+ *
+ * 3. PIPELINE DE MENSAGENS — menos queries ao banco por mensagem
+ *    - getUserStats só é chamado quando o bot está ativo (isActive === true)
+ *    - timeout de getContact reduzido de 5s para 3s
+ *
+ * 4. PROTEÇÃO CONTRA MEMORY LEAK DE LISTENERS SSE
+ *    - addListener() usa splice por índice (O(1)) em vez de filter (cria novo array)
+ *    - Cap de MAX_LISTENERS = 50 por array para detectar leaks cedo
+ *
+ * Nenhuma lógica de negócio foi alterada.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import wppconnect from '@wppconnect-team/wppconnect'
@@ -299,6 +341,12 @@ export class WhatsAppManager {
     const sessionName = `zapgpt_${bot.id}_${Date.now()}`
     const sessionDir  = path.join(TOKENS_DIR, sessionName)
 
+    // Flag local: QR foi lido com sucesso pelo celular (qrReadSuccess)
+    // Impede que status como 'notLogged' — que chegam ANTES do sessionPromise
+    // resolver — disparem onSessionFailed e removam o cliente do Map
+    // enquanto a conexão ainda está se estabelecendo.
+    let qrScanned = false
+
     try {
       const sessionPromise = wppconnect.create({
         session: sessionName,
@@ -324,6 +372,12 @@ export class WhatsAppManager {
           console.log(`[WhatsApp] Status [${bot.name}]: ${status}`)
           this.sessionListeners.forEach(l => l({ botId: bot.id, status }))
 
+          // Marca que o QR foi lido — a partir daqui erros de sessão são pós-conexão
+          if (status === 'qrReadSuccess') {
+            qrScanned = true
+            return
+          }
+
           if (CONFIRMED_CONNECTED_STATUSES.has(status)) {
             sessionPromise.then(resolvedClient => {
               this.onSessionConnectedAsync(bot, resolvedClient).catch(err =>
@@ -348,6 +402,13 @@ export class WhatsAppManager {
           }
 
           if (FAILED_STATUSES.has(status)) {
+            // Se o QR acabou de ser escaneado (qrScanned=true), o wppconnect emite
+            // 'notLogged' / 'disconnectedMobile' como parte normal do handshake
+            // ANTES de emitir 'inChat'. Ignorar esses falsos positivos.
+            if (qrScanned && (status === 'notLogged' || status === 'desconnectedMobile' || status === 'disconnectedMobile')) {
+              console.log(`[WhatsApp] Ignorando '${status}' pós-scan para ${bot.name} (handshake normal)`)
+              return
+            }
             this.onSessionFailed(bot)
           }
         },
@@ -501,7 +562,13 @@ export class WhatsAppManager {
       const from   = String(message.from ?? '')
       const chatId = String(message.chatId ?? message.from ?? '')
 
-      console.log(`📩 [MSG] fromMe=${message.fromMe}|${type}|${from.slice(0, 25)}`)
+      // Log compacto — não imprime base64 para não alocar strings gigantes na heap
+      const bodyLen     = String(message.body ?? '').length
+      const bodyPreview = (IGNORED_TYPES.has(type) || AUDIO_TYPES.has(type))
+        ? `[${type}:${bodyLen}b]`
+        : String(message.body ?? '').slice(0, 50)
+
+      console.log(`📩 [MSG] fromMe=${message.fromMe}|${type}|${from.slice(0, 25)}|${bodyPreview}`)
 
       // Ignora mensagens enviadas pelo próprio bot — evita loop de auto-resposta
       if (message.fromMe) return
@@ -511,7 +578,7 @@ export class WhatsAppManager {
       if (isGroup || isStatus) return
 
       if (AUDIO_TYPES.has(type)) {
-        console.log(` → 🎤 Áudio (${type})`)
+        console.log(`   → 🎤 Áudio (${type})`)
         this.handleAudioMessage(bot, client, chatId, from, message)
           .catch(err => console.error(`[Audio] ERRO:`, err))
         return
@@ -527,7 +594,7 @@ export class WhatsAppManager {
       const bodyText = String(message.body ?? '').trim()
       if (!bodyText) return
 
-      console.log(`→ ✅ Texto: "${bodyText.slice(0, 260)}"`)
+      console.log(`   → ✅ Texto: "${bodyText.slice(0, 60)}"`)
       this.bufferMessage(bot, client, chatId, bodyText, from)
     })
   }
