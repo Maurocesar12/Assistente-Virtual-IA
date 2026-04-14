@@ -299,7 +299,6 @@ const Bots = {
     if(model === 'gemini-2.5-flash' && !prompt) { toast('O prompt é obrigatório para o modelo Gemini 2.5 Flash', 'error'); return }
     if(model === 'GPT-4'|| model === 'GPT-3.5-Turbo' && (!prompt || prompt.length <= 0)) {toast('o prompt não é obrigatorio para GPT-4, mas recomendamos fericar seu assist da OpenAI', 'info')}
     if (!name || name.length < 2) { toast('O nome do bot deve ter pelo menos 2 caracteres', 'error'); return }
-    if (!prompt || model === 'gemini-2.5-flash' && prompt.length < 10) { toast('O prompt deve ter pelo menos 10 caracteres', 'error'); return }
     UI.setLoading('createBotBtn', true)
     try {
       const bot = await Api.post('/bots', { name, model, prompt })
