@@ -309,7 +309,7 @@ const Bots = {
     }
     
     // 3. Regra do GPT: Apenas avisa se estiver vazio (Note os parênteses extras em volta dos modelos)
-    if ((model === 'GPT-4' || model === 'GPT-3.5-Turbo') && (!prompt || prompt.length === 0)) {
+    if (model === 'GPT-4' || model === 'GPT-3.5-Turbo') {
         toast('O prompt não é obrigatório para GPT, mas recomendamos verificar seu assist da OpenAI', 'info');
         // Não tem o "return", então a criação do bot vai continuar normalmente!
     }
