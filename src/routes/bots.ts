@@ -1,5 +1,6 @@
 /**
- * routes/bots.ts.
+ * routes/bots.ts
+ * ─────────────────────────────────────────────────────────────────────────────
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -146,6 +147,8 @@ botsRouter.get('/:id/events', async (req, res, next) => {
 
     let qrShown       = false
     let everConnected = false
+    // Flag: QR foi lido com sucesso — ignora status de desconexão do handshake
+    let qrScanned     = false
 
     const SESSION_ERROR_MESSAGES: Record<string, { title: string; message: string; action: string }> = {
       browserClose:       { title: 'Navegador fechado',     message: 'O navegador interno foi fechado inesperadamente.',        action: 'Clique em "Conectar" para reconectar o bot.' },
@@ -170,6 +173,12 @@ botsRouter.get('/:id/events', async (req, res, next) => {
     const unsubSession = whatsappManager.onSessionUpdate(async (e) => {
       if (e.botId !== bot.id) return
 
+      // Marca QR como escaneado — ignora erros de handshake a partir daqui
+      if (e.status === 'qrReadSuccess') {
+        qrScanned = true
+        return
+      }
+
       if (e.status === CONNECTED_WITH_PHONE) {
         everConnected = true
         sendEvent('connected', { botId: e.botId, status: e.status })
@@ -187,7 +196,9 @@ botsRouter.get('/:id/events', async (req, res, next) => {
 
       const isFailure   = SESSION_FAILED_KEYS.has(e.status)
       const isAfterQR   = qrShown || everConnected
-      const shouldAlert = isFailure && isAfterQR
+      // Ignora notLogged/disconnectedMobile durante handshake (antes do QR ser escaneado)
+      const isHandshakeNoise = !qrScanned && ['notLogged', 'desconnectedMobile', 'disconnectedMobile'].includes(e.status)
+      const shouldAlert = isFailure && isAfterQR && !isHandshakeNoise
 
       if (shouldAlert) {
         const info = SESSION_ERROR_MESSAGES[e.status] ?? {

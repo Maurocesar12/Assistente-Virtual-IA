@@ -532,6 +532,8 @@ const Connect = {
 
     source.addEventListener('status', (e) => {
       const data = JSON.parse(e.data)
+      const HANDSHAKE_NOISE = ['notLogged', 'desconnectedMobile', 'disconnectedMobile', 'disconnected', 'deleteToken']
+      if (!qrReceived && HANDSHAKE_NOISE.includes(data.status)) return
       Connect.log(`Status: ${data.status}`, 'info')
       if (data.status === 'inChat' || data.status === 'isLogged') { connectedOk = true; clearTimeout(errorGraceTimer) }
     })
