@@ -22,15 +22,39 @@ botsRouter.use(authenticate)
 const createBotSchema = z.object({
   name:   z.string().min(2, 'Name must be at least 2 characters'),
   model:  z.enum(['gemini-2.5-flash', 'gpt-4', 'gpt-3.5-turbo']),
-  prompt: z.string().min(10, 'Prompt must be at least 10 characters'),
-})
+  prompt: z.string().optional(), 
+      }).superRefine((data, ctx) => {
+        // Fazemos a validação condicional aqui fora
+        if (data.model === 'gemini-2.5-flash') {
+          if (!data.prompt || data.prompt.trim().length < 10) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: 'Prompt must be at least 10 characters for Gemini',
+              path: ['prompt'], // Isso faz o erro apontar para o campo certinho
+      });
+    }
+  }
+});
 
 const updateBotSchema = z.object({
   name:     z.string().min(2).optional(),
   model:    z.enum(['gemini-2.5-flash', 'gpt-4', 'gpt-3.5-turbo']).optional(),
-  prompt:   z.string().min(10).optional(),
+  // Removemos o .min(10) daqui também
+  prompt:   z.string().optional(),
   isActive: z.boolean().optional(),
-})
+}).superRefine((data, ctx) => {
+  // Na atualização, verificamos se o usuário está mudando para o Gemini
+  // e enviando um prompt muito curto ao mesmo tempo.
+  if (data.model === 'gemini-2.5-flash' && data.prompt !== undefined) {
+    if (data.prompt.trim().length < 10) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Prompt must be at least 10 characters for Gemini',
+        path: ['prompt'],
+      });
+    }
+  }
+});
 
 // ─── GET /bots ────────────────────────────────────────────────────────────────
 
