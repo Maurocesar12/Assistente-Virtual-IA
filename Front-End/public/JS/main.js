@@ -294,11 +294,31 @@ const Bots = {
     if (hasMsgs) UI.el('step3')?.classList.add('done')
   },
   async create() {
-    const name = UI.val('bName'), model = UI.val('bModel'), prompt = UI.val('bPrompt')
-    if(!model) { toast('Selecione um modelo', 'error'); return }
-    if(model === 'gemini-2.5-flash' && !prompt) { toast('O prompt é obrigatório para o modelo Gemini 2.5 Flash', 'error'); return }
-    if(model === 'GPT-4'|| model === 'GPT-3.5-Turbo' && (!prompt || prompt.length <= 0)) {toast('o prompt não é obrigatorio para GPT-4, mas recomendamos fericar seu assist da OpenAI', 'info')}
-    if (!name || name.length < 2) { toast('O nome do bot deve ter pelo menos 2 caracteres', 'error'); return }
+    const name = UI.val('bName'), model = UI.val('bModel'), prompt = UI.val('bPrompt');
+    
+    // 1. Verifica se escolheu o modelo
+    if (!model) { 
+        toast('Selecione um modelo', 'error'); 
+        return; 
+    }
+    
+    // 2. Regra do Gemini: Prompt é obrigatório E tem que ter no mínimo 10 caracteres
+    if (model === 'gemini-2.5-flash' && (!prompt || prompt.length < 10)) { 
+        toast('O prompt é obrigatório e deve ter pelo menos 10 caracteres para o modelo Gemini', 'error'); 
+        return; // Interrompe a criação aqui
+    }
+    
+    // 3. Regra do GPT: Apenas avisa se estiver vazio (Note os parênteses extras em volta dos modelos)
+    if ((model === 'GPT-4' || model === 'GPT-3.5-Turbo') && (!prompt || prompt.length === 0)) {
+        toast('O prompt não é obrigatório para GPT, mas recomendamos verificar seu assist da OpenAI', 'info');
+        // Não tem o "return", então a criação do bot vai continuar normalmente!
+    }
+    
+    // 4. Verifica o nome
+    if (!name || name.length < 2) { 
+        toast('O nome do bot deve ter pelo menos 2 caracteres', 'error'); 
+        return; 
+    }
     UI.setLoading('createBotBtn', true)
     try {
       const bot = await Api.post('/bots', { name, model, prompt })
