@@ -1,9 +1,10 @@
 /**
- * database.ts
+ * database.ts — com criptografia de API keys [SEC-6]
  */
 
 import { PrismaClient } from '@prisma/client'
 import { COUNTABLE_MESSAGE_ROLES } from '../utils/planLimits.js'
+import { encryptApiKeys, decryptApiKeys } from '../utils/encrypt.js'
 
 const prisma = new PrismaClient()
 
@@ -58,37 +59,30 @@ export interface Conversation {
   humanHandoff:  boolean
 }
 
-// ─── Parâmetros para createMessage ───────────────────────────────────────────
-
 export interface CreateMessageParams {
   conversationId:    string
   role:              'user' | 'assistant'
   content:           string
-  /**
-   * Quando true (padrão), incrementa `Bot.messageCount` atomicamente via
-   * Prisma `{ increment: 1 }`. Deve ser false para mensagens de erro/sistema
-   * que não representam consumo real de cota.
-   */
   incrementBotCount?: boolean
-  /** ID do bot — obrigatório quando incrementBotCount = true. */
   botId?:            string
 }
-
-// ─── Database Class ───────────────────────────────────────────────────────────
 
 class Database {
 
   // ── Users ──────────────────────────────────────────────────────────────────
 
   async createUser(data: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
+    // [SEC-6] Criptografa as API keys antes de salvar
+    const encryptedKeys = encryptApiKeys(data.apiKeys as Record<string, string>)
+
     const user = await prisma.user.create({
       data: {
         name:               data.name,
         lastName:           data.lastName,
-        email:              data.email,
+        email:              data.email.toLowerCase().trim(), // [SEC-7] normalizar email
         passwordHash:       data.passwordHash,
         plan:               data.plan,
-        apiKeys:            JSON.stringify(data.apiKeys ?? {}),
+        apiKeys:            JSON.stringify(encryptedKeys),
         mustChangePassword: data.mustChangePassword ?? false,
       },
     })
@@ -102,13 +96,20 @@ class Database {
   }
 
   async findUserByEmail(email: string): Promise<User | null> {
-    const user = await prisma.user.findUnique({ where: { email } })
+    // [SEC-7] normalizar email na busca também
+    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } })
     return user ? this.parseUser(user) : null
   }
 
   async updateUser(id: string, data: Partial<Omit<User, 'id' | 'createdAt'>>): Promise<User | null> {
     const payload: Record<string, unknown> = { ...data }
-    if (data.apiKeys !== undefined) payload.apiKeys = JSON.stringify(data.apiKeys)
+
+    // [SEC-6] Criptografar API keys ao atualizar
+    if (data.apiKeys !== undefined) {
+      const encryptedKeys = encryptApiKeys(data.apiKeys as Record<string, string>)
+      payload.apiKeys = JSON.stringify(encryptedKeys)
+    }
+
     const user = await prisma.user.update({ where: { id }, data: payload })
     return this.parseUser(user)
   }
@@ -158,7 +159,7 @@ class Database {
         userId:       data.userId,
         name:         data.name,
         model:        data.model,
-        prompt:       data.prompt,
+        prompt:       data.prompt ?? '',
         isActive:     data.isActive    ?? false,
         isConnected:  data.isConnected ?? false,
         phone:        data.phone       ?? null,
@@ -253,10 +254,7 @@ class Database {
   }
 
   async setConversationPaused(id: string, isPaused: boolean): Promise<Conversation | null> {
-    const row = await prisma.conversation.update({
-      where: { id },
-      data:  { isPaused },
-    })
+    const row = await prisma.conversation.update({ where: { id }, data: { isPaused } })
     return this.parseConversation(row)
   }
 
@@ -277,16 +275,6 @@ class Database {
 
   // ── Messages ───────────────────────────────────────────────────────────────
 
-  /**
-   * Grava uma mensagem no banco.
-   *
-   * ALTERAÇÃO: quando `incrementBotCount` é true (padrão para mensagens 'user'),
-   * o `Bot.messageCount` é incrementado atomicamente via `{ increment: 1 }`,
-   * eliminando a race condition do código anterior que fazia:
-   *   db.updateBot(bot.id, { messageCount: bot.messageCount + 1 })
-   *
-   * O incremento atômico garante que contagens concorrentes nunca se percam.
-   */
   async createMessage(params: CreateMessageParams) {
     const { conversationId, role, content, incrementBotCount = true, botId } = params
 
@@ -294,7 +282,6 @@ class Database {
       data: { conversationId, role, content },
     })
 
-    // Incrementa o contador do bot atomicamente se solicitado
     if (incrementBotCount && botId) {
       await prisma.bot.update({
         where: { id: botId },
@@ -314,35 +301,14 @@ class Database {
 
   // ── Stats ──────────────────────────────────────────────────────────────────
 
-  /**
-   * Retorna estatísticas do usuário com contagem de mensagens confiável.
-   *
-   *
-   *   Conta diretamente da tabela `Message` filtrando por conversas do userId
-   *   e apenas os papéis definidos em COUNTABLE_MESSAGE_ROLES ('user').
-   *   Isso garante:
-   *   a) Contagem imutável — mensagens no banco nunca desaparecem.
-   *   b) Impossível de manipular via API — o cliente não controla essa tabela.
-   *   c) Consistente — mesmo resultado independente do estado do bot.
-   *
-   * O campo `Bot.messageCount` é mantido para exibição na listagem de bots
-   * (quantas mensagens cada bot respondeu), mas NÃO é mais usado para limite.
-   */
   async getUserStats(userId: string) {
     if (!userId || userId === 'undefined') {
-      return {
-        totalBots: 0, activeBots: 0, totalConversations: 0,
-        totalMessages: 0, tokensUsed: 0,
-      }
+      return { totalBots: 0, activeBots: 0, totalConversations: 0, totalMessages: 0, tokensUsed: 0 }
     }
 
     const [bots, conversations, messageCount] = await Promise.all([
       prisma.bot.findMany({ where: { userId } }),
       prisma.conversation.findMany({ where: { userId } }),
-
-      // ─── FONTE DE VERDADE: conta mensagens diretamente da tabela Message ───
-      // JOIN implícito via relação Prisma: Message → Conversation → userId
-      // Filtra apenas os papéis contáveis (ex: 'user') definidos em planLimits.ts
       prisma.message.count({
         where: {
           role: { in: [...COUNTABLE_MESSAGE_ROLES] },
@@ -355,19 +321,28 @@ class Database {
       totalBots:          bots.length,
       activeBots:         bots.filter((b: any) => b.isActive && b.isConnected).length,
       totalConversations: conversations.length,
-      totalMessages:      messageCount,       // ← agora conta da tabela Message
-      tokensUsed:         messageCount * 142, // estimativa por mensagem
+      totalMessages:      messageCount,
+      tokensUsed:         messageCount * 142,
     }
   }
 
   // ── Helpers privados ───────────────────────────────────────────────────────
 
   private parseUser(u: any): User {
+    let apiKeys: ApiKeys = {}
+    try {
+      const raw = typeof u.apiKeys === 'string' ? JSON.parse(u.apiKeys) : (u.apiKeys ?? {})
+      // [SEC-6] Descriptografa ao ler do banco
+      apiKeys = decryptApiKeys(raw) as ApiKeys
+    } catch {
+      apiKeys = {}
+    }
+
     return {
       ...u,
       plan:               u.plan as Plan,
       mustChangePassword: u.mustChangePassword ?? false,
-      apiKeys:            typeof u.apiKeys === 'string' ? JSON.parse(u.apiKeys) : (u.apiKeys ?? {}),
+      apiKeys,
     }
   }
 
@@ -384,29 +359,23 @@ class Database {
   }
 }
 
-// ─── Singleton exportado ──────────────────────────────────────────────────────
-
 const instance = new Database()
 
 export const db = {
-  // Users
   createUser:                    instance.createUser.bind(instance),
   findUserById:                  instance.findUserById.bind(instance),
   findUserByEmail:               instance.findUserByEmail.bind(instance),
   updateUser:                    instance.updateUser.bind(instance),
-  // Password reset
   createPasswordResetToken:      instance.createPasswordResetToken.bind(instance),
   findValidResetToken:           instance.findValidResetToken.bind(instance),
   markResetTokenUsed:            instance.markResetTokenUsed.bind(instance),
   invalidatePreviousResetTokens: instance.invalidatePreviousResetTokens.bind(instance),
   findPendingResetTokensForUser: instance.findPendingResetTokensForUser.bind(instance),
-  // Bots
   createBot:                     instance.createBot.bind(instance),
   findBotById:                   instance.findBotById.bind(instance),
   findBotsByUserId:              instance.findBotsByUserId.bind(instance),
   updateBot:                     instance.updateBot.bind(instance),
   deleteBot:                     instance.deleteBot.bind(instance),
-  // Conversations
   upsertConversation:            instance.upsertConversation.bind(instance),
   findConversationsByUserId:     instance.findConversationsByUserId.bind(instance),
   findConversationsByBotId:      instance.findConversationsByBotId.bind(instance),
@@ -415,9 +384,7 @@ export const db = {
   setConversationPaused:         instance.setConversationPaused.bind(instance),
   setConversationHandoff:        instance.setConversationHandoff.bind(instance),
   findConversationByBotAndPhone: instance.findConversationByBotAndPhone.bind(instance),
-  // Messages
   createMessage:                 instance.createMessage.bind(instance),
   findMessagesByConversationId:  instance.findMessagesByConversationId.bind(instance),
-  // Stats
   getUserStats:                  instance.getUserStats.bind(instance),
 }

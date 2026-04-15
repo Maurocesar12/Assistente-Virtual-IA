@@ -13,24 +13,22 @@ export function errorHandler(
       success: false,
       error: {
         message: err.message,
-        code: err.code,
+        code:    err.code,
       },
     })
   }
 
-  // Zod validation errors
   if (err instanceof Error && err.name === 'ZodError') {
     return res.status(400).json({
       success: false,
       error: {
         message: 'Validation error',
-        code: 'VALIDATION_ERROR',
+        code:    'VALIDATION_ERROR',
         details: (err as any).errors,
       },
     })
   }
 
-  // JWT errors
   if (err instanceof Error && err.name === 'JsonWebTokenError') {
     return res.status(401).json({
       success: false,
@@ -38,14 +36,17 @@ export function errorHandler(
     })
   }
 
-  // Unknown errors
+  // [SEC-5] NUNCA expõe detalhes internos em produção.
+  // Em desenvolvimento, loga o erro completo mas não envia ao cliente.
   console.error('[Unhandled Error]', err)
 
   return res.status(500).json({
     success: false,
     error: {
-      message: env.NODE_ENV === 'production' ? 'Internal server error' : String(err),
-      code: 'INTERNAL_ERROR',
+      // Mensagem genérica sempre — independente do NODE_ENV
+      // Stack traces e detalhes de implementação nunca chegam ao cliente
+      message: 'Internal server error',
+      code:    'INTERNAL_ERROR',
     },
   })
 }

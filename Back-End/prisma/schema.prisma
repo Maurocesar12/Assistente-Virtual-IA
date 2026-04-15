@@ -40,6 +40,9 @@ model Bot {
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversations Conversation[]
 
+  // [SEC-8] Índice em userId — queries de listagem de bots por usuário
+  @@index([userId])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -55,9 +58,7 @@ model Conversation {
   unreadCount  Int      @default(0)
   messageCount Int      @default(0)
 
-  // ✦ Feature 2 — Manual Override: bot silenciado para este chat
   isPaused     Boolean  @default(false)
-  // ✦ Feature 3 — Human Handoff: aguardando atendimento humano
   humanHandoff Boolean  @default(false)
 
   bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
@@ -65,6 +66,10 @@ model Conversation {
   messages Message[]
 
   @@unique([botId, contactPhone])
+
+  // [SEC-8] Índice em userId — chamado em toda requisição autenticada
+  @@index([userId])
+  @@index([lastMessageAt])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -78,6 +83,11 @@ model Message {
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
+  // [SEC-8] Índices — getUserStats faz COUNT com JOIN em Message
+  // Sem estes, cada contagem de limite de plano faz full table scan
+  @@index([conversationId])
+  @@index([role])
+
   createdAt DateTime @default(now())
 }
 
@@ -90,6 +100,9 @@ model PasswordResetToken {
   usedAt           DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // [SEC-8] Índice composto — findPendingResetTokensForUser chamado em todo login
+  @@index([userId, usedAt])
 
   createdAt DateTime @default(now())
 }
