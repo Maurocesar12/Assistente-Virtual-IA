@@ -12,7 +12,6 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('7d'),
 
   // [SEC-6] Chave de criptografia para API keys dos usuários
-  // Gerar: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   ENCRYPTION_KEY: z.string().length(64, 'ENCRYPTION_KEY deve ser um hex de 64 caracteres (32 bytes)'),
 
   OPENAI_KEY: z.string().optional(),
@@ -27,6 +26,14 @@ const envSchema = z.object({
   SMTP_USER: z.string().min(1, 'SMTP_USER é obrigatório'),
   SMTP_PASS: z.string().min(1, 'SMTP_PASS é obrigatório'),
   SMTP_FROM: z.string().optional(),
+
+  // ── AbacatePay ────────────────────────────────────────────────────────────
+  // Obtenha em: https://app.abacatepay.com → Configurações → API Keys
+  ABACATEPAY_API_KEY: z.string().min(1, 'ABACATEPAY_API_KEY é obrigatória'),
+
+  // Opcional — assina os webhooks para verificação de autenticidade.
+  // Configure em: https://app.abacatepay.com → Webhooks → Secret
+  ABACATEPAY_WEBHOOK_SECRET: z.string().optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)

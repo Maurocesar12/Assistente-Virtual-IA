@@ -119,7 +119,7 @@ const PlanLimit = {
     const banner = document.createElement('div')
     banner.id = 'planLimitBanner'
     banner.style.cssText = `position:fixed;top:0;left:0;right:0;z-index:999;background:linear-gradient(90deg,#f05060,#c03040);color:#fff;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:14px;font-weight:500;box-shadow:0 2px 16px rgba(240,80,96,0.5);animation:toast-slide 0.3s ease;`
-    banner.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><span style="font-size:20px">🚫</span><span>Você atingiu o limite de <strong>${messageLimit} mensagens</strong> do plano gratuito. Seu bot está <strong>pausado</strong> — faça upgrade para continuar respondendo.</span></div><button onclick="PlanLimit.openUpgradeModal()" style="background:#fff;color:#c03040;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">⚡ Fazer upgrade →</button>`
+    banner.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><span style="font-size:20px">🚫</span><span>Você atingiu o limite de <strong>${messageLimit} mensagens</strong> do plano gratuito. Seu bot está <strong>pausado</strong> — faça upgrade para continuar respondendo.</span></div><button onclick="Billing.openCheckout()" style="background:#fff;color:#c03040;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">⚡ Fazer upgrade →</button>`
     document.body.prepend(banner)
     const main = document.querySelector('.main')
     if (main) main.style.paddingTop = '52px'
@@ -713,17 +713,28 @@ const Analytics = {
 }
 
 const Billing = {
-  render() {
+  async render() {
     const u = State.user; if (!u) return
     const s = State.stats, plan = u.plan ?? 'starter'
     const planLabels = { starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' }
     const planPills  = { starter: 'GRÁTIS',  pro: 'PRO', enterprise: 'ENTERPRISE' }
-    const msgs = s?.totalMessages ?? 0, limit = s?.messageLimit ?? null, remaining = s?.remainingMessages, percent = s?.usagePercent ?? 0, limitReached = s?.limitReached ?? false
+    const msgs = s?.totalMessages ?? 0, limit = s?.messageLimit ?? null
+    const remaining = s?.remainingMessages, percent = s?.usagePercent ?? 0
+    const limitReached = s?.limitReached ?? false
+ 
     UI.el('bilPlan').textContent = planLabels[plan]
-    const pill = UI.el('bilPill'); if (pill) { pill.textContent = planPills[plan]; pill.className = `plan-pill ${plan}` }
-    const usageEl = UI.el('bilUsage'); if (usageEl) usageEl.textContent = `${msgs.toLocaleString('pt-BR')} / ${limit === null ? '∞' : limit.toLocaleString('pt-BR')}`
+    const pill = UI.el('bilPill')
+    if (pill) { pill.textContent = planPills[plan]; pill.className = `plan-pill ${plan}` }
+ 
+    const usageEl = UI.el('bilUsage')
+    if (usageEl) usageEl.textContent = `${msgs.toLocaleString('pt-BR')} / ${limit === null ? '∞' : limit.toLocaleString('pt-BR')}`
+ 
     const barEl = UI.el('bilBar')
-    if (barEl) { barEl.style.width = limit === null ? '4%' : `${percent}%`; barEl.style.background = limitReached ? 'var(--red)' : percent >= 80 ? 'var(--yellow)' : 'var(--green)' }
+    if (barEl) {
+      barEl.style.width = limit === null ? '4%' : `${percent}%`
+      barEl.style.background = limitReached ? 'var(--red)' : percent >= 80 ? 'var(--yellow)' : 'var(--green)'
+    }
+ 
     const usageAlertEl = UI.el('bilUsageAlert')
     if (usageAlertEl) {
       if (limitReached) {
@@ -732,10 +743,80 @@ const Billing = {
       } else if (percent >= 80 && limit !== null) {
         usageAlertEl.style.display = ''
         usageAlertEl.innerHTML = `<div style="background:rgba(240,179,64,0.08);border:1px solid rgba(240,179,64,0.3);border-left:4px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--text-muted)">⚠️ <strong style="color:var(--yellow)">Atenção:</strong> Você usou ${percent}% do seu limite mensal. Restam <strong style="color:var(--text)">${remaining?.toLocaleString('pt-BR') ?? 0} mensagens</strong>.</div>`
-      } else { usageAlertEl.style.display = 'none' }
+      } else {
+        usageAlertEl.style.display = 'none'
+      }
     }
+ 
     const upgradeBtn = UI.el('bilUpgradeBtn')
     if (upgradeBtn) upgradeBtn.style.display = (plan === 'pro' || plan === 'enterprise') ? 'none' : ''
+ 
+    // Carrega histórico de cobranças
+    Billing.loadHistory()
+  },
+ 
+  async loadHistory() {
+    const container = UI.el('bilInvoices'); if (!container) return
+    try {
+      const data = await Api.get('/billing/status')
+      const billings = data.billings ?? []
+      if (!billings.length) {
+        container.innerHTML = `<div class="empty"><div class="empty-icon">🧾</div><h3>Nenhuma cobrança ainda</h3><p>Suas cobranças aparecerão aqui após o primeiro pagamento</p></div>`
+        return
+      }
+      const statusLabel = {
+        PENDING:   { label: 'Pendente',   cls: 'badge-yellow' },
+        PAID:      { label: 'Pago',       cls: 'badge-green'  },
+        EXPIRED:   { label: 'Expirado',   cls: 'badge-red'    },
+        CANCELLED: { label: 'Cancelado',  cls: 'badge-red'    },
+      }
+      container.innerHTML = billings.map((b) => {
+        const st = statusLabel[b.status] ?? { label: b.status, cls: 'badge-yellow' }
+        const date = new Date(b.createdAt).toLocaleDateString('pt-BR')
+        const amount = (b.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+        return `<tr>
+          <td class="mono text-sm">${b.id}</td>
+          <td>${date}</td>
+          <td>${amount}</td>
+          <td><span class="badge ${st.cls}">${st.label}</span></td>
+          <td>${b.status === 'PENDING' ? `<a href="${b.url}" target="_blank" class="btn btn-ghost btn-sm">Pagar →</a>` : '—'}</td>
+        </tr>`
+      }).join('')
+    } catch (err) {
+      container.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:24px">Não foi possível carregar o histórico</td></tr>`
+    }
+  },
+ 
+  // Abre modal de checkout do AbacatePay
+  openCheckout() {
+    Modals.open('checkoutPro')
+  },
+ 
+  // Chama a API e redireciona para a página de pagamento do AbacatePay
+  async startCheckout() {
+    const taxId     = UI.val('checkoutTaxId')
+    const cellphone = UI.val('checkoutPhone')
+ 
+    const cleanTaxId = taxId.replace(/\D/g, '')
+    if (cleanTaxId.length < 11) {
+      toast('Informe um CPF ou CNPJ válido', 'error'); return
+    }
+ 
+    UI.setLoading('checkoutBtn', true)
+    try {
+      const data = await Api.post('/billing/checkout', {
+        taxId:     taxId.trim(),
+        cellphone: cellphone || undefined,
+      })
+      // Abre a página de pagamento do AbacatePay em nova aba
+      window.open(data.url, '_blank', 'noopener,noreferrer')
+      Modals.close('checkoutPro')
+      toast('Página de pagamento aberta! Complete o pagamento para ativar o Pro. 🎉', 'info')
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      UI.setLoading('checkoutBtn', false)
+    }
   },
 }
 
