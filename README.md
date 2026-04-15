@@ -1,4 +1,4 @@
-# ZapGPT v2.0 — WhatsApp AI Automation SaaS
+# Zapiens v2.0 — WhatsApp AI Automation SaaS
 
 > Automatize atendimento no WhatsApp com GPT-4 e Gemini 2.0. Backend TypeScript clean + Frontend integrado.
 

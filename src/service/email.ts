@@ -106,9 +106,9 @@ export async function sendPasswordResetEmail(params: {
   const { html, text } = buildResetEmail(params.userName, params.tempPassword, expiresMinutes)
 
   await transporter.sendMail({
-    from: `"ZapGPT" <${env.SMTP_FROM ?? env.SMTP_USER}>`,
+    from: `"Zapiens" <${env.SMTP_FROM ?? env.SMTP_USER}>`,
     to: params.to,
-    subject: '🔑 Sua senha temporária — ZapGPT',
+    subject: '🔑 Sua senha temporária — Zapiens',
     text,
     html,
   })

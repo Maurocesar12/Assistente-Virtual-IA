@@ -1,8 +1,6 @@
 /**
  * planLimits.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Fonte ÚNICA de verdade para regras de plano do ZapGPT.
- *q
  */
 
 export type Plan = 'starter' | 'pro' | 'enterprise'

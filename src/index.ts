@@ -20,7 +20,7 @@ const app = createApp()
 app.listen(env.PORT, () => {
   console.log('')
   console.log('  ╔══════════════════════════════════════╗')
-  console.log('  ║         ZapGPT Server v2.0            ║')
+  console.log('  ║         Zapiens Server v2.0            ║')
   console.log('  ╚══════════════════════════════════════╝')
   console.log(`  🚀  Listening on http://localhost:${env.PORT}`)
   console.log(`  🌍  Environment: ${env.NODE_ENV}`)

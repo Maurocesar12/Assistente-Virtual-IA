@@ -1,5 +1,5 @@
 {
-  "name": "zapgpt",
+  "name": "zapiens",
   "version": "1.0.0",
   "description": "WhatsApp AI Automation SaaS — Clean Architecture",
   "main": "src/index.ts",
