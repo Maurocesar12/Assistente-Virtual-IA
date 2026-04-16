@@ -1,3 +1,11 @@
+/**
+ * routes/auth.ts — atualizado
+ * Mudança: register aceita o plano escolhido, mas SEMPRE cria o usuário
+ * como 'starter'. Se o usuário escolheu 'pro', o upgrade acontece
+ * via AbacatePay após o pagamento (webhook). Isso evita que alguém
+ * se registre como pro sem pagar simplesmente alterando o body da requisição.
+ */
+
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../models/database.js'
@@ -9,29 +17,27 @@ import { env } from '../config/env.js'
 
 export const authRouter = Router()
 
-// ─── Cookie helper ────────────────────────────────────────────────────────────
-
 const COOKIE_NAME = 'zapgpt_token'
-const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000 // 7 dias em ms
+const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000
 
 function setAuthCookie(res: import('express').Response, token: string) {
   res.cookie(COOKIE_NAME, token, {
-    httpOnly: true,                                    // ✅ JS do front NÃO consegue ler
-    secure: env.NODE_ENV === 'production',             // ✅ HTTPS apenas em prod
-    sameSite: 'lax',                                   // ✅ Protege contra CSRF básico
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'lax',
     path: '/',
     maxAge: COOKIE_MAX_AGE,
   })
 }
 
-// ─── Schemas ──────────────────────────────────────────────────────────────────
-
 const registerSchema = z.object({
   name:     z.string().min(2),
-  lastName: z.string().min(2),
+  lastName: z.string().min(2).default(''),
   email:    z.string().email(),
   password: z.string().min(8),
-  plan:     z.enum(['starter', 'pro', 'enterprise']).default('starter'),
+  // O plano escolhido é registrado como metadado, mas o usuário
+  // sempre começa como 'starter'. O upgrade é feito via pagamento.
+  planIntent: z.enum(['starter', 'pro']).default('starter'),
 })
 
 const loginSchema = z.object({
@@ -43,22 +49,28 @@ const loginSchema = z.object({
 
 authRouter.post('/register', validate(registerSchema), async (req, res, next) => {
   try {
-    const { name, lastName, email, password, plan } = req.body
+    const { name, lastName, email, password, planIntent } = req.body
     const existing = await db.findUserByEmail(email)
-    if (existing) throw ApiError.conflict('Email already in use')
+    if (existing) throw ApiError.conflict('Email já cadastrado')
 
     const passwordHash = await hashPassword(password)
+    // Sempre cria como starter — pagamento ativa pro via webhook
     const user = await db.createUser({
-      name, lastName, email, passwordHash, plan,
-      apiKeys: {}, mustChangePassword: false,
+      name, lastName, email, passwordHash,
+      plan: 'starter',
+      apiKeys: {},
+      mustChangePassword: false,
     })
 
     const token = signToken(user)
-
-    // ✅ Seta cookie httpOnly — EventSource vai enviá-lo automaticamente
     setAuthCookie(res, token)
 
-    return created(res, { user: sanitizeUser(user), token })
+    return created(res, {
+      user: sanitizeUser(user),
+      token,
+      // Informa ao front se o usuário quis o pro, para abrir o checkout
+      pendingUpgrade: planIntent === 'pro',
+    })
   } catch (err) {
     next(err)
   }
@@ -73,10 +85,8 @@ authRouter.post('/login', validate(loginSchema), async (req, res, next) => {
     const user = await db.findUserByEmail(email)
     if (!user) throw ApiError.unauthorized('Credenciais inválidas')
 
-    // 1. Tenta senha normal
     const validNormal = await comparePassword(password, user.passwordHash)
 
-    // 2. Tenta senha temporária
     let loginViaTempPassword = false
     if (!validNormal) {
       const pendingTokens = await db.findPendingResetTokensForUser(user.id)
@@ -99,12 +109,10 @@ authRouter.post('/login', validate(loginSchema), async (req, res, next) => {
     if (!freshUser) throw ApiError.unauthorized('Usuário não encontrado')
 
     const token = signToken(freshUser)
-
-    // ✅ Seta cookie httpOnly
     setAuthCookie(res, token)
 
     return ok(res, {
-      user:               sanitizeUser(freshUser),
+      user: sanitizeUser(freshUser),
       token,
       mustChangePassword: freshUser.mustChangePassword,
     })
@@ -116,7 +124,6 @@ authRouter.post('/login', validate(loginSchema), async (req, res, next) => {
 // ─── POST /auth/logout ────────────────────────────────────────────────────────
 
 authRouter.post('/logout', (_req, res) => {
-  // ✅ Limpa o cookie de autenticação
   res.clearCookie(COOKIE_NAME, { path: '/' })
   return ok(res, { message: 'Logged out' })
 })

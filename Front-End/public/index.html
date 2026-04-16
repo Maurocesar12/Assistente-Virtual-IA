@@ -200,7 +200,7 @@
 ══════════════════════════════════════════════════════ -->
 <div id="register" class="page">
   <div class="bg-grid"></div>
-  <div class="auth-wrap wide" style="position:relative;z-index:1">
+  <div class="auth-wrap" style="position:relative;z-index:1;max-width:560px">
     <div class="auth-brand" onclick="UI.page('landing')">
       <div class="logo"><div class="logo-dot"></div>Zapiens</div>
     </div>
@@ -213,14 +213,48 @@
       </div>
       <div class="form-group"><label class="field-label">Email</label><input class="field" type="email" id="r-email" placeholder="seu@email.com"></div>
       <div class="form-group"><label class="field-label">Senha</label><input class="field" type="password" id="r-pass" placeholder="Mínimo 8 caracteres"></div>
-      <div class="form-group">
-        <label class="field-label">Plano inicial</label>
-        <select class="field" id="r-plan">
-          <option value="starter">Starter — Grátis (50 mensagens)</option>
-          <!-- <option value="pro">Pro — R$10,99/mês (ilimitado)</option> -->
-        </select>
+ 
+      <!-- Seleção de plano visual -->
+      <div class="form-group" style="margin-bottom:0">
+        <label class="field-label">Escolha seu plano</label>
+        <input type="hidden" id="r-plan" value="starter">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:2px">
+ 
+          <!-- Starter -->
+          <div id="plan-card-starter" onclick="Register.selectPlan('starter')"
+               style="cursor:pointer;padding:16px;border-radius:var(--r);border:2px solid var(--green);background:rgba(0,212,106,0.06);position:relative;transition:all 0.18s">
+            <div style="position:absolute;top:10px;right:10px;width:16px;height:16px;border-radius:50%;border:2px solid var(--green);background:var(--green);display:flex;align-items:center;justify-content:center" id="plan-check-starter">
+              <div style="width:6px;height:6px;border-radius:50%;background:#000"></div>
+            </div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">Starter</div>
+            <div style="font-family:var(--font-head);font-size:22px;font-weight:800;letter-spacing:-1px;margin-bottom:10px">R$0<span style="font-size:11px;font-weight:400;color:var(--text-muted)">/mês</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px"><span style="color:var(--green);font-weight:700;font-size:10px">✓</span>1 número de WhatsApp</div>
+              <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px"><span style="color:var(--green);font-weight:700;font-size:10px">✓</span>50 mensagens/mês</div>
+              <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px"><span style="color:var(--green);font-weight:700;font-size:10px">✓</span>GPT-4 ou Gemini</div>
+            </div>
+            <div style="margin-top:10px;padding:5px 0;border-top:1px solid rgba(0,212,106,0.15);font-size:10px;font-weight:700;text-align:center;color:var(--green)">GRÁTIS PARA SEMPRE</div>
+          </div>
+ 
+          <!-- Pro -->
+          <div id="plan-card-pro" onclick="Register.selectPlan('pro')"
+               style="cursor:pointer;padding:16px;border-radius:var(--r);border:2px solid var(--border);background:var(--surface2);position:relative;transition:all 0.18s">
+            <div style="position:absolute;top:-1px;left:50%;transform:translateX(-50%);background:var(--green);color:#000;font-size:8px;font-weight:800;letter-spacing:1px;padding:3px 10px;border-radius:0 0 6px 6px;white-space:nowrap">MAIS POPULAR</div>
+            <div style="position:absolute;top:10px;right:10px;width:16px;height:16px;border-radius:50%;border:2px solid var(--border2);background:transparent" id="plan-check-pro"></div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">Pro</div>
+            <div style="font-family:var(--font-head);font-size:22px;font-weight:800;letter-spacing:-1px;margin-bottom:10px">R$9,99<span style="font-size:11px;font-weight:400;color:var(--text-muted)">/mês</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px"><span style="color:var(--green);font-weight:700;font-size:10px">✓</span>5 números de WhatsApp</div>
+              <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px"><span style="color:var(--green);font-weight:700;font-size:10px">✓</span>Mensagens ilimitadas</div>
+              <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px"><span style="color:var(--green);font-weight:700;font-size:10px">✓</span>Suporte prioritário</div>
+            </div>
+            <div style="margin-top:10px;padding:5px 0;border-top:1px solid var(--border);font-size:10px;font-weight:700;text-align:center;color:var(--text-dim)">PAGAR APÓS CADASTRO</div>
+          </div>
+ 
+        </div>
       </div>
-      <button class="btn btn-primary btn-full btn-lg" id="registerBtn" onclick="Auth.register()">Criar conta grátis →</button>
+ 
+      <button class="btn btn-primary btn-full btn-lg" id="registerBtn" onclick="Auth.register()" style="margin-top:20px">Criar conta →</button>
       <p class="text-xs text-dim mt-3" style="text-align:center;line-height:1.6">
         Ao criar uma conta você concorda com nossos <a href="#" style="color:var(--green)">Termos de Uso</a>
       </p>
@@ -395,31 +429,118 @@
         </div>
       </div>
 
-      <!-- BILLING — ✦ ATUALIZADO com bilUsageAlert e bilUpgradeBtn -->
-<div class="card">
-  <div class="card-header"><h3>Histórico de cobranças</h3></div>
-  <div style="overflow-x:auto">
-    <table class="table" style="min-width:500px">
-      <thead>
-        <tr>
-          <th>ID</th><th>Data</th><th>Valor</th><th>Status</th><th>Ação</th>
-        </tr>
-      </thead>
-      <tbody id="bilInvoices">
-        <tr><td colspan="5">
-          <div class="empty">
-            <div class="empty-icon">🧾</div>
-            <h3>Nenhuma cobrança ainda</h3>
-            <p>Suas cobranças aparecerão após o primeiro pagamento</p>
-          </div>
-        </td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
+<!-- ══════════════════════════════════════════════════════
+     BILLING VIEW
+══════════════════════════════════════════════════════ -->
+<div id="view-billing" class="view" style="max-width:700px">
+ 
+  <!-- ── Plano atual + uso ── -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <div class="flex-between mb-6">
+        <div>
+          <div class="text-xs text-dim mb-1">Plano atual</div>
+          <div style="font-family:var(--font-head);font-size:26px;font-weight:800" id="bilPlan">Starter</div>
+        </div>
+        <span class="plan-pill starter" id="bilPill">GRÁTIS</span>
+      </div>
+      <div>
+        <div class="flex-between text-xs text-muted mb-2">
+          <span>Mensagens usadas este mês</span>
+          <span id="bilUsage">0 / 50</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="bilBar" style="width:0%"></div>
+        </div>
+        <div id="bilUsageAlert" style="display:none"></div>
+      </div>
     </div>
-  </main>
+  </div>
+ 
+  <!-- ── Comparação de planos (visível só para starter) ── -->
+  <div id="bilUpgradeSection" class="card mb-4">
+    <div class="card-header">
+      <h3>Faça upgrade para Pro</h3>
+      <span class="badge badge-yellow">⚡ Oferta disponível</span>
+    </div>
+    <div class="card-body" style="padding-top:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+ 
+        <!-- Starter atual -->
+        <div style="padding:18px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r)">
+          <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">Atual — Starter</div>
+          <div style="font-family:var(--font-head);font-size:28px;font-weight:800;letter-spacing:-1px;margin-bottom:14px">
+            R$0<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/mês</span>
+          </div>
+          <ul style="list-style:none;display:flex;flex-direction:column;gap:8px">
+            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--text-dim)">✕</span>50 mensagens/mês</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--text-dim)">✕</span>Bot pausado no limite</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--text-dim)">✕</span>1 número de WhatsApp</li>
+          </ul>
+        </div>
+ 
+        <!-- Pro -->
+        <div style="padding:18px;background:linear-gradient(160deg,rgba(0,212,106,0.07),var(--surface));border:1px solid var(--green);border-radius:var(--r);position:relative">
+          <div style="position:absolute;top:-1px;right:14px;background:var(--green);color:#000;font-size:9px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:0 0 7px 7px">RECOMENDADO</div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--green);margin-bottom:10px">Pro</div>
+          <div style="font-family:var(--font-head);font-size:28px;font-weight:800;letter-spacing:-1px;margin-bottom:14px">
+            R$9,99<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/mês</span>
+          </div>
+          <ul style="list-style:none;display:flex;flex-direction:column;gap:8px">
+            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Mensagens ilimitadas</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Bot nunca é pausado</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>5 números de WhatsApp</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Suporte prioritário</li>
+          </ul>
+        </div>
+      </div>
+ 
+      <button class="btn btn-primary btn-full btn-lg" id="bilUpgradeBtn" onclick="Billing.openCheckout()">
+        ⚡ Assinar Pro por R$9,99/mês →
+      </button>
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px">
+        <span style="font-size:18px">🏦</span>
+        <p class="text-xs text-dim" style="line-height:1.6">Pague via PIX ou Cartão · Sem contrato · Cancele quando quiser</p>
+      </div>
+    </div>
+  </div>
+ 
+  <!-- ── Badge de sucesso (visível só para pro/enterprise) ── -->
+  <div id="bilProBadge" style="display:none" class="card mb-4">
+    <div class="card-body">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div style="width:48px;height:48px;border-radius:50%;background:rgba(0,212,106,0.12);border:1px solid rgba(0,212,106,0.25);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">✅</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:3px">Plano Pro ativo</div>
+          <div style="font-size:13px;color:var(--text-muted)">Você tem mensagens ilimitadas e acesso completo a todos os recursos.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+ 
+  <!-- ── Histórico de cobranças ── -->
+  <div class="card">
+    <div class="card-header"><h3>Histórico de cobranças</h3></div>
+    <div style="overflow-x:auto">
+      <table class="table" style="min-width:480px">
+        <thead>
+          <tr>
+            <th>ID</th><th>Data</th><th>Valor</th><th>Status</th><th>Ação</th>
+          </tr>
+        </thead>
+        <tbody id="bilInvoices">
+          <tr><td colspan="5">
+            <div class="empty">
+              <div class="empty-icon">🧾</div>
+              <h3>Nenhuma cobrança ainda</h3>
+              <p>Suas cobranças aparecerão após o primeiro pagamento</p>
+            </div>
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+ 
 </div>
 
 <!-- ══════════════════════════════════════════════════════
@@ -616,45 +737,44 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="JS/main.js"></script>
-<!-- Modal Checkout Pro — AbacatePay -->
+<!-- ══════════════════════════════════════════════════════
+     MODAL — Checkout Pro (AbacatePay)
+     Cole antes do </body> no index.html
+══════════════════════════════════════════════════════ -->
 <div class="overlay" id="m-checkoutPro">
   <div class="modal" style="max-width:460px">
     <div style="width:48px;height:48px;background:rgba(0,212,106,0.1);border:1px solid rgba(0,212,106,0.2);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px">⚡</div>
     <div class="modal-title">Assinar Zapiens Pro</div>
     <div class="modal-subtitle">R$ 9,99/mês · Mensagens ilimitadas · Cancele quando quiser</div>
-
+ 
     <div class="form-group">
       <label class="field-label">CPF ou CNPJ</label>
       <input class="field" type="text" id="checkoutTaxId" placeholder="000.000.000-00"
         oninput="this.value=this.value.replace(/[^0-9.\/\-]/g,'')">
       <div class="text-xs text-dim mt-1">Necessário para emissão da cobrança</div>
     </div>
-
+ 
     <div class="form-group">
       <label class="field-label">Telefone <span style="color:var(--text-dim);font-weight:400">(opcional)</span></label>
       <input class="field" type="tel" id="checkoutPhone" placeholder="(21) 99999-9999">
     </div>
-
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:20px">
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600">O que você ganha com o Pro:</div>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <div style="font-size:13px;color:var(--text-muted);display:flex;gap:8px"><span style="color:var(--green);font-weight:700">✓</span>Mensagens ilimitadas</div>
-        <div style="font-size:13px;color:var(--text-muted);display:flex;gap:8px"><span style="color:var(--green);font-weight:700">✓</span>Bot nunca é pausado por limite</div>
-        <div style="font-size:13px;color:var(--text-muted);display:flex;gap:8px"><span style="color:var(--green);font-weight:700">✓</span>Até 5 números de WhatsApp</div>
-        <div style="font-size:13px;color:var(--text-muted);display:flex;gap:8px"><span style="color:var(--green);font-weight:700">✓</span>Suporte prioritário</div>
+ 
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:16px">
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <div style="font-size:12px;color:var(--text-muted);display:flex;gap:8px"><span style="color:var(--green);font-weight:700">✓</span>Mensagens ilimitadas · Bot nunca pausado</div>
+        <div style="font-size:12px;color:var(--text-muted);display:flex;gap:8px"><span style="color:var(--green);font-weight:700">✓</span>Até 5 números de WhatsApp</div>
+        <div style="font-size:12px;color:var(--text-muted);display:flex;gap:8px"><span style="color:var(--green);font-weight:700">✓</span>Suporte prioritário</div>
       </div>
     </div>
-
+ 
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding:10px 14px;background:rgba(0,212,106,0.05);border:1px solid rgba(0,212,106,0.15);border-radius:8px">
-      <span style="font-size:18px">🏦</span>
+      <span style="font-size:16px">🏦</span>
       <div>
-        <div style="font-size:12px;font-weight:600;color:var(--text)">Pague via PIX ou Cartão</div>
-        <div style="font-size:11px;color:var(--text-muted)">Processado com segurança pelo AbacatePay</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text)">PIX ou Cartão — processado pelo AbacatePay</div>
+        <div style="font-size:11px;color:var(--text-muted)">Você será redirecionado para a página segura de pagamento</div>
       </div>
     </div>
-
+ 
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="Modals.close('checkoutPro')">Cancelar</button>
       <button class="btn btn-primary" id="checkoutBtn" onclick="Billing.startCheckout()">
@@ -662,10 +782,13 @@
       </button>
     </div>
     <p class="text-xs text-dim mt-3" style="text-align:center;line-height:1.6">
-      Você será redirecionado para a página segura do AbacatePay.<br>
-      Após confirmar o pagamento, seu plano é ativado automaticamente.
+      Plano ativado automaticamente após confirmação do pagamento.
     </p>
   </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="JS/main.js"></script>
+
 </body>
 </html>

@@ -113,17 +113,17 @@ function _formatPhone(raw) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PlanLimit = {
-  showBanner(totalMessages, messageLimit) {
-    const existing = UI.el('planLimitBanner')
-    if (existing) return
-    const banner = document.createElement('div')
-    banner.id = 'planLimitBanner'
-    banner.style.cssText = `position:fixed;top:0;left:0;right:0;z-index:999;background:linear-gradient(90deg,#f05060,#c03040);color:#fff;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:14px;font-weight:500;box-shadow:0 2px 16px rgba(240,80,96,0.5);animation:toast-slide 0.3s ease;`
-    banner.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><span style="font-size:20px">🚫</span><span>Você atingiu o limite de <strong>${messageLimit} mensagens</strong> do plano gratuito. Seu bot está <strong>pausado</strong> — faça upgrade para continuar respondendo.</span></div><button onclick="Billing.openCheckout()" style="background:#fff;color:#c03040;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">⚡ Fazer upgrade →</button>`
-    document.body.prepend(banner)
-    const main = document.querySelector('.main')
-    if (main) main.style.paddingTop = '52px'
-  },
+ showBanner(totalMessages, messageLimit) {
+   const existing = UI.el('planLimitBanner')
+   if (existing) return
+   const banner = document.createElement('div')
+   banner.id = 'planLimitBanner'
+   banner.style.cssText = `position:fixed;top:0;left:0;right:0;z-index:999;background:linear-gradient(90deg,#f05060,#c03040);color:#fff;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:14px;font-weight:500;box-shadow:0 2px 16px rgba(240,80,96,0.5);animation:toast-slide 0.3s ease;`
+   banner.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><span style="font-size:20px">🚫</span><span>Você atingiu o limite de <strong>${messageLimit} mensagens</strong> do plano gratuito. Seu bot está <strong>pausado</strong> — faça upgrade para continuar.</span></div><button onclick="Billing.openCheckout()" style="background:#fff;color:#c03040;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">⚡ Fazer upgrade →</button>`
+   document.body.prepend(banner)
+   const main = document.querySelector('.main')
+   if (main) main.style.paddingTop = '52px'
+ },
   hideBanner() {
     const banner = UI.el('planLimitBanner'); if (banner) banner.remove()
     const main = document.querySelector('.main'); if (main) main.style.paddingTop = ''
@@ -150,17 +150,40 @@ const Auth = {
     finally { UI.setLoading('loginBtn', false) }
   },
   async register() {
-    const name = UI.val('r-name'), lastName = UI.val('r-last'), email = UI.val('r-email'), password = UI.val('r-pass'), plan = UI.val('r-plan')
-    if (!name || !email || !password) { toast('Preencha todos os campos obrigatórios', 'error'); return }
-    if (password.length < 8) { toast('Senha deve ter pelo menos 8 caracteres', 'error'); return }
-    UI.setLoading('registerBtn', true)
-    try {
-      const data = await Api.post('/auth/register', { name, lastName, email, password, plan })
-      State.token = data.token; State.user = data.user; Store.save()
-      await Dashboard.enter(); toast(`Conta criada! Bem-vindo, ${data.user.name}! 🎉`, 'success')
-    } catch (err) { toast(err.message, 'error') }
-    finally { UI.setLoading('registerBtn', false) }
-  },
+  const name     = UI.val('r-name')
+  const lastName = UI.val('r-last')
+  const email    = UI.val('r-email')
+  const password = UI.val('r-pass')
+  const planIntent = document.getElementById('r-plan')?.value || 'starter'
+
+  if (!name || !email || !password) { toast('Preencha todos os campos obrigatórios', 'error'); return }
+  if (password.length < 8) { toast('Senha deve ter pelo menos 8 caracteres', 'error'); return }
+
+  UI.setLoading('registerBtn', true)
+  try {
+    const data = await Api.post('/auth/register', { name, lastName, email, password, planIntent })
+    State.token = data.token
+    State.user  = data.user
+    Store.save()
+    await Dashboard.enter()
+    toast(`Conta criada! Bem-vindo, ${data.user.name}! 🎉`, 'success')
+
+    // Se escolheu pro → redireciona para billing e abre checkout
+    if (data.pendingUpgrade) {
+      setTimeout(() => {
+        toast('Complete o pagamento para ativar o Pro ⚡', 'info')
+        setTimeout(() => {
+          UI.view('billing')
+          Billing.openCheckout()
+        }, 800)
+      }, 600)
+    }
+  } catch (err) {
+    toast(err.message, 'error')
+  } finally {
+    UI.setLoading('registerBtn', false)
+  }
+},
   async demoLogin() {
     const suffix = Date.now()
     try {
@@ -225,6 +248,44 @@ const Auth = {
     try { await Api.post('/auth/logout') } catch (_) {}
     Store.clear(); State.bots = []; State.conversations = []; State.stats = null
     UI.page('landing'); toast('Até logo! 👋', 'info')
+  },
+}
+
+const Register = {
+  selectPlan(plan) {
+    // Atualiza o campo hidden
+    document.getElementById('r-plan').value = plan
+ 
+    const starter = document.getElementById('plan-card-starter')
+    const pro     = document.getElementById('plan-card-pro')
+    const checkS  = document.getElementById('plan-check-starter')
+    const checkP  = document.getElementById('plan-check-pro')
+ 
+    if (plan === 'starter') {
+      starter.style.borderColor = 'var(--green)'
+      starter.style.background  = 'rgba(0,212,106,0.06)'
+      checkS.style.background   = 'var(--green)'
+      checkS.style.borderColor  = 'var(--green)'
+      checkS.innerHTML = '<div style="width:6px;height:6px;border-radius:50%;background:#000"></div>'
+ 
+      pro.style.borderColor = 'var(--border)'
+      pro.style.background  = 'var(--surface2)'
+      checkP.style.background  = 'transparent'
+      checkP.style.borderColor = 'var(--border2)'
+      checkP.innerHTML = ''
+    } else {
+      pro.style.borderColor = 'var(--green)'
+      pro.style.background  = 'linear-gradient(160deg,rgba(0,212,106,0.07),var(--surface))'
+      checkP.style.background  = 'var(--green)'
+      checkP.style.borderColor = 'var(--green)'
+      checkP.innerHTML = '<div style="width:6px;height:6px;border-radius:50%;background:#000"></div>'
+ 
+      starter.style.borderColor = 'var(--border)'
+      starter.style.background  = 'var(--surface2)'
+      checkS.style.background   = 'transparent'
+      checkS.style.borderColor  = 'var(--border2)'
+      checkS.innerHTML = ''
+    }
   },
 }
 
@@ -718,14 +779,18 @@ const Billing = {
     const s = State.stats, plan = u.plan ?? 'starter'
     const planLabels = { starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' }
     const planPills  = { starter: 'GRÁTIS',  pro: 'PRO', enterprise: 'ENTERPRISE' }
-    const msgs = s?.totalMessages ?? 0, limit = s?.messageLimit ?? null
-    const remaining = s?.remainingMessages, percent = s?.usagePercent ?? 0
+    const msgs       = s?.totalMessages ?? 0
+    const limit      = s?.messageLimit ?? null
+    const remaining  = s?.remainingMessages
+    const percent    = s?.usagePercent ?? 0
     const limitReached = s?.limitReached ?? false
  
+    // Plano e pill
     UI.el('bilPlan').textContent = planLabels[plan]
     const pill = UI.el('bilPill')
     if (pill) { pill.textContent = planPills[plan]; pill.className = `plan-pill ${plan}` }
  
+    // Uso
     const usageEl = UI.el('bilUsage')
     if (usageEl) usageEl.textContent = `${msgs.toLocaleString('pt-BR')} / ${limit === null ? '∞' : limit.toLocaleString('pt-BR')}`
  
@@ -735,6 +800,7 @@ const Billing = {
       barEl.style.background = limitReached ? 'var(--red)' : percent >= 80 ? 'var(--yellow)' : 'var(--green)'
     }
  
+    // Alerta de uso
     const usageAlertEl = UI.el('bilUsageAlert')
     if (usageAlertEl) {
       if (limitReached) {
@@ -742,65 +808,69 @@ const Billing = {
         usageAlertEl.innerHTML = `<div style="background:rgba(240,80,96,0.08);border:1px solid rgba(240,80,96,0.3);border-left:4px solid var(--red);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--text-muted)">🚫 <strong style="color:var(--red)">Limite atingido!</strong> Seu bot está pausado. Faça upgrade para continuar respondendo.</div>`
       } else if (percent >= 80 && limit !== null) {
         usageAlertEl.style.display = ''
-        usageAlertEl.innerHTML = `<div style="background:rgba(240,179,64,0.08);border:1px solid rgba(240,179,64,0.3);border-left:4px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--text-muted)">⚠️ <strong style="color:var(--yellow)">Atenção:</strong> Você usou ${percent}% do seu limite mensal. Restam <strong style="color:var(--text)">${remaining?.toLocaleString('pt-BR') ?? 0} mensagens</strong>.</div>`
+        usageAlertEl.innerHTML = `<div style="background:rgba(240,179,64,0.08);border:1px solid rgba(240,179,64,0.3);border-left:4px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--text-muted)">⚠️ <strong style="color:var(--yellow)">Atenção:</strong> Você usou ${percent}% do seu limite. Restam <strong style="color:var(--text)">${remaining?.toLocaleString('pt-BR') ?? 0} mensagens</strong>.</div>`
       } else {
         usageAlertEl.style.display = 'none'
       }
     }
  
-    const upgradeBtn = UI.el('bilUpgradeBtn')
-    if (upgradeBtn) upgradeBtn.style.display = (plan === 'pro' || plan === 'enterprise') ? 'none' : ''
+    // Mostrar seção de upgrade ou badge de pro
+    const upgradeSection = UI.el('bilUpgradeSection')
+    const proBadge       = UI.el('bilProBadge')
+    if (upgradeSection) upgradeSection.style.display = (plan === 'pro' || plan === 'enterprise') ? 'none' : ''
+    if (proBadge)       proBadge.style.display       = (plan === 'pro' || plan === 'enterprise') ? '' : 'none'
  
-    // Carrega histórico de cobranças
+    // Carrega histórico
     Billing.loadHistory()
   },
  
   async loadHistory() {
     const container = UI.el('bilInvoices'); if (!container) return
     try {
-      const data = await Api.get('/billing/status')
+      const data     = await Api.get('/billing/status')
       const billings = data.billings ?? []
       if (!billings.length) {
-        container.innerHTML = `<div class="empty"><div class="empty-icon">🧾</div><h3>Nenhuma cobrança ainda</h3><p>Suas cobranças aparecerão aqui após o primeiro pagamento</p></div>`
+        container.innerHTML = `<tr><td colspan="5"><div class="empty"><div class="empty-icon">🧾</div><h3>Nenhuma cobrança ainda</h3><p>Suas cobranças aparecerão aqui após o primeiro pagamento</p></div></td></tr>`
         return
       }
       const statusLabel = {
-        PENDING:   { label: 'Pendente',   cls: 'badge-yellow' },
-        PAID:      { label: 'Pago',       cls: 'badge-green'  },
-        EXPIRED:   { label: 'Expirado',   cls: 'badge-red'    },
-        CANCELLED: { label: 'Cancelado',  cls: 'badge-red'    },
+        PENDING:   { label: 'Pendente',  cls: 'badge-yellow' },
+        PAID:      { label: 'Pago',      cls: 'badge-green'  },
+        EXPIRED:   { label: 'Expirado',  cls: 'badge-red'    },
+        CANCELLED: { label: 'Cancelado', cls: 'badge-red'    },
       }
-      container.innerHTML = billings.map((b) => {
-        const st = statusLabel[b.status] ?? { label: b.status, cls: 'badge-yellow' }
-        const date = new Date(b.createdAt).toLocaleDateString('pt-BR')
+      container.innerHTML = billings.map(b => {
+        const st     = statusLabel[b.status] ?? { label: b.status, cls: 'badge-yellow' }
+        const date   = new Date(b.createdAt).toLocaleDateString('pt-BR')
         const amount = (b.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
         return `<tr>
-          <td class="mono text-sm">${b.id}</td>
+          <td class="mono text-sm" style="font-size:11px;color:var(--text-dim)">${b.id}</td>
           <td>${date}</td>
           <td>${amount}</td>
           <td><span class="badge ${st.cls}">${st.label}</span></td>
           <td>${b.status === 'PENDING' ? `<a href="${b.url}" target="_blank" class="btn btn-ghost btn-sm">Pagar →</a>` : '—'}</td>
         </tr>`
       }).join('')
-    } catch (err) {
+    } catch (_) {
       container.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:24px">Não foi possível carregar o histórico</td></tr>`
     }
   },
  
-  // Abre modal de checkout do AbacatePay
   openCheckout() {
+    // Limpa campos ao abrir
+    const taxId = UI.el('checkoutTaxId')
+    const phone = UI.el('checkoutPhone')
+    if (taxId) taxId.value = ''
+    if (phone) phone.value = ''
     Modals.open('checkoutPro')
   },
  
-  // Chama a API e redireciona para a página de pagamento do AbacatePay
   async startCheckout() {
     const taxId     = UI.val('checkoutTaxId')
     const cellphone = UI.val('checkoutPhone')
  
     const cleanTaxId = taxId.replace(/\D/g, '')
-    if (cleanTaxId.length < 11) {
-      toast('Informe um CPF ou CNPJ válido', 'error'); return
-    }
+    if (cleanTaxId.length < 11) { toast('Informe um CPF ou CNPJ válido', 'error'); return }
  
     UI.setLoading('checkoutBtn', true)
     try {
@@ -808,10 +878,9 @@ const Billing = {
         taxId:     taxId.trim(),
         cellphone: cellphone || undefined,
       })
-      // Abre a página de pagamento do AbacatePay em nova aba
       window.open(data.url, '_blank', 'noopener,noreferrer')
       Modals.close('checkoutPro')
-      toast('Página de pagamento aberta! Complete o pagamento para ativar o Pro. 🎉', 'info')
+      toast('Página de pagamento aberta! Seu plano é ativado automaticamente após o pagamento. 🎉', 'info')
     } catch (err) {
       toast(err.message, 'error')
     } finally {
