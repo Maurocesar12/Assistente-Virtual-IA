@@ -17,6 +17,16 @@ model User {
   apiKeys             String   @default("{}")
   mustChangePassword  Boolean  @default(false)
 
+  // ── Assinatura mensal ──────────────────────────────────────────────────────
+  // subscriptionId: ID da assinatura no AbacatePay (ex: "sub_abc123")
+  subscriptionId        String?
+  // subscriptionStatus: none | active | past_due | expired | cancelled
+  subscriptionStatus    String   @default("none")
+  // planExpiresAt: quando o plano Pro expira (30 dias após o pagamento)
+  planExpiresAt         DateTime?
+  // renewalReminderSentAt: quando o email de aviso de 5 dias foi enviado
+  renewalReminderSentAt DateTime?
+
   bots                Bot[]
   conversations       Conversation[]
   passwordResetTokens PasswordResetToken[]
@@ -40,7 +50,6 @@ model Bot {
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversations Conversation[]
 
-  // [SEC-8] Índice em userId — queries de listagem de bots por usuário
   @@index([userId])
 
   createdAt DateTime @default(now())
@@ -66,8 +75,6 @@ model Conversation {
   messages Message[]
 
   @@unique([botId, contactPhone])
-
-  // [SEC-8] Índice em userId — chamado em toda requisição autenticada
   @@index([userId])
   @@index([lastMessageAt])
 
@@ -83,8 +90,6 @@ model Message {
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  // [SEC-8] Índices — getUserStats faz COUNT com JOIN em Message
-  // Sem estes, cada contagem de limite de plano faz full table scan
   @@index([conversationId])
   @@index([role])
 
@@ -101,7 +106,6 @@ model PasswordResetToken {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // [SEC-8] Índice composto — findPendingResetTokensForUser chamado em todo login
   @@index([userId, usedAt])
 
   createdAt DateTime @default(now())

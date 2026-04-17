@@ -26,6 +26,10 @@ export interface User {
   plan:               Plan
   apiKeys:            ApiKeys
   mustChangePassword: boolean
+  subscriptionId?:        string | null
+  subscriptionStatus:     string    // 'none' | 'active' | 'past_due' | 'expired' | 'cancelled'
+  planExpiresAt?:         Date | null
+  renewalReminderSentAt?: Date | null
   createdAt:          Date
   updatedAt:          Date
 }
@@ -325,6 +329,10 @@ class Database {
       tokensUsed:         messageCount * 142,
     }
   }
+    async findUsersByPlan(plan: string): Promise<User[]> {
+    const users = await prisma.user.findMany({ where: { plan } })
+    return users.map((u: any) => this.parseUser(u))
+  }
 
   // ── Helpers privados ───────────────────────────────────────────────────────
 
@@ -339,10 +347,14 @@ class Database {
     }
 
     return {
-      ...u,
-      plan:               u.plan as Plan,
-      mustChangePassword: u.mustChangePassword ?? false,
-      apiKeys,
+    ...u,
+    plan:                   u.plan as Plan,
+    mustChangePassword:     u.mustChangePassword ?? false,
+    subscriptionId:         u.subscriptionId     ?? null,
+    subscriptionStatus:     u.subscriptionStatus ?? 'none',
+    planExpiresAt:          u.planExpiresAt       ?? null,
+    renewalReminderSentAt:  u.renewalReminderSentAt ?? null,
+    apiKeys,
     }
   }
 
@@ -387,4 +399,5 @@ export const db = {
   createMessage:                 instance.createMessage.bind(instance),
   findMessagesByConversationId:  instance.findMessagesByConversationId.bind(instance),
   getUserStats:                  instance.getUserStats.bind(instance),
+  findUsersByPlan: instance.findUsersByPlan.bind(instance),
 }

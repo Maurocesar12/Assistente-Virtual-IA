@@ -434,7 +434,7 @@
 ══════════════════════════════════════════════════════ -->
 <div id="view-billing" class="view" style="max-width:700px">
  
-  <!-- ── Plano atual + uso ── -->
+  <!-- Plano atual + barra de uso (starter) OU info da assinatura (pro) -->
   <div class="card mb-4">
     <div class="card-body">
       <div class="flex-between mb-6">
@@ -444,7 +444,26 @@
         </div>
         <span class="plan-pill starter" id="bilPill">GRÁTIS</span>
       </div>
-      <div>
+ 
+      <!-- Info de assinatura Pro (visível só pro) -->
+      <div id="bilSubInfo" style="display:none;margin-bottom:16px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px">
+            <div class="text-xs text-dim mb-1">Status</div>
+            <div style="font-size:14px;font-weight:600" id="bilSubStatus">—</div>
+          </div>
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px">
+            <div class="text-xs text-dim mb-1">Próxima renovação</div>
+            <div style="font-size:14px;font-weight:600" id="bilSubExpiry">—</div>
+          </div>
+        </div>
+      </div>
+ 
+      <!-- Aviso de vencimento próximo / expirado -->
+      <div id="bilExpiryAlert" style="display:none"></div>
+ 
+      <!-- Barra de uso (starter) -->
+      <div id="bilUsageSection">
         <div class="flex-between text-xs text-muted mb-2">
           <span>Mensagens usadas este mês</span>
           <span id="bilUsage">0 / 50</span>
@@ -454,92 +473,66 @@
         </div>
         <div id="bilUsageAlert" style="display:none"></div>
       </div>
+ 
+      <!-- Botão cancelar (pro ativo) -->
+      <div id="bilCancelSection" style="display:none;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+        <div class="flex-between">
+          <div>
+            <div style="font-size:13px;font-weight:600">Cancelar assinatura</div>
+            <div class="text-xs text-muted mt-1">Você mantém o acesso Pro até o vencimento</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(240,80,96,0.3)"
+                  onclick="Billing.cancelSubscription()">Cancelar →</button>
+        </div>
+      </div>
     </div>
   </div>
  
-  <!-- ── Comparação de planos (visível só para starter) ── -->
+  <!-- Seção de upgrade (só starter) -->
   <div id="bilUpgradeSection" class="card mb-4">
     <div class="card-header">
       <h3>Faça upgrade para Pro</h3>
-      <span class="badge badge-yellow">⚡ Oferta disponível</span>
+      <span class="badge badge-yellow">⚡ R$9,99/mês</span>
     </div>
     <div class="card-body" style="padding-top:16px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
- 
-        <!-- Starter atual -->
-        <div style="padding:18px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r)">
-          <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">Atual — Starter</div>
-          <div style="font-family:var(--font-head);font-size:28px;font-weight:800;letter-spacing:-1px;margin-bottom:14px">
-            R$0<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/mês</span>
-          </div>
-          <ul style="list-style:none;display:flex;flex-direction:column;gap:8px">
-            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--text-dim)">✕</span>50 mensagens/mês</li>
-            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--text-dim)">✕</span>Bot pausado no limite</li>
-            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--text-dim)">✕</span>1 número de WhatsApp</li>
+        <div style="padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r)">
+          <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">Atual — Starter</div>
+          <ul style="list-style:none;display:flex;flex-direction:column;gap:7px">
+            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--text-dim)">✕</span>50 mensagens/mês</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--text-dim)">✕</span>Bot pausado no limite</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--text-dim)">✕</span>1 número de WhatsApp</li>
           </ul>
         </div>
- 
-        <!-- Pro -->
-        <div style="padding:18px;background:linear-gradient(160deg,rgba(0,212,106,0.07),var(--surface));border:1px solid var(--green);border-radius:var(--r);position:relative">
-          <div style="position:absolute;top:-1px;right:14px;background:var(--green);color:#000;font-size:9px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:0 0 7px 7px">RECOMENDADO</div>
-          <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--green);margin-bottom:10px">Pro</div>
-          <div style="font-family:var(--font-head);font-size:28px;font-weight:800;letter-spacing:-1px;margin-bottom:14px">
-            R$9,99<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/mês</span>
-          </div>
-          <ul style="list-style:none;display:flex;flex-direction:column;gap:8px">
-            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Mensagens ilimitadas</li>
-            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Bot nunca é pausado</li>
-            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>5 números de WhatsApp</li>
-            <li style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Suporte prioritário</li>
+        <div style="padding:16px;background:linear-gradient(160deg,rgba(0,212,106,0.07),var(--surface));border:1px solid var(--green);border-radius:var(--r);position:relative">
+          <div style="position:absolute;top:-1px;right:14px;background:var(--green);color:#000;font-size:9px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:0 0 7px 7px">PRO</div>
+          <ul style="list-style:none;display:flex;flex-direction:column;gap:7px;margin-top:4px">
+            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Mensagens ilimitadas</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Bot nunca pausado</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>5 números de WhatsApp</li>
           </ul>
         </div>
       </div>
- 
       <button class="btn btn-primary btn-full btn-lg" id="bilUpgradeBtn" onclick="Billing.openCheckout()">
         ⚡ Assinar Pro por R$9,99/mês →
       </button>
-      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px">
-        <span style="font-size:18px">🏦</span>
-        <p class="text-xs text-dim" style="line-height:1.6">Pague via PIX ou Cartão · Sem contrato · Cancele quando quiser</p>
-      </div>
+      <p class="text-xs text-dim mt-3" style="text-align:center">PIX ou Cartão · Sem contrato · Cancele quando quiser</p>
     </div>
   </div>
  
-  <!-- ── Badge de sucesso (visível só para pro/enterprise) ── -->
-  <div id="bilProBadge" style="display:none" class="card mb-4">
-    <div class="card-body">
-      <div style="display:flex;align-items:center;gap:16px">
-        <div style="width:48px;height:48px;border-radius:50%;background:rgba(0,212,106,0.12);border:1px solid rgba(0,212,106,0.25);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">✅</div>
-        <div>
-          <div style="font-size:15px;font-weight:700;margin-bottom:3px">Plano Pro ativo</div>
-          <div style="font-size:13px;color:var(--text-muted)">Você tem mensagens ilimitadas e acesso completo a todos os recursos.</div>
-        </div>
-      </div>
-    </div>
-  </div>
- 
-  <!-- ── Histórico de cobranças ── -->
+  <!-- Histórico -->
   <div class="card">
     <div class="card-header"><h3>Histórico de cobranças</h3></div>
     <div style="overflow-x:auto">
       <table class="table" style="min-width:480px">
-        <thead>
-          <tr>
-            <th>ID</th><th>Data</th><th>Valor</th><th>Status</th><th>Ação</th>
-          </tr>
-        </thead>
+        <thead><tr><th>ID</th><th>Data</th><th>Valor</th><th>Status</th><th>Ação</th></tr></thead>
         <tbody id="bilInvoices">
-          <tr><td colspan="5">
-            <div class="empty">
-              <div class="empty-icon">🧾</div>
-              <h3>Nenhuma cobrança ainda</h3>
-              <p>Suas cobranças aparecerão após o primeiro pagamento</p>
-            </div>
-          </td></tr>
+          <tr><td colspan="5"><div class="empty"><div class="empty-icon">🧾</div><h3>Nenhuma cobrança ainda</h3></div></td></tr>
         </tbody>
       </table>
     </div>
   </div>
+</div>
  
 </div>
 
