@@ -60,6 +60,7 @@ authRouter.post('/register', validate(registerSchema), async (req, res, next) =>
       plan: 'starter',
       apiKeys: {},
       mustChangePassword: false,
+      subscriptionStatus: ''
     })
 
     const token = signToken(user)
