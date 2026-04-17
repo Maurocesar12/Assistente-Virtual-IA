@@ -1,11 +1,11 @@
 /**
- * index.ts — atualizado para iniciar o scheduler de assinaturas
- * Substitua src/index.ts pelo conteúdo abaixo
+ * index.ts — atualizado
+ * Substitua src/index.ts pelo conteúdo abaixo.
  */
 
-import { createApp }                   from './app.js'
-import { env }                         from './config/env.js'
-import { startSubscriptionScheduler }  from './routes/billing.js'
+import { createApp }              from './app.js'
+import { env }                    from './config/env.js'
+import { startBillingScheduler }  from './routes/billing.js'
 
 if (typeof (global as any).gc !== 'function') {
   console.warn(
@@ -26,6 +26,6 @@ app.listen(env.PORT, () => {
   console.log(`  🧠  GC manual: ${typeof (global as any).gc === 'function' ? '✅ ativo' : '❌ inativo'}`)
   console.log('')
 
-  // Inicia o scheduler de verificação de assinaturas
-  startSubscriptionScheduler()
+  // Inicia verificação de vencimentos de assinaturas (roda a cada 1h)
+  startBillingScheduler()
 })

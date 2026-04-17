@@ -1,34 +1,35 @@
 /**
- * routes/billing.ts — Assinatura mensal com AbacatePay
+ * routes/billing.ts — Cobrança manual a cada 30 dias
  * ─────────────────────────────────────────────────────────────────────────────
- * Rotas:
- *   POST /api/billing/checkout        → cria assinatura MONTHLY e retorna URL
- *   POST /api/billing/webhook         → processa eventos do AbacatePay
- *   GET  /api/billing/status          → plano + status + cobranças
- *   POST /api/billing/cancel          → cancela assinatura ativa
- *
- * Scheduler (iniciado em startSubscriptionScheduler):
- *   - Roda a cada hora
- *   - Expira contas com planExpiresAt no passado (status → expired, plan → starter)
- *   - Envia email de aviso 5 dias antes do vencimento (1 vez por ciclo)
+ * Fluxo:
+ *   1. Usuário clica "Assinar Pro" → POST /billing/checkout
+ *      → Cria cobrança ONE_TIME no AbacatePay → retorna URL de pagamento
+ *   2. Usuário paga → AbacatePay dispara webhook billing.paid
+ *      → plan = 'pro', planExpiresAt = hoje + 30 dias, status = 'active'
+ *   3. Scheduler roda a cada hora:
+ *      → 5 dias antes: email + registra para exibir banner/toast
+ *      → No vencimento: bots pausados, status = 'past_due' (dados preservados)
+ *   4. Usuário renova → mesmo fluxo do passo 1-2
+ *      → planExpiresAt estendido +30 dias, banner some
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { Router } from 'express'
-import { z } from 'zod'
-import crypto from 'crypto'
-import { db } from '../models/database.js'
-import { authenticate } from '../middleware/authenticate.js'
-import { validate } from '../middleware/validate.js'
+import { Router }         from 'express'
+import { z }              from 'zod'
+import crypto             from 'crypto'
+import { db }             from '../models/database.js'
+import { authenticate }   from '../middleware/authenticate.js'
+import { validate }       from '../middleware/validate.js'
 import { ApiError, ok, created } from '../utils/http.js'
-import { env } from '../config/env.js'
-import { sendSubscriptionEmail } from '../service/subscriptionEmail.js'
+import { env }            from '../config/env.js'
+import { sendBillingEmail } from '../service/subscriptionEmail.js'
+import { whatsappManager } from '../service/whatsapp.js'
 
 export const billingRouter = Router()
 
 // ─── AbacatePay helper ────────────────────────────────────────────────────────
 
-const ABACATE_API = 'https://api.abacatepay.com/v2'
+const ABACATE_API = 'https://api.abacatepay.com'
 
 async function abacateRequest<T>(
   method: 'GET' | 'POST',
@@ -38,133 +39,70 @@ async function abacateRequest<T>(
   const res = await fetch(`${ABACATE_API}${path}`, {
     method,
     headers: {
-      'accept': 'application/json',
-      'content-type': 'application/json',
+      'accept':        'application/json',
+      'content-type':  'application/json',
       'authorization': `Bearer ${env.ABACATEPAY_API_KEY}`,
     },
     body: body ? JSON.stringify(body) : undefined,
   })
-  const json = await res.json() as { data: T; error: string | null; success?: boolean }
+  const json = await res.json() as { data: T; error: string | null }
   if (!res.ok || json.error) {
     throw new Error(`AbacatePay [${res.status}]: ${JSON.stringify(json.error)}`)
   }
   return json.data
 }
 
-// ─── Garantir que o produto Pro existe no catálogo AbacatePay ─────────────────
-// Criamos uma vez e reutilizamos o externalId em todas as assinaturas
-
-const PRO_PRODUCT_EXTERNAL_ID = 'zapiens-pro-monthly-v1'
-
-let _cachedProductId: string | null = null
-
-async function ensureProProduct(): Promise<string> {
-  if (_cachedProductId) return _cachedProductId
-
-  // Tenta buscar o produto já existente
-  try {
-    const list = await abacateRequest<{ externalId: string; id: string }[]>('GET', '/products/list')
-    const existing = list.find(p => p.externalId === PRO_PRODUCT_EXTERNAL_ID)
-    if (existing) { _cachedProductId = existing.id; return existing.id }
-  } catch (_) {}
-
-  // Cria se não existir
-  const product = await abacateRequest<{ id: string }>('POST', '/products/create', {
-    externalId:  PRO_PRODUCT_EXTERNAL_ID,
-    name:        'Zapiens Pro — Mensalidade',
-    description: 'Mensagens ilimitadas · 5 números de WhatsApp · Suporte prioritário',
-    price:       999,   // R$ 9,99 em centavos
-    currency:    'BRL',
-    cycle:       'MONTHLY',
-  })
-  _cachedProductId = product.id
-  return product.id
-}
-
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const checkoutSchema = z.object({
-  taxId:     z.string().min(11).max(18),
+  taxId:     z.string().min(11, 'CPF/CNPJ inválido').max(18),
   cellphone: z.string().optional(),
 })
 
 // ─── POST /billing/checkout ───────────────────────────────────────────────────
+// Gera uma cobrança ONE_TIME de R$9,99.
+// Funciona tanto para primeira assinatura quanto para renovações manuais.
 
 billingRouter.post('/checkout', authenticate, validate(checkoutSchema), async (req, res, next) => {
   try {
     const user = await db.findUserById(req.userId)
     if (!user) throw ApiError.notFound('Usuário não encontrado')
 
-    if (user.plan === 'pro' && user.subscriptionStatus === 'active') {
-      throw ApiError.badRequest('Você já possui uma assinatura Pro ativa.', 'ALREADY_PRO')
-    }
-
     const { taxId, cellphone } = req.body
     const frontendUrl = env.FRONTEND_URL.replace(/\/$/, '')
 
-    const productId = await ensureProProduct()
-
-    // Cria (ou recupera) o customer no AbacatePay
-    const customer = await abacateRequest<{ id: string }>('POST', '/customers/create', {
-      name:     `${user.name} ${user.lastName}`.trim(),
-      email:    user.email,
-      taxId,
-      ...(cellphone ? { cellphone } : {}),
-    })
-
-    // Cria a assinatura MONTHLY
-    const subscription = await abacateRequest<{ id: string; url: string }>('POST', '/subscriptions/create', {
-      items: [{ id: productId, quantity: 1 }],
-      methods:       ['PIX', 'CARD'],
-      customerId:    customer.id,
+    const billing = await abacateRequest<{ id: string; url: string }>('POST', '/v1/billing/create', {
+      frequency: 'ONE_TIME',
+      methods:   ['PIX', 'CARD'],
+      products: [{
+        externalId:  'zapiens-pro-monthly',
+        name:        'Zapiens Pro — 30 dias',
+        description: 'Mensagens ilimitadas · 5 números de WhatsApp · Suporte prioritário',
+        quantity:    1,
+        price:       999, // R$ 9,99 em centavos
+      }],
       returnUrl:     `${frontendUrl}/#billing`,
       completionUrl: `${frontendUrl}/#billing?payment=success`,
+      customer: {
+        name:     `${user.name} ${user.lastName}`.trim(),
+        email:    user.email,
+        taxId,
+        ...(cellphone ? { cellphone } : {}),
+      },
+      // userId nos metadados para identificar no webhook
       metadata: { userId: user.id },
     })
 
-    console.log(`[Billing] Assinatura criada para ${user.email} | sub_id=${subscription.id}`)
-
-    // Salva o ID da assinatura no usuário para rastreamento
-    await db.updateUser(user.id, {
-      subscriptionId:     subscription.id,
-      subscriptionStatus: 'pending',
-    } as any)
-
-    return created(res, { url: subscription.url, subscriptionId: subscription.id })
-  } catch (err) {
-    next(err)
-  }
-})
-
-// ─── POST /billing/cancel ─────────────────────────────────────────────────────
-
-billingRouter.post('/cancel', authenticate, async (req, res, next) => {
-  try {
-    const user = await db.findUserById(req.userId)
-    if (!user) throw ApiError.notFound('Usuário não encontrado')
-
-    const subId = (user as any).subscriptionId
-    if (!subId) throw ApiError.badRequest('Nenhuma assinatura ativa encontrada.', 'NO_SUBSCRIPTION')
-
-    await abacateRequest('POST', '/subscriptions/cancel', { id: subId })
-
-    await db.updateUser(user.id, {
-      subscriptionStatus: 'cancelled',
-    } as any)
-
-    console.log(`[Billing] Assinatura cancelada para ${user.email} | sub_id=${subId}`)
-    return ok(res, { message: 'Assinatura cancelada com sucesso.' })
+    console.log(`[Billing] Cobrança criada | userId=${user.id} | billing_id=${billing.id}`)
+    return created(res, { url: billing.url, billingId: billing.id })
   } catch (err) {
     next(err)
   }
 })
 
 // ─── POST /billing/webhook ────────────────────────────────────────────────────
-// Eventos tratados:
-//   subscription.completed  → primeiro pagamento — ativa o pro + define expiração
-//   subscription.renewed    → renovação mensal — estende +30 dias
-//   subscription.cancelled  → usuário cancelou no painel AbacatePay
-//   subscription.expired (fallback) → trata como past_due
+// Evento esperado: BILLING_PAID (ou billing.paid)
+// Ativa o Pro por 30 dias e reseta o estado de vencimento.
 
 billingRouter.post('/webhook', async (req, res) => {
   try {
@@ -172,66 +110,90 @@ billingRouter.post('/webhook', async (req, res) => {
     const secret = env.ABACATEPAY_WEBHOOK_SECRET
     if (secret) {
       const sig = req.headers['x-abacatepay-signature'] as string | undefined
-      if (!sig) { console.warn('[Webhook] Sem assinatura'); return res.status(401).json({ ok: false }) }
-      const expected = crypto.createHmac('sha256', secret).update(JSON.stringify(req.body)).digest('hex')
-      const valid = crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
-      if (!valid) { console.warn('[Webhook] Assinatura inválida'); return res.status(401).json({ ok: false }) }
+      if (!sig) {
+        console.warn('[Webhook] Sem assinatura')
+        return res.status(401).json({ ok: false })
+      }
+      const expected = crypto
+        .createHmac('sha256', secret)
+        .update(JSON.stringify(req.body))
+        .digest('hex')
+      const valid = crypto.timingSafeEqual(
+        Buffer.from(sig.padEnd(64, '0')),
+        Buffer.from(expected.padEnd(64, '0')),
+      )
+      if (!valid) {
+        console.warn('[Webhook] Assinatura inválida')
+        return res.status(401).json({ ok: false })
+      }
     }
 
     const { event, data } = req.body as {
       event: string
-      data: { subscription?: { id: string; status: string; metadata?: { userId?: string } } }
+      data:  { billing?: { id: string; status: string; metadata?: { userId?: string } } }
     }
 
-    console.log(`[Webhook] ${event}`)
+    console.log(`[Webhook] Evento: ${event}`)
 
-    const sub = data?.subscription
-    if (!sub) return res.status(200).json({ received: true })
+    if (event !== 'BILLING_PAID' && event !== 'billing.paid') {
+      return res.status(200).json({ received: true })
+    }
 
-    const userId = sub.metadata?.userId
+    const billing = data?.billing
+    if (!billing) return res.status(200).json({ received: true })
+
+    const userId = billing.metadata?.userId
     if (!userId) {
-      console.warn('[Webhook] userId ausente na assinatura:', sub.id)
+      console.warn('[Webhook] userId ausente nos metadados:', billing.id)
       return res.status(200).json({ received: true })
     }
 
     const user = await db.findUserById(userId)
-    if (!user) { console.warn('[Webhook] Usuário não encontrado:', userId); return res.status(200).json({ received: true }) }
-
-    const now = new Date()
-    const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) // +30 dias
-
-    if (event === 'subscription.completed') {
-      // Primeiro pagamento — ativa Pro
-      await db.updateUser(userId, {
-        plan:                 'pro',
-        subscriptionId:       sub.id,
-        subscriptionStatus:   'active',
-        planExpiresAt:        expiresAt,
-        renewalReminderSentAt: null,
-      } as any)
-      await sendSubscriptionEmail('activated', user.email, user.name, expiresAt)
-      console.log(`[Billing] ✅ Pro ativado para ${user.email} | expira ${expiresAt.toLocaleDateString('pt-BR')}`)
-
-    } else if (event === 'subscription.renewed') {
-      // Renovação mensal — estende +30 dias a partir de hoje
-      await db.updateUser(userId, {
-        plan:                 'pro',
-        subscriptionStatus:   'active',
-        planExpiresAt:        expiresAt,
-        renewalReminderSentAt: null,
-      } as any)
-      await sendSubscriptionEmail('renewed', user.email, user.name, expiresAt)
-      console.log(`[Billing] 🔄 Pro renovado para ${user.email} | novo venc. ${expiresAt.toLocaleDateString('pt-BR')}`)
-
-    } else if (event === 'subscription.cancelled') {
-      // Usuário cancelou — mantém Pro até planExpiresAt, não renova mais
-      await db.updateUser(userId, {
-        subscriptionStatus: 'cancelled',
-      } as any)
-      const expDate = (user as any).planExpiresAt
-      await sendSubscriptionEmail('cancelled', user.email, user.name, expDate)
-      console.log(`[Billing] ❌ Assinatura cancelada para ${user.email}`)
+    if (!user) {
+      console.warn('[Webhook] Usuário não encontrado:', userId)
+      return res.status(200).json({ received: true })
     }
+
+    // Calcula nova data de expiração:
+    // Se já tem Pro ativo e o usuário está renovando antes do vencimento,
+    // estende a partir da data atual de expiração (não perde dias pagos).
+    const currentExpiry = (user as any).planExpiresAt
+    const baseDate = (currentExpiry && new Date(currentExpiry) > new Date())
+      ? new Date(currentExpiry)
+      : new Date()
+    const newExpiry = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000)
+
+    const wasExpired = (user as any).subscriptionStatus === 'past_due'
+
+    await db.updateUser(userId, {
+      plan:                  'pro',
+      subscriptionStatus:    'active',
+      planExpiresAt:         newExpiry,
+      renewalReminderSentAt: null, // reseta para próximo ciclo
+    } as any)
+
+    // Se estava pausado por vencimento, reativa os bots
+    if (wasExpired) {
+      const bots = await db.findBotsByUserId(userId)
+      for (const bot of bots) {
+        if (!bot.isConnected) continue
+        await db.updateBot(bot.id, { isActive: true })
+      }
+      console.log(`[Billing] Bots reativados para ${user.email}`)
+    }
+
+    const isRenewal = !!currentExpiry
+    await sendBillingEmail(
+      isRenewal ? 'renewed' : 'activated',
+      user.email,
+      user.name,
+      newExpiry,
+    )
+
+    console.log(
+      `[Billing] ✅ Pro ${isRenewal ? 'renovado' : 'ativado'} para ${user.email} | ` +
+      `expira ${newExpiry.toLocaleDateString('pt-BR')}`,
+    )
 
     return res.status(200).json({ received: true })
   } catch (err) {
@@ -241,6 +203,7 @@ billingRouter.post('/webhook', async (req, res) => {
 })
 
 // ─── GET /billing/status ──────────────────────────────────────────────────────
+// Retorna dados de assinatura usados pelo front-end para exibir banners/toasts.
 
 billingRouter.get('/status', authenticate, async (req, res, next) => {
   try {
@@ -249,37 +212,33 @@ billingRouter.get('/status', authenticate, async (req, res, next) => {
 
     const u = user as any
 
-    let billings: any[] = []
-    if (u.subscriptionId) {
-      try {
-        const list = await abacateRequest<any[]>('GET', '/subscriptions/list')
-        billings = list
-          .filter((s: any) => s.metadata?.userId === user.id)
-          .map((s: any) => ({
-            id:        s.id,
-            amount:    999,
-            status:    s.status,
-            createdAt: s.createdAt,
-            url:       s.url ?? null,
-          }))
-          .slice(0, 10)
-      } catch (err) {
-        console.warn('[Billing] Falha ao buscar assinaturas:', err)
-      }
-    }
-
-    // Dias restantes até vencimento
+    // Dias restantes calculados no servidor (fonte única de verdade)
     let daysUntilExpiry: number | null = null
     if (u.planExpiresAt) {
       const msLeft = new Date(u.planExpiresAt).getTime() - Date.now()
       daysUntilExpiry = Math.ceil(msLeft / (1000 * 60 * 60 * 24))
     }
 
+    // Histórico de cobranças do AbacatePay (melhor esforço)
+    let billings: any[] = []
+    try {
+      const result = await abacateRequest<any[]>('GET', '/v1/billing/list')
+      billings = (result as any[])
+        .filter((b: any) => b.metadata?.userId === user.id)
+        .map((b: any) => ({
+          id:        b.id,
+          amount:    b.amount,
+          status:    b.status,
+          createdAt: b.createdAt,
+          url:       b.url ?? null,
+        }))
+        .slice(0, 10)
+    } catch (_) {}
+
     return ok(res, {
       plan:               user.plan,
-      subscriptionStatus: u.subscriptionStatus ?? 'none',
-      subscriptionId:     u.subscriptionId ?? null,
-      planExpiresAt:      u.planExpiresAt ?? null,
+      subscriptionStatus: u.subscriptionStatus  ?? 'none',
+      planExpiresAt:      u.planExpiresAt        ?? null,
       daysUntilExpiry,
       billings,
     })
@@ -289,56 +248,67 @@ billingRouter.get('/status', authenticate, async (req, res, next) => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SCHEDULER — roda a cada hora, verifica vencimentos e envia avisos
-// Importe e chame startSubscriptionScheduler() no src/index.ts
+// SCHEDULER — verifica vencimentos, pausa bots, envia avisos
+// Chame startBillingScheduler() no src/index.ts após app.listen()
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function startSubscriptionScheduler() {
-  const HOUR_MS       = 60 * 60 * 1000
-  const REMINDER_DAYS = 5   // dias antes do vencimento para enviar aviso
-  const GRACE_DAYS    = 0   // dias de carência após vencimento (0 = congela no dia)
+export function startBillingScheduler() {
+  const INTERVAL_MS   = 60 * 60 * 1000  // 1 hora
+  const REMINDER_DAYS = 5               // dias antes para enviar aviso
 
   async function runChecks() {
     const now = new Date()
-    console.log(`[Scheduler] Verificando assinaturas... ${now.toISOString()}`)
+    console.log(`[Scheduler] Rodando verificação de assinaturas | ${now.toISOString()}`)
 
     try {
-      // Busca todos os usuários Pro para verificar
-      const proUsers = await (db as any).findUsersByPlan('pro')
+      const proUsers = await (db as any).findProUsersExpiring()
 
       for (const user of proUsers) {
-        if (!user.planExpiresAt) continue
-        const expiresAt = new Date(user.planExpiresAt)
+        const u = user as any
+        if (!u.planExpiresAt) continue
+
+        const expiresAt = new Date(u.planExpiresAt)
         const msLeft    = expiresAt.getTime() - now.getTime()
         const daysLeft  = msLeft / (1000 * 60 * 60 * 24)
 
-        // ── 1. Conta expirada → congela ───────────────────────────────────
-        if (daysLeft <= -GRACE_DAYS && user.subscriptionStatus !== 'expired') {
+        // ── VENCIDO: pausa bots, preserva dados ──────────────────────────
+        if (daysLeft <= 0 && u.subscriptionStatus === 'active') {
+          // Atualiza status — plan continua 'pro' para preservar dados,
+          // mas subscriptionStatus = 'past_due' bloqueia as respostas
           await db.updateUser(user.id, {
-            plan:               'starter',
-            subscriptionStatus: 'expired',
+            subscriptionStatus: 'past_due',
           } as any)
-          await sendSubscriptionEmail('expired', user.email, user.name, expiresAt)
-          console.log(`[Scheduler] ❄️  Conta congelada: ${user.email}`)
+
+          // Pausa todos os bots do usuário (isActive = false)
+          const bots = await db.findBotsByUserId(user.id)
+          for (const bot of bots) {
+            if (bot.isActive) {
+              await db.updateBot(bot.id, { isActive: false })
+            }
+          }
+
+          await sendBillingEmail('expired', user.email, user.name, expiresAt)
+          console.log(`[Scheduler] ❄️  Bots pausados por vencimento: ${user.email}`)
         }
 
-        // ── 2. Aviso 5 dias antes — envia apenas 1 vez por ciclo ─────────
+        // ── AVISO 5 DIAS ANTES: email + marca para banner/toast ──────────
         else if (
           daysLeft > 0 &&
           daysLeft <= REMINDER_DAYS &&
-          user.subscriptionStatus === 'active'
+          u.subscriptionStatus === 'active'
         ) {
-          const lastReminder = user.renewalReminderSentAt
-            ? new Date(user.renewalReminderSentAt)
+          // Verifica se já enviou aviso neste ciclo (evita reenvios a cada hora)
+          const lastReminder = u.renewalReminderSentAt
+            ? new Date(u.renewalReminderSentAt)
             : null
+          // Considera novo ciclo se não enviou ou se faz mais de 25 dias
+          const isNewCycle = !lastReminder ||
+            (now.getTime() - lastReminder.getTime() > 25 * 24 * 60 * 60 * 1000)
 
-          // Só envia se ainda não enviou neste ciclo (evita reenvios a cada hora)
-          const shouldSend = !lastReminder || (now.getTime() - lastReminder.getTime() > 20 * 24 * 60 * 60 * 1000)
-
-          if (shouldSend) {
-            await sendSubscriptionEmail('reminder', user.email, user.name, expiresAt, Math.ceil(daysLeft))
+          if (isNewCycle) {
+            await sendBillingEmail('reminder', user.email, user.name, expiresAt, Math.ceil(daysLeft))
             await db.updateUser(user.id, { renewalReminderSentAt: now } as any)
-            console.log(`[Scheduler] 📧 Aviso de renovação enviado para ${user.email} (${Math.ceil(daysLeft)} dias restantes)`)
+            console.log(`[Scheduler] 📧 Aviso de vencimento para ${user.email} (${Math.ceil(daysLeft)} dias)`)
           }
         }
       }
@@ -347,8 +317,8 @@ export function startSubscriptionScheduler() {
     }
   }
 
-  // Roda na inicialização e depois a cada hora
+  // Executa imediatamente na inicialização e depois a cada hora
   runChecks()
-  setInterval(runChecks, HOUR_MS)
-  console.log('[Scheduler] ✅ Verificação de assinaturas iniciada (intervalo: 1h)')
+  setInterval(runChecks, INTERVAL_MS)
+  console.log('[Scheduler] ✅ Verificador de assinaturas ativo (intervalo: 1h)')
 }

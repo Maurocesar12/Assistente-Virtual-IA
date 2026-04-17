@@ -8,24 +8,26 @@ datasource db {
 }
 
 model User {
-  id                  String   @id @default(cuid())
-  name                String
-  lastName            String
-  email               String   @unique
-  passwordHash        String
-  plan                String   @default("starter")
-  apiKeys             String   @default("{}")
-  mustChangePassword  Boolean  @default(false)
+  id                 String   @id @default(cuid())
+  name               String
+  lastName           String
+  email              String   @unique
+  passwordHash       String
+  plan               String   @default("starter")
+  apiKeys            String   @default("{}")
+  mustChangePassword Boolean  @default(false)
 
-  // ── Assinatura mensal ──────────────────────────────────────────────────────
-  // subscriptionId: ID da assinatura no AbacatePay (ex: "sub_abc123")
-  subscriptionId        String?
-  // subscriptionStatus: none | active | past_due | expired | cancelled
-  subscriptionStatus    String   @default("none")
-  // planExpiresAt: quando o plano Pro expira (30 dias após o pagamento)
-  planExpiresAt         DateTime?
-  // renewalReminderSentAt: quando o email de aviso de 5 dias foi enviado
-  renewalReminderSentAt DateTime?
+  // ── Assinatura manual ──────────────────────────────────────────────────────
+  // planExpiresAt: quando o plano Pro vence (30 dias após o pagamento)
+  planExpiresAt          DateTime?
+  // subscriptionStatus:
+  //   'none'     → nunca assinou (starter)
+  //   'active'   → pro ativo e dentro do prazo
+  //   'past_due' → venceu, bots pausados, dados preservados
+  //   'cancelled'→ downgradeou manualmente
+  subscriptionStatus     String    @default("none")
+  // renewalReminderSentAt: data em que o aviso de 5 dias foi enviado (evita reenvios)
+  renewalReminderSentAt  DateTime?
 
   bots                Bot[]
   conversations       Conversation[]
@@ -33,6 +35,9 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Índice para o scheduler (busca usuários pro com vencimento próximo)
+  @@index([plan, planExpiresAt])
 }
 
 model Bot {
@@ -57,18 +62,17 @@ model Bot {
 }
 
 model Conversation {
-  id           String   @id @default(cuid())
-  botId        String
-  userId       String
-  contactName  String
-  contactPhone String
-  lastMessage  String
+  id            String   @id @default(cuid())
+  botId         String
+  userId        String
+  contactName   String
+  contactPhone  String
+  lastMessage   String
   lastMessageAt DateTime
-  unreadCount  Int      @default(0)
-  messageCount Int      @default(0)
-
-  isPaused     Boolean  @default(false)
-  humanHandoff Boolean  @default(false)
+  unreadCount   Int      @default(0)
+  messageCount  Int      @default(0)
+  isPaused      Boolean  @default(false)
+  humanHandoff  Boolean  @default(false)
 
   bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -83,7 +87,7 @@ model Conversation {
 }
 
 model Message {
-  id             String   @id @default(cuid())
+  id             String @id @default(cuid())
   conversationId String
   role           String
   content        String

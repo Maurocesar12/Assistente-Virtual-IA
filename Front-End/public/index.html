@@ -434,9 +434,14 @@
 ══════════════════════════════════════════════════════ -->
 <div id="view-billing" class="view" style="max-width:700px">
  
-  <!-- Plano atual + barra de uso (starter) OU info da assinatura (pro) -->
+  <!-- Card principal: plano + alertas + info da assinatura -->
   <div class="card mb-4">
     <div class="card-body">
+ 
+      <!-- Alerta de vencimento / expirado (dinâmico via JS) -->
+      <div id="bilExpiryAlert" style="display:none"></div>
+ 
+      <!-- Cabeçalho: nome do plano + pill -->
       <div class="flex-between mb-6">
         <div>
           <div class="text-xs text-dim mb-1">Plano atual</div>
@@ -445,24 +450,34 @@
         <span class="plan-pill starter" id="bilPill">GRÁTIS</span>
       </div>
  
-      <!-- Info de assinatura Pro (visível só pro) -->
+      <!-- Info de assinatura Pro (visível só quando plan=pro) -->
       <div id="bilSubInfo" style="display:none;margin-bottom:16px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px">
-            <div class="text-xs text-dim mb-1">Status</div>
+            <div class="text-xs text-dim mb-1">Status da assinatura</div>
             <div style="font-size:14px;font-weight:600" id="bilSubStatus">—</div>
           </div>
           <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px">
-            <div class="text-xs text-dim mb-1">Próxima renovação</div>
+            <div class="text-xs text-dim mb-1">Próximo vencimento</div>
             <div style="font-size:14px;font-weight:600" id="bilSubExpiry">—</div>
           </div>
         </div>
       </div>
  
-      <!-- Aviso de vencimento próximo / expirado -->
-      <div id="bilExpiryAlert" style="display:none"></div>
+      <!-- Botão de renovar (pro ativo ou vencido) -->
+      <div id="bilRenewSection" style="display:none;padding-top:14px;border-top:1px solid var(--border)">
+        <div class="flex-between">
+          <div>
+            <div style="font-size:13px;font-weight:600">Renovar por mais 30 dias</div>
+            <div class="text-xs text-muted mt-1">R$9,99 via PIX ou Cartão · Ativo imediatamente</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="Billing.openCheckout()">
+            🔄 Renovar →
+          </button>
+        </div>
+      </div>
  
-      <!-- Barra de uso (starter) -->
+      <!-- Barra de uso mensal (visível só para starter) -->
       <div id="bilUsageSection">
         <div class="flex-between text-xs text-muted mb-2">
           <span>Mensagens usadas este mês</span>
@@ -474,21 +489,10 @@
         <div id="bilUsageAlert" style="display:none"></div>
       </div>
  
-      <!-- Botão cancelar (pro ativo) -->
-      <div id="bilCancelSection" style="display:none;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
-        <div class="flex-between">
-          <div>
-            <div style="font-size:13px;font-weight:600">Cancelar assinatura</div>
-            <div class="text-xs text-muted mt-1">Você mantém o acesso Pro até o vencimento</div>
-          </div>
-          <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(240,80,96,0.3)"
-                  onclick="Billing.cancelSubscription()">Cancelar →</button>
-        </div>
-      </div>
     </div>
   </div>
  
-  <!-- Seção de upgrade (só starter) -->
+  <!-- Comparação de planos + CTA de upgrade (visível só para starter) -->
   <div id="bilUpgradeSection" class="card mb-4">
     <div class="card-header">
       <h3>Faça upgrade para Pro</h3>
@@ -496,43 +500,59 @@
     </div>
     <div class="card-body" style="padding-top:16px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+ 
+        <!-- Starter atual -->
         <div style="padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r)">
           <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">Atual — Starter</div>
           <ul style="list-style:none;display:flex;flex-direction:column;gap:7px">
             <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--text-dim)">✕</span>50 mensagens/mês</li>
-            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--text-dim)">✕</span>Bot pausado no limite</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--text-dim)">✕</span>Bot pausado ao atingir limite</li>
             <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--text-dim)">✕</span>1 número de WhatsApp</li>
           </ul>
         </div>
+ 
+        <!-- Pro -->
         <div style="padding:16px;background:linear-gradient(160deg,rgba(0,212,106,0.07),var(--surface));border:1px solid var(--green);border-radius:var(--r);position:relative">
           <div style="position:absolute;top:-1px;right:14px;background:var(--green);color:#000;font-size:9px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:0 0 7px 7px">PRO</div>
           <ul style="list-style:none;display:flex;flex-direction:column;gap:7px;margin-top:4px">
             <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Mensagens ilimitadas</li>
-            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Bot nunca pausado</li>
-            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>5 números de WhatsApp</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Bot nunca pausado por limite</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Até 5 números de WhatsApp</li>
+            <li style="font-size:12px;color:var(--text-muted);display:flex;gap:7px"><span style="color:var(--green);font-weight:700">✓</span>Suporte prioritário</li>
           </ul>
         </div>
       </div>
-      <button class="btn btn-primary btn-full btn-lg" id="bilUpgradeBtn" onclick="Billing.openCheckout()">
+ 
+      <button class="btn btn-primary btn-full btn-lg" onclick="Billing.openCheckout()">
         ⚡ Assinar Pro por R$9,99/mês →
       </button>
-      <p class="text-xs text-dim mt-3" style="text-align:center">PIX ou Cartão · Sem contrato · Cancele quando quiser</p>
+      <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px">
+        <span style="font-size:15px">🏦</span>
+        <p class="text-xs text-dim">PIX ou Cartão · Sem contrato · Acesso imediato após pagamento</p>
+      </div>
     </div>
   </div>
  
-  <!-- Histórico -->
+  <!-- Histórico de cobranças -->
   <div class="card">
     <div class="card-header"><h3>Histórico de cobranças</h3></div>
     <div style="overflow-x:auto">
       <table class="table" style="min-width:480px">
-        <thead><tr><th>ID</th><th>Data</th><th>Valor</th><th>Status</th><th>Ação</th></tr></thead>
+        <thead>
+          <tr><th>ID</th><th>Data</th><th>Valor</th><th>Status</th><th>Ação</th></tr>
+        </thead>
         <tbody id="bilInvoices">
-          <tr><td colspan="5"><div class="empty"><div class="empty-icon">🧾</div><h3>Nenhuma cobrança ainda</h3></div></td></tr>
+          <tr><td colspan="5">
+            <div class="empty">
+              <div class="empty-icon">🧾</div>
+              <h3>Nenhuma cobrança ainda</h3>
+              <p>Aparecerão aqui após o primeiro pagamento</p>
+            </div>
+          </td></tr>
         </tbody>
       </table>
     </div>
   </div>
-</div>
  
 </div>
 
@@ -731,14 +751,14 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════
-     MODAL — Checkout Pro (AbacatePay)
-     Cole antes do </body> no index.html
+     MODAL Checkout Pro — cole antes do </body>
+     (substitui o m-checkoutPro existente se houver)
 ══════════════════════════════════════════════════════ -->
 <div class="overlay" id="m-checkoutPro">
   <div class="modal" style="max-width:460px">
     <div style="width:48px;height:48px;background:rgba(0,212,106,0.1);border:1px solid rgba(0,212,106,0.2);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px">⚡</div>
     <div class="modal-title">Assinar Zapiens Pro</div>
-    <div class="modal-subtitle">R$ 9,99/mês · Mensagens ilimitadas · Cancele quando quiser</div>
+    <div class="modal-subtitle">R$ 9,99 · 30 dias de acesso completo · Renove quando quiser</div>
  
     <div class="form-group">
       <label class="field-label">CPF ou CNPJ</label>
@@ -754,17 +774,17 @@
  
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:16px">
       <div style="display:flex;flex-direction:column;gap:5px">
-        <div style="font-size:12px;color:var(--text-muted);display:flex;gap:8px"><span style="color:var(--green);font-weight:700">✓</span>Mensagens ilimitadas · Bot nunca pausado</div>
+        <div style="font-size:12px;color:var(--text-muted);display:flex;gap:8px"><span style="color:var(--green);font-weight:700">✓</span>Mensagens ilimitadas por 30 dias</div>
+        <div style="font-size:12px;color:var(--text-muted);display:flex;gap:8px"><span style="color:var(--green);font-weight:700">✓</span>Bots nunca pausados por limite</div>
         <div style="font-size:12px;color:var(--text-muted);display:flex;gap:8px"><span style="color:var(--green);font-weight:700">✓</span>Até 5 números de WhatsApp</div>
-        <div style="font-size:12px;color:var(--text-muted);display:flex;gap:8px"><span style="color:var(--green);font-weight:700">✓</span>Suporte prioritário</div>
       </div>
     </div>
  
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding:10px 14px;background:rgba(0,212,106,0.05);border:1px solid rgba(0,212,106,0.15);border-radius:8px">
       <span style="font-size:16px">🏦</span>
       <div>
-        <div style="font-size:12px;font-weight:600;color:var(--text)">PIX ou Cartão — processado pelo AbacatePay</div>
-        <div style="font-size:11px;color:var(--text-muted)">Você será redirecionado para a página segura de pagamento</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text)">PIX ou Cartão — AbacatePay</div>
+        <div style="font-size:11px;color:var(--text-muted)">Acesso liberado imediatamente após confirmação</div>
       </div>
     </div>
  
@@ -775,7 +795,8 @@
       </button>
     </div>
     <p class="text-xs text-dim mt-3" style="text-align:center;line-height:1.6">
-      Plano ativado automaticamente após confirmação do pagamento.
+      Você renova manualmente a cada 30 dias.<br>
+      Avisamos por email e no painel 5 dias antes do vencimento.
     </p>
   </div>
 </div>

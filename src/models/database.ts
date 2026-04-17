@@ -358,6 +358,16 @@ class Database {
     }
   }
 
+  async findProUsersExpiring(): Promise<User[]> {
+    const users = await prisma.user.findMany({
+      where: {
+        plan: 'pro',
+        planExpiresAt: { not: null },
+      },
+    })
+    return users.map((u: any) => this.parseUser(u))
+  }
+
   private parseBot(b: any): Bot {
     return { ...b, model: b.model as AIModel }
   }
@@ -400,4 +410,5 @@ export const db = {
   findMessagesByConversationId:  instance.findMessagesByConversationId.bind(instance),
   getUserStats:                  instance.getUserStats.bind(instance),
   findUsersByPlan: instance.findUsersByPlan.bind(instance),
+  findProUsersExpiring: instance.findProUsersExpiring.bind(instance),
 }
