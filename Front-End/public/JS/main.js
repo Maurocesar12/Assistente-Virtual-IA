@@ -215,9 +215,9 @@ const PlanLimit = {
       setTimeout(() => toast('🔴 Seu plano Pro está vencido. Seus bots estão pausados — renove em Assinatura.', 'error'), 800)
     } else if (subscriptionStatus === 'active' && daysUntilExpiry !== null && daysUntilExpiry <= 5 && daysUntilExpiry > 0) {
       setTimeout(() => toast(`⚠️ Seu plano Pro vence em ${daysUntilExpiry} dia${daysUntilExpiry !== 1 ? 's' : ''}. Renove em Assinatura para não perder o acesso.`, 'warning'), 800)
-    }
-  }
-},
+     }
+   },
+};
 
 const Auth = {
   async login() {
