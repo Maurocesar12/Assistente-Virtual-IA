@@ -12,6 +12,16 @@ import { conversationsRouter } from './routes/conversations.js'
 import { billingRouter } from './routes/billing.js'
 import { errorHandler } from './middleware/errorHandler.js'
 
+function normalizeOrigin(value?: string) {
+  if (!value) return null
+
+  try {
+    return new URL(value).origin
+  } catch {
+    return value.replace(/\/$/, '')
+  }
+}
+
 export function createApp() {
   const app = express()
 
@@ -22,10 +32,17 @@ export function createApp() {
     crossOriginEmbedderPolicy: false,
   }))
 
-  const ALLOWED_ORIGINS = new Set([
-    env.FRONTEND_URL.replace(/\/$/, ''),
-    'https://virtualassisente.netlify.app',
-  ])
+  const configuredOrigins = [
+    env.FRONTEND_URL,
+    'https://zapiens.netlify.app',
+    ...(env.CORS_ORIGINS?.split(',') ?? []),
+  ]
+
+  const ALLOWED_ORIGINS = new Set(
+    configuredOrigins
+      .map((origin) => normalizeOrigin(origin.trim()))
+      .filter((origin): origin is string => Boolean(origin)),
+  )
 
   app.use(cors({
     origin: (origin, callback) => {
@@ -33,7 +50,8 @@ export function createApp() {
       if (env.NODE_ENV === 'development' && origin.includes('localhost')) {
         return callback(null, true)
       }
-      if (ALLOWED_ORIGINS.has(origin)) {
+      const normalizedOrigin = normalizeOrigin(origin)
+      if (normalizedOrigin && ALLOWED_ORIGINS.has(normalizedOrigin)) {
         return callback(null, true)
       }
       callback(new Error(`CORS: origem não autorizada — ${origin}`))

@@ -6,7 +6,8 @@ dotenv.config()
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
-  FRONTEND_URL: z.string().url().default('https://virtualassisente.netlify.app/'),
+  FRONTEND_URL: z.string().url().default('https://zapiens.netlify.app'),
+  CORS_ORIGINS: z.string().optional(),
 
   JWT_SECRET: z.string().min(32, 'JWT_SECRET deve ter pelo menos 32 caracteres'),
   JWT_EXPIRES_IN: z.string().default('7d'),
