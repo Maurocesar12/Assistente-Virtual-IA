@@ -24,6 +24,8 @@
 
 import { GoogleGenerativeAI, type Content, type ChatSession } from '@google/generative-ai'
 
+const MAX_SESSION_CACHE = 300
+
 export interface GeminiOptions {
   apiKey:        string
   model?:        string
@@ -47,6 +49,7 @@ export class GeminiSessionManager {
       { role: 'model', parts: [{ text: 'Olá! Pode me chamar a qualquer hora 😊' }] },
     ]
     this.sessions.set(chatId, initialHistory)
+    this.trimSessionCache()
     return initialHistory
   }
 
@@ -93,6 +96,21 @@ export class GeminiSessionManager {
 
   clearSession(chatId: string): void {
     this.sessions.delete(chatId)
+  }
+
+  clearSessionsForBot(botId: string): void {
+    const prefix = `${botId}:`
+    for (const chatId of this.sessions.keys()) {
+      if (chatId.startsWith(prefix)) this.sessions.delete(chatId)
+    }
+  }
+
+  private trimSessionCache(): void {
+    while (this.sessions.size > MAX_SESSION_CACHE) {
+      const oldest = this.sessions.keys().next().value
+      if (!oldest) return
+      this.sessions.delete(oldest)
+    }
   }
 
   /** Retorna quantas sessões estão ativas — útil para debug de memória. */

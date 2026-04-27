@@ -45,7 +45,7 @@ Express API (TypeScript)
 Prisma ORM
     |
     v
-PostgreSQL / SQLite para desenvolvimento
+PostgreSQL (Neon)
 ```
 
 ## Stack Tecnologica
@@ -54,8 +54,7 @@ PostgreSQL / SQLite para desenvolvimento
 - TypeScript
 - Express
 - Prisma ORM
-- PostgreSQL
-- SQLite para ambiente local
+- PostgreSQL (Neon)
 - WPPConnect
 - OpenAI API
 - Google Gemini API
@@ -174,7 +173,7 @@ Crie um arquivo `.env` com base no `.env.example`.
 Exemplo minimo:
 
 ```env
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="postgresql://usuario:senha@ep-seu-endpoint.neon.tech/neondb?sslmode=require"
 NODE_ENV=development
 PORT=3000
 FRONTEND_URL=http://localhost:3000
@@ -193,18 +192,18 @@ ABACATEPAY_API_KEY=sua_chave_abacatepay
 ABACATEPAY_WEBHOOK_SECRET=seu_secret_opcional
 ```
 
-Observacao: no schema do Prisma o datasource esta configurado para `postgresql`, mas o `.env.example` tambem mostra uso local com `file:./dev.db`. Vale manter o ambiente alinhado antes de subir para producao.
+Observacao: o Neon usa PostgreSQL. Mantenha a `DATABASE_URL` no formato fornecido pelo Neon e preserve `sslmode=require` quando a conexao exigir SSL.
 
 ### 4. Gerar cliente Prisma
 
 ```bash
-npx prisma generate
+npm run prisma:generate
 ```
 
 ### 5. Aplicar migracoes
 
 ```bash
-npx prisma migrate dev
+npx prisma migrate deploy --schema Back-End/prisma/schema.prisma
 ```
 
 ### 6. Iniciar o projeto
@@ -217,7 +216,7 @@ npm run dev
 
 O projeto foi estruturado para funcionar bem em ambientes de deploy com Node.js, banco relacional e variaveis de ambiente, como Railway ou plataformas equivalentes. Para producao, recomenda-se:
 
-- usar PostgreSQL
+- usar PostgreSQL, como Neon ou equivalente
 - configurar `NODE_ENV=production`
 - definir `FRONTEND_URL` com a URL publica do painel
 - configurar credenciais SMTP validas

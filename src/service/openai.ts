@@ -1,6 +1,8 @@
 import OpenAI from 'openai'
 import { sleep } from '../utils/messages.js'
 
+const MAX_THREAD_CACHE = 300
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface OpenAIOptions {
@@ -23,6 +25,7 @@ export class OpenAISessionManager {
     const openai = this.buildClient(options.apiKey)
     const thread = await openai.beta.threads.create()
     this.threads.set(chatId, thread.id)
+    this.trimThreadCache()
     return thread.id
   }
 
@@ -83,6 +86,21 @@ export class OpenAISessionManager {
 
   clearSession(chatId: string): void {
     this.threads.delete(chatId)
+  }
+
+  clearSessionsForBot(botId: string): void {
+    const prefix = `${botId}:`
+    for (const chatId of this.threads.keys()) {
+      if (chatId.startsWith(prefix)) this.threads.delete(chatId)
+    }
+  }
+
+  private trimThreadCache(): void {
+    while (this.threads.size > MAX_THREAD_CACHE) {
+      const oldest = this.threads.keys().next().value
+      if (!oldest) return
+      this.threads.delete(oldest)
+    }
   }
 }
 

@@ -36,7 +36,18 @@ export function verifyToken(token: string): TokenPayload {
 
 // ─── Safe user (strip password hash) ─────────────────────────────────────────
 
+function maskApiKeys(apiKeys: User['apiKeys']) {
+  return {
+    openaiKey:         Boolean(apiKeys?.openaiKey),
+    openaiAssistantId: Boolean(apiKeys?.openaiAssistantId),
+    geminiKey:         Boolean(apiKeys?.geminiKey),
+  }
+}
+
 export function sanitizeUser(user: User) {
-  const { passwordHash: _, ...safe } = user
-  return safe
+  const { passwordHash: _, apiKeys, ...safe } = user
+  return {
+    ...safe,
+    apiKeys: maskApiKeys(apiKeys),
+  }
 }

@@ -1,17 +1,17 @@
 {
   "name": "zapiens",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "WhatsApp AI Automation SaaS — Clean Architecture",
   "main": "src/index.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsup src --format esm",
-    "start": "tsx src/index.ts && rm -rf ./tokens && node dist/index.js",
+    "start": "node --max-old-space-size=350 dist/index.js",
     "setup": "node setup.js",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
-    "prisma:generate": "@prisma/client generate",
-    "postinstall": "prisma generate"
+    "prisma:generate": "prisma generate --schema Back-End/prisma/schema.prisma",
+    "postinstall": "prisma generate --schema Back-End/prisma/schema.prisma"
   },
   "keywords": [
     "whatsapp",
@@ -32,7 +32,6 @@
     "@google/generative-ai": "^0.2.1",
     "@prisma/client": "^6.19.2",
     "@wppconnect-team/wppconnect": "^1.41.2",
-    "axios": "^1.6.5",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -43,7 +42,6 @@
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^8.0.1",
     "openai": "^4.24.2",
-    "uuid": "^9.0.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -55,7 +53,6 @@
     "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^20.11.8",
     "@types/nodemailer": "^7.0.11",
-    "@types/uuid": "^9.0.7",
     "prisma": "^6.19.2",
     "tsup": "^8.0.1",
     "tsx": "^4.7.0",

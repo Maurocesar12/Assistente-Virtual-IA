@@ -31,15 +31,24 @@ const Api = {
   async request(method, path, body = null) {
     const headers = { 'Content-Type': 'application/json' }
     if (State.token) headers['Authorization'] = `Bearer ${State.token}`
-    const res = await fetch(API_URL + path, {
-      method, headers, credentials: 'include',
-      body: body ? JSON.stringify(body) : undefined,
-    })
+    let res
+    try {
+      res = await fetch(API_URL + path, {
+        method, headers, credentials: 'include',
+        body: body ? JSON.stringify(body) : undefined,
+      })
+    } catch (_) {
+      throw new Error('Nao foi possivel conectar ao servidor. Verifique sua internet e tente novamente.')
+    }
     const json = await res.json().catch(() => ({ success: false, error: { message: 'Erro ao processar resposta do servidor' } }))
     if (!res.ok) {
       const details = json?.error?.details
       const msg = details ? details.map(d => d.message).join(', ') : json?.error?.message ?? `HTTP ${res.status}`
-      throw new Error(msg)
+      const err = new Error(msg)
+      err.status = res.status
+      err.code = json?.error?.code
+      err.data = json?.error?.data
+      throw err
     }
     return json.data ?? json
   },
@@ -85,12 +94,21 @@ const UI = {
 }
 
 function toast(msg, type = 'success') {
-  const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' }
+  const icons = { success: 'OK', error: 'ERRO', info: 'INFO', warning: 'AVISO' }
   const el = document.createElement('div')
   el.className = `toast ${type}`
-  el.innerHTML = `<span class="toast-icon">${icons[type] ?? '💬'}</span><span>${msg}</span>`
-  document.getElementById('toasts').appendChild(el)
+  const icon = document.createElement('span')
+  icon.className = 'toast-icon'
+  icon.textContent = icons[type] ?? 'INFO'
+  const text = document.createElement('span')
+  text.textContent = String(msg ?? '')
+  el.append(icon, text)
+  document.getElementById('toasts')?.appendChild(el)
   setTimeout(() => el.remove(), 4000)
+}
+
+function toastError(err, fallback = 'Nao foi possivel concluir a acao. Tente novamente.') {
+  toast(err?.message || fallback, 'error')
 }
 
 const Modals = {
@@ -271,7 +289,7 @@ const Auth = {
   async demoLogin() {
     const suffix = Date.now()
     try {
-      const data = await Api.post('/auth/register', { name: 'Demo', lastName: 'User', email: `demo_${suffix}@zapgpt.com`, password: 'demo1234', plan: 'pro' })
+      const data = await Api.post('/auth/register', { name: 'Demo', lastName: 'User', email: `demo_${suffix}@zapgpt.com`, password: 'demo1234', planIntent: 'starter' })
       State.token = data.token; State.user = data.user; Store.save()
       await Dashboard.enter(); toast('Modo demonstração ativado 🚀', 'info')
     } catch (err) { toast('Erro ao iniciar demo: ' + err.message, 'error') }
@@ -409,7 +427,7 @@ const Dashboard = {
           }
         } catch (_) {}
       } catch (_) {}
-    } catch (_) {}
+    } catch (err) { toastError(err, 'Nao foi possivel carregar as estatisticas do painel.') }
   },
 
   updateSidebar() {
@@ -433,7 +451,7 @@ const MODEL_META = {
 const Bots = {
   async load() {
     try { const result = await Api.get('/bots'); State.bots = Array.isArray(result) ? result : []; Bots.render(); Bots.renderOverview(); Bots.updateSteps() }
-    catch (_) { State.bots = [] }
+    catch (err) { State.bots = []; toastError(err, 'Nao foi possivel carregar seus bots.') }
   },
   render() {
     const el = UI.el('botsList'); if (!el) return
@@ -473,7 +491,7 @@ const Bots = {
     }
     
     // 3. Regra do GPT: Apenas avisa se estiver vazio (Note os parênteses extras em volta dos modelos)
-    if (model === 'GPT-4' || model === 'GPT-3.5-Turbo') {
+    if (model === 'gpt-4' || model === 'gpt-3.5-turbo') {
         toast('O prompt não é obrigatório para GPT, mas recomendamos verificar seu assist da OpenAI', 'info');
         // Não tem o "return", então a criação do bot vai continuar normalmente!
     }
@@ -548,13 +566,20 @@ const Bots = {
       if (btn) { btn.disabled = false; btn.innerHTML = '⏹ Desconectar' }
     }
   },
-  escape(str) { return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') },
+  escape(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  },
 }
 
 const Conversations = {
   async load() {
     try { const result = await Api.get('/conversations'); State.conversations = Array.isArray(result) ? result : []; Conversations.render(); Conversations.renderOverview() }
-    catch (_) { State.conversations = [] }
+    catch (err) { State.conversations = []; toastError(err, 'Nao foi possivel carregar suas conversas.') }
   },
   render() {
     const el = UI.el('convsList'); if (!el) return
@@ -663,7 +688,7 @@ const BotAlerts = {
     const STYLES = {
       connection: { color: 'var(--red)',    bg: 'rgba(240,80,96,0.08)',    border: 'rgba(240,80,96,0.3)',    icon: '📵', btnLabel: '📱 Reconectar', btnAction: `Connect.open('${botId}')` },
       config:     { color: 'var(--red)',    bg: 'rgba(240,80,96,0.08)',    border: 'rgba(240,80,96,0.3)',    icon: '🔑', btnLabel: '⚙️ API Keys',   btnAction: `UI.view('settings')` },
-      quota:      { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '💳', btnLabel: '💳 Assinatura', btnAction: `UI.view('billing')` },
+      quota:      { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '💳', btnLabel: 'API Keys', btnAction: `UI.view('settings')` },
       network:    { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '🌐', btnLabel: null, btnAction: null },
       unknown:    { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '⚠️', btnLabel: null, btnAction: null },
     }
@@ -672,8 +697,9 @@ const BotAlerts = {
     alertEl.dataset.botAlert = key
     alertEl.style.cssText = `display:flex;align-items:flex-start;gap:14px;padding:16px 18px;margin-bottom:10px;background:${s.bg};border:1px solid ${s.border};border-left:4px solid ${s.color};border-radius:10px;animation:toast-slide 0.3s ease;`
     const msgHtml   = message   ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;line-height:1.5">${Bots.escape(message)}</div>` : ''
+    const actionHtml = action ? `<div style="font-size:12px;color:#f0c060;font-weight:500">👉 ${Bots.escape(action)}</div>` : ''
     const actionBtn = s.btnLabel ? `<button class="btn btn-sm" onclick="${s.btnAction}" style="background:${s.color};color:${kind==='connection'?'#fff':'#000'};font-size:11px;padding:5px 10px;border-radius:6px;white-space:nowrap">${s.btnLabel}</button>` : ''
-    alertEl.innerHTML = `<div style="font-size:22px;flex-shrink:0;margin-top:1px">${s.icon}</div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:${s.color};margin-bottom:3px">${Bots.escape(botName)} — ${Bots.escape(title)}</div>${msgHtml}<div style="font-size:12px;color:#f0c060;font-weight:500">👉 ${Bots.escape(action)}</div></div><div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end">${actionBtn}<button class="btn btn-ghost btn-sm" onclick="BotAlerts.dismiss('${key}')" style="font-size:11px;padding:5px 10px">✕</button></div>`
+    alertEl.innerHTML = `<div style="font-size:22px;flex-shrink:0;margin-top:1px">${s.icon}</div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:${s.color};margin-bottom:3px">${Bots.escape(botName)} — ${Bots.escape(title)}</div>${msgHtml}${actionHtml}</div><div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end">${actionBtn}<button class="btn btn-ghost btn-sm" onclick="BotAlerts.dismiss('${key}')" style="font-size:11px;padding:5px 10px">✕</button></div>`
     container.appendChild(alertEl)
     BotAlerts._alerts.set(key, alertEl)
   },
@@ -690,7 +716,10 @@ const Connect = {
 
   start() {
     const botId = State.connectBotId; if (!botId) return
-    Api.post(`/bots/${botId}/connect`).catch(() => {})
+    Api.post(`/bots/${botId}/connect`).catch((err) => {
+      Connect.log(err.message || 'Nao foi possivel iniciar a conexao.', 'error')
+      toastError(err, 'Nao foi possivel iniciar a conexao do WhatsApp.')
+    })
     Connect.cleanup()
 
     const token  = State.token || ''
@@ -736,8 +765,11 @@ const Connect = {
     })
 
     source.addEventListener('ai-error', (e) => {
-      const { botId: errBotId, botName, kind, title, action } = JSON.parse(e.data)
-      BotAlerts.show(errBotId, botName, kind, title, null, action)
+      const { botId: errBotId, botName, kind, title, detail, action } = JSON.parse(e.data)
+      const quotaMessage = 'Os creditos/tokens da chave de IA acabaram. Adicione creditos na OpenAI ou Gemini, confira sua chave em Configuracoes > API Keys e reative o bot.'
+      const message = kind === 'quota' ? quotaMessage : detail
+      BotAlerts.show(errBotId, botName, kind, title, message, action)
+      toast(kind === 'quota' ? quotaMessage : `${title}. ${action || ''}`, kind === 'network' ? 'warning' : 'error')
     })
 
     source.addEventListener('plan-limit', (e) => {
@@ -781,7 +813,10 @@ const Connect = {
     })
 
     source.onerror = () => {
-      if (source.readyState === EventSource.CLOSED && !connectedOk) Connect.log('Conexão SSE encerrada.', 'info')
+      if (source.readyState === EventSource.CLOSED && !connectedOk) {
+        Connect.log('Conexao de eventos encerrada. Feche e tente conectar novamente.', 'error')
+        toast('A conexao em tempo real foi encerrada. Tente conectar novamente.', 'warning')
+      }
     }
   },
 
@@ -798,7 +833,7 @@ const Connect = {
   renderQR(base64) {
     const wrap = UI.el('qrWrap') || UI.el('qrCanvas'); if (!wrap) return
     if (!base64) { wrap.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--text-dim)"><div class="spinner" style="width:28px;height:28px;border-width:3px"></div><span style="font-size:12px">Gerando QR Code...</span></div>`; return }
-    const clean = base64.replace(/^data:image\/[a-z]+;base64,/i, '')
+    const clean = base64.replace(/^data:image\/[a-z]+;base64,/i, '').replace(/[^A-Za-z0-9+/=]/g, '')
     wrap.style.cssText = 'background:transparent;border:none;overflow:visible;'
     wrap.innerHTML = `<div style="background:#ffffff;border-radius:16px;padding:16px;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px rgba(0,0,0,0.08),0 8px 32px rgba(0,0,0,0.4);position:relative;overflow:hidden;"><img src="data:image/png;base64,${clean}" alt="QR Code WhatsApp" width="220" height="220" style="display:block;image-rendering:pixelated;image-rendering:crisp-edges;"><div style="position:absolute;left:10px;right:10px;height:2px;background:linear-gradient(90deg,transparent,rgba(0,212,106,0.8),transparent);box-shadow:0 0 8px rgba(0,212,106,0.6);animation:qr-scan 2.2s linear infinite;"></div></div>`
   },
@@ -806,7 +841,10 @@ const Connect = {
   log(msg, type = '') {
     const box = UI.el('connectLog'); if (!box) return
     const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    box.innerHTML += `<div class="${type ? `log-${type}` : ''}">[${time}] ${msg}</div>`
+    const line = document.createElement('div')
+    if (type) line.className = `log-${type}`
+    line.textContent = `[${time}] ${String(msg ?? '')}`
+    box.appendChild(line)
     box.scrollTop = box.scrollHeight
   },
 
@@ -831,9 +869,18 @@ const Settings = {
     Api.get('/auth/me').then(user => {
       State.user = user; Store.save()
       const keys = user.apiKeys ?? {}
-      if (UI.el('sOpenAI'))    UI.el('sOpenAI').value    = keys.openaiKey         ?? ''
-      if (UI.el('sAssistant')) UI.el('sAssistant').value = keys.openaiAssistantId ?? ''
-      if (UI.el('sGemini'))    UI.el('sGemini').value    = keys.geminiKey         ?? ''
+      if (UI.el('sOpenAI')) {
+        UI.el('sOpenAI').value = ''
+        UI.el('sOpenAI').placeholder = keys.openaiKey ? 'OpenAI ja configurada. Preencha somente para trocar.' : 'Cole sua chave OpenAI'
+      }
+      if (UI.el('sAssistant')) {
+        UI.el('sAssistant').value = ''
+        UI.el('sAssistant').placeholder = keys.openaiAssistantId ? 'Assistant ja configurado. Preencha somente para trocar.' : 'Cole o Assistant ID'
+      }
+      if (UI.el('sGemini')) {
+        UI.el('sGemini').value = ''
+        UI.el('sGemini').placeholder = keys.geminiKey ? 'Gemini ja configurada. Preencha somente para trocar.' : 'Cole sua chave Gemini'
+      }
     }).catch(() => {})
   },
   async saveProfile() {
@@ -845,9 +892,23 @@ const Settings = {
   },
   async saveApiKeys() {
     try {
-      await Api.patch('/users/me/api-keys', { openaiKey: UI.val('sOpenAI'), openaiAssistantId: UI.val('sAssistant'), geminiKey: UI.val('sGemini') })
-      toast('Chaves de API salvas! 🔐', 'success')
-    } catch (err) { toast(err.message, 'error') }
+      const payload = {}
+      const openaiKey = UI.val('sOpenAI')
+      const openaiAssistantId = UI.val('sAssistant')
+      const geminiKey = UI.val('sGemini')
+      if (openaiKey) payload.openaiKey = openaiKey
+      if (openaiAssistantId) payload.openaiAssistantId = openaiAssistantId
+      if (geminiKey) payload.geminiKey = geminiKey
+      if (!Object.keys(payload).length) {
+        toast('Nenhuma chave nova informada. Suas chaves atuais foram mantidas.', 'info')
+        return
+      }
+      const data = await Api.patch('/users/me/api-keys', payload)
+      State.user = { ...State.user, apiKeys: data.apiKeys }
+      Store.save()
+      Settings.load()
+      toast('Chaves de API salvas com seguranca.', 'success')
+    } catch (err) { toastError(err) }
   },
   async changePassword() {
     const current = UI.el('cp-current')?.value?.trim() ?? '', next = UI.el('cp-new')?.value?.trim() ?? '', confirm = UI.el('cp-confirm')?.value?.trim() ?? ''
@@ -987,11 +1048,16 @@ const Billing = {
       const st  = ST[b.status] ?? { l: b.status, c: 'badge-yellow' }
       const dt  = new Date(b.createdAt).toLocaleDateString('pt-BR')
       const amt = (b.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+      let safeUrl = null
+      try {
+        const parsedUrl = new URL(b.url)
+        safeUrl = parsedUrl.protocol === 'https:' ? parsedUrl.href : null
+      } catch (_) {}
       return `<tr>
-        <td class="mono" style="font-size:11px;color:var(--text-dim)">${b.id}</td>
+        <td class="mono" style="font-size:11px;color:var(--text-dim)">${Bots.escape(b.id)}</td>
         <td>${dt}</td><td>${amt}</td>
-        <td><span class="badge ${st.c}">${st.l}</span></td>
-        <td>${b.url && b.status === 'PENDING' ? `<a href="${b.url}" target="_blank" class="btn btn-ghost btn-sm">Pagar →</a>` : '—'}</td>
+        <td><span class="badge ${st.c}">${Bots.escape(st.l)}</span></td>
+        <td>${safeUrl && b.status === 'PENDING' ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">Pagar →</a>` : '—'}</td>
       </tr>`
     }).join('')
   },
@@ -1009,6 +1075,7 @@ const Billing = {
     UI.setLoading('checkoutBtn', true)
     try {
       const data = await Api.post('/billing/checkout', { taxId: taxId.trim(), cellphone: cellphone || undefined })
+      if (!/^https:\/\//i.test(data.url || '')) throw new Error('URL de pagamento invalida retornada pelo servidor.')
       window.open(data.url, '_blank', 'noopener,noreferrer')
       Modals.close('checkoutPro')
       toast('Página de pagamento aberta! O plano é ativado imediatamente após confirmação. 🎉', 'info')
@@ -1056,7 +1123,8 @@ const ChatViewer = {
     try {
       const messages = await Api.get(`/conversations/${convId}/messages`)
       ChatViewer.render(messages, bot, displayName)
-    } catch (_) {
+    } catch (err) {
+      toastError(err, 'Nao foi possivel carregar as mensagens desta conversa.')
       UI.el('chatMessages').innerHTML = `
         <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:13px">
           ⚠️ Erro ao carregar mensagens

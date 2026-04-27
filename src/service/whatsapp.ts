@@ -66,9 +66,9 @@ type ContactTypingListener = (e: ContactTypingEvent) => void
 type PlanLimitListener     = (e: PlanLimitEvent)     => void
 
 const AI_ERROR_META: Record<AIErrorKind, { title: string; action: string }> = {
-  config:  { title: 'Chave de API inválida', action: 'Vá em Configurações → API Keys e verifique suas credenciais.' },
-  quota:   { title: 'Cota da API esgotada',  action: 'Acesse o painel da OpenAI ou Gemini e adicione créditos.' },
-  network: { title: 'Falha de rede',         action: 'Verifique sua conexão. O erro pode ser temporário.' },
+  config:  { title: 'Chave de API invalida', action: 'Abra Configuracoes > API Keys e revise as credenciais.' },
+  quota:   { title: 'Creditos da IA esgotados', action: 'Adicione creditos/tokens na OpenAI ou Gemini e reative o bot.' },
+  network: { title: 'Falha de rede com a IA', action: 'Aguarde alguns minutos e tente novamente.' },
   unknown: { title: 'Erro inesperado na IA', action: 'Verifique os logs do servidor para mais detalhes.' },
 }
 
@@ -96,6 +96,7 @@ const MAX_RETRIES            = 3
 const MESSAGE_BUFFER_TIMEOUT = 3_000
 const CONTACT_FETCH_TIMEOUT  = 3_000  // reduzido de 5s → economiza tempo em contatos sem pushname
 const MAX_LISTENERS          = 50     // proteção contra memory leak de arrays de listeners SSE
+const MAX_AUDIO_BYTES        = 10 * 1024 * 1024
 
 const TEXT_TYPE   = 'chat'
 const AUDIO_TYPES = new Set(['ptt', 'audio'])
@@ -233,6 +234,8 @@ async function nukeAllBotTokens(botId: string): Promise<void> {
 
 export class WhatsAppManager {
   private clients        = new Map<string, wppconnect.Whatsapp>()
+  private starting       = new Set<string>()
+  private connectedOnce  = new Set<string>()
   private messageBuffers = new Map<string, string[]>()
   private messageTimers  = new Map<string, NodeJS.Timeout>()
   private lastQR         = new Map<string, { qrBase64: string; qrAscii: string }>()
@@ -288,9 +291,11 @@ export class WhatsAppManager {
   // ── Session management ───────────────────────────────────────────────────
 
   async startSession(bot: Bot): Promise<void> {
-    if (this.clients.has(bot.id)) return
+    if (this.clients.has(bot.id) || this.starting.has(bot.id)) return
 
     console.log(`[WhatsApp] Iniciando sessão para: ${bot.name} (id: ${bot.id})`)
+    this.starting.add(bot.id)
+    this.connectedOnce.delete(bot.id)
     this.qrWasShown.delete(bot.id)
     this.lastQR.delete(bot.id)
     await nukeAllBotTokens(bot.id)
@@ -381,10 +386,13 @@ export class WhatsAppManager {
       const client = await sessionPromise
 
       this.clients.set(bot.id, client)
+      this.starting.delete(bot.id)
       this.attachMessageListener(bot, client)
       this.attachPresenceListener(bot, client)
       this.scheduleMemoryCleanup(bot.id)
     } catch (err) {
+      this.starting.delete(bot.id)
+      this.connectedOnce.delete(bot.id)
       this.clients.delete(bot.id)
       this.qrWasShown.delete(bot.id)
       await db.updateBot(bot.id, { isConnected: false, isActive: false }).catch(() => {})
@@ -422,6 +430,9 @@ export class WhatsAppManager {
   }
 
   private async onSessionConnectedAsync(bot: Bot, client: wppconnect.Whatsapp): Promise<void> {
+    if (this.connectedOnce.has(bot.id)) return
+    this.connectedOnce.add(bot.id)
+
     // Libera o base64 do QR imediatamente — é a string mais pesada em memória
     this.lastQR.delete(bot.id)
 
@@ -461,7 +472,12 @@ export class WhatsAppManager {
   private onSessionFailed(bot: Bot): void {
     this.lastQR.delete(bot.id)
     this.qrWasShown.delete(bot.id)
+    this.starting.delete(bot.id)
+    this.connectedOnce.delete(bot.id)
     this.clients.delete(bot.id)
+    this.clearMessageBuffer(bot.id)
+    geminiManager.clearSessionsForBot(bot.id)
+    openaiManager.clearSessionsForBot(bot.id)
 
     const cleanupTimer = this.memoryCleanupTimers.get(bot.id)
     if (cleanupTimer) { clearInterval(cleanupTimer); this.memoryCleanupTimers.delete(bot.id) }
@@ -474,10 +490,14 @@ export class WhatsAppManager {
   async stopSession(botId: string): Promise<void> {
     const client = this.clients.get(botId)
     if (client) { try { await client.close() } catch (_) {} }
+    this.starting.delete(botId)
+    this.connectedOnce.delete(botId)
     this.clients.delete(botId)
     this.lastQR.delete(botId)
     this.qrWasShown.delete(botId)
     this.clearMessageBuffer(botId)
+    geminiManager.clearSessionsForBot(botId)
+    openaiManager.clearSessionsForBot(botId)
 
     const cleanupTimer = this.memoryCleanupTimers.get(botId)
     if (cleanupTimer) { clearInterval(cleanupTimer); this.memoryCleanupTimers.delete(botId) }
@@ -578,11 +598,24 @@ export class WhatsAppManager {
     const mimeType: string = String(message.mimetype ?? message.mimeType ?? 'audio/ogg')
       .split(';')[0].trim()
 
+    const declaredSize = Number(message.size ?? message.fileSize ?? 0)
+    if (declaredSize > MAX_AUDIO_BYTES) {
+      await client.sendText(from, AUDIO_FALLBACK_MESSAGES.transcription_failed).catch(() => {})
+      await this.persistMessage(bot, client, from, '[audio muito grande para processar]', null)
+      return
+    }
+
     let audioBuffer: Buffer
     try {
       const decrypted = await client.decryptFile(message)
       audioBuffer = Buffer.isBuffer(decrypted) ? decrypted : Buffer.from(decrypted as any)
       console.log(`[Audio] ${(audioBuffer.length / 1024).toFixed(1)}KB | MIME:${mimeType}`)
+      if (audioBuffer.length > MAX_AUDIO_BYTES) {
+        audioBuffer = Buffer.alloc(0)
+        await client.sendText(from, AUDIO_FALLBACK_MESSAGES.transcription_failed).catch(() => {})
+        await this.persistMessage(bot, client, from, '[audio muito grande para processar]', null)
+        return
+      }
     } catch (err) {
       console.error(`[Audio] decryptFile falhou:`, err)
       const bodyStr = String(message.body ?? '')
@@ -621,29 +654,33 @@ export class WhatsAppManager {
     bot: Bot, client: wppconnect.Whatsapp,
     chatId: string, body: string, from: string,
   ): void {
-    const buffer = this.messageBuffers.get(chatId) ?? []
+    const bufferKey = `${bot.id}:${chatId}`
+    const buffer = this.messageBuffers.get(bufferKey) ?? []
     buffer.push(body)
-    this.messageBuffers.set(chatId, buffer)
+    this.messageBuffers.set(bufferKey, buffer)
 
-    const existing = this.messageTimers.get(chatId)
+    const existing = this.messageTimers.get(bufferKey)
     if (existing) clearTimeout(existing)
 
     const timer = setTimeout(() => {
-      const combined = (this.messageBuffers.get(chatId) ?? []).join(' \n ')
-      this.messageBuffers.delete(chatId)
-      this.messageTimers.delete(chatId)
+      const combined = (this.messageBuffers.get(bufferKey) ?? []).join(' \n ')
+      this.messageBuffers.delete(bufferKey)
+      this.messageTimers.delete(bufferKey)
       this.processMessage(bot, client, chatId, combined, from)
         .catch(err => console.error(`[processMessage] ERRO:`, err))
     }, MESSAGE_BUFFER_TIMEOUT)
 
-    this.messageTimers.set(chatId, timer)
+    this.messageTimers.set(bufferKey, timer)
   }
 
   private clearMessageBuffer(botId: string): void {
-    const timer = this.messageTimers.get(botId)
-    if (timer) clearTimeout(timer)
-    this.messageTimers.delete(botId)
-    this.messageBuffers.delete(botId)
+    const prefix = `${botId}:`
+    for (const [key, timer] of this.messageTimers.entries()) {
+      if (!key.startsWith(prefix)) continue
+      clearTimeout(timer)
+      this.messageTimers.delete(key)
+      this.messageBuffers.delete(key)
+    }
   }
 
   // ── Core: processMessage ─────────────────────────────────────────────────
@@ -734,12 +771,15 @@ export class WhatsAppManager {
       const err = raw instanceof AIError ? raw : classifyError(raw)
       console.error(`❌ IA [${err.kind}]: ${err.message}`)
       this.emitAIError(bot, err)
+      if (err.kind === 'config' || err.kind === 'quota') {
+        await db.updateBot(bot.id, { isActive: false }).catch(() => {})
+      }
       if (conv) {
         this.typingListeners.forEach(l => l({
           botId: bot.id, convId: conv.id, contactPhone: from, isTyping: false,
         }))
       }
-      await this.persistMessage(bot, client, from, panelText ?? message, null)
+      await this.persistMessage(bot, client, from, panelText ?? message, this.panelAIErrorMessage(err))
       return
     }
 
@@ -778,16 +818,17 @@ export class WhatsAppManager {
     bot: Bot, apiKeys: import('../models/database.js').ApiKeys,
     chatId: string, message: string,
   ): Promise<string> {
+    const sessionKey = `${bot.id}:${chatId}`
     if (bot.model === 'gemini-2.5-flash' as any) {
       if (!apiKeys.geminiKey) throw new AIError('config', 'Gemini API key não configurada.')
-      return geminiManager.sendMessage(chatId, message, {
+      return geminiManager.sendMessage(sessionKey, message, {
         apiKey: apiKeys.geminiKey, model: bot.model, systemPrompt: bot.prompt,
       })
     }
     if (!apiKeys.openaiKey || !apiKeys.openaiAssistantId) {
       throw new AIError('config', 'Credenciais OpenAI não configuradas.')
     }
-    return openaiManager.sendMessage(chatId, message, {
+    return openaiManager.sendMessage(sessionKey, message, {
       apiKey: apiKeys.openaiKey, assistantId: apiKeys.openaiAssistantId,
     })
   }
@@ -801,6 +842,19 @@ export class WhatsAppManager {
   }
 
   // ── Persist message ───────────────────────────────────────────────────────
+
+  private panelAIErrorMessage(err: AIError): string {
+    if (err.kind === 'quota') {
+      return '[ALERTA] Os creditos/tokens da chave de IA acabaram. Adicione creditos na OpenAI ou Gemini, confira a chave em Configuracoes > API Keys e reative o bot.'
+    }
+    if (err.kind === 'config') {
+      return '[ALERTA] A chave de IA esta ausente ou invalida. Revise as credenciais em Configuracoes > API Keys e reative o bot.'
+    }
+    if (err.kind === 'network') {
+      return '[ALERTA] Houve uma falha temporaria ao falar com a IA. A mensagem foi registrada para acompanhamento.'
+    }
+    return '[ALERTA] A IA nao conseguiu responder agora. Verifique os logs do servidor.'
+  }
 
   private async persistMessage(
     bot: Bot, client: wppconnect.Whatsapp,

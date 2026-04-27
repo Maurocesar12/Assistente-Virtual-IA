@@ -114,14 +114,20 @@ billingRouter.post('/webhook', async (req, res) => {
         console.warn('[Webhook] Sem assinatura')
         return res.status(401).json({ ok: false })
       }
+      const rawBody = (req as any).rawBody
+      const bodyForSignature = Buffer.isBuffer(rawBody)
+        ? rawBody
+        : Buffer.from(JSON.stringify(req.body))
+
       const expected = crypto
         .createHmac('sha256', secret)
-        .update(JSON.stringify(req.body))
+        .update(bodyForSignature)
         .digest('hex')
-      const valid = crypto.timingSafeEqual(
-        Buffer.from(sig.padEnd(64, '0')),
-        Buffer.from(expected.padEnd(64, '0')),
-      )
+      const normalizedSig = sig.replace(/^sha256=/i, '').trim()
+      const sigBuffer = Buffer.from(normalizedSig, 'hex')
+      const expectedBuffer = Buffer.from(expected, 'hex')
+      const valid = sigBuffer.length === expectedBuffer.length &&
+        crypto.timingSafeEqual(sigBuffer, expectedBuffer)
       if (!valid) {
         console.warn('[Webhook] Assinatura inválida')
         return res.status(401).json({ ok: false })

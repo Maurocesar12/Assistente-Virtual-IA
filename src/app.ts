@@ -23,6 +23,7 @@ export function createApp() {
   }))
 
   const ALLOWED_ORIGINS = new Set([
+    env.FRONTEND_URL.replace(/\/$/, ''),
     'https://virtualassisente.netlify.app',
   ])
 
@@ -32,7 +33,7 @@ export function createApp() {
       if (env.NODE_ENV === 'development' && origin.includes('localhost')) {
         return callback(null, true)
       }
-      if (ALLOWED_ORIGINS.has(origin) || origin.endsWith('.netlify.app')) {
+      if (ALLOWED_ORIGINS.has(origin)) {
         return callback(null, true)
       }
       callback(new Error(`CORS: origem não autorizada — ${origin}`))

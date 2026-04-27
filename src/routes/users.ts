@@ -23,9 +23,9 @@ const updateProfileSchema = z.object({
 })
 
 const updateApiKeysSchema = z.object({
-  openaiKey:         z.string().optional(),
-  openaiAssistantId: z.string().optional(),
-  geminiKey:         z.string().optional(),
+  openaiKey:         z.string().max(500).optional(),
+  openaiAssistantId: z.string().max(200).optional(),
+  geminiKey:         z.string().max(500).optional(),
 })
 
 // ─── GET /users/me/stats ──────────────────────────────────────────────────────
@@ -74,10 +74,22 @@ usersRouter.patch('/me/api-keys', validate(updateApiKeysSchema), async (req, res
     const user = await db.findUserById(req.userId)
     if (!user) throw ApiError.notFound('User not found')
 
-    const updatedKeys = { ...user.apiKeys, ...req.body }
+    const incoming: Partial<typeof user.apiKeys> = {}
+    for (const key of ['openaiKey', 'openaiAssistantId', 'geminiKey'] as const) {
+      const value = req.body[key]
+      if (typeof value === 'string' && value.trim().length > 0) {
+        incoming[key] = value.trim()
+      }
+    }
+
+    if (Object.keys(incoming).length === 0) {
+      return ok(res, { apiKeys: sanitizeUser(user).apiKeys, updated: false })
+    }
+
+    const updatedKeys = { ...user.apiKeys, ...incoming }
     const updated     = await db.updateUser(req.userId, { apiKeys: updatedKeys })
 
-    return ok(res, { apiKeys: updated?.apiKeys })
+    return ok(res, { apiKeys: updated ? sanitizeUser(updated).apiKeys : {}, updated: true })
   } catch (err) {
     next(err)
   }

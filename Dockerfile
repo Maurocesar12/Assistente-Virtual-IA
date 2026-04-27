@@ -28,7 +28,7 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 WORKDIR /app
 
 COPY package*.json ./
-COPY Back-End/prisma ./prisma/
+COPY Back-End/prisma ./Back-End/prisma/
 
 RUN npm install
 
