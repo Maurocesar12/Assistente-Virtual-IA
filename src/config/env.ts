@@ -35,6 +35,11 @@ const envSchema = z.object({
   // Opcional — assina os webhooks para verificação de autenticidade.
   // Configure em: https://app.abacatepay.com → Webhooks → Secret
   ABACATEPAY_WEBHOOK_SECRET: z.string().optional(),
+
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().url().optional(),
+  GOOGLE_CALENDAR_TIMEZONE: z.string().default('America/Sao_Paulo'),
 })
 
 const parsed = envSchema.safeParse(process.env)

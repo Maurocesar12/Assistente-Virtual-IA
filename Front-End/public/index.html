@@ -378,6 +378,7 @@
         <div class="tabs">
           <button class="tab-btn active" onclick="UI.tab('t-profile',this)">Perfil</button>
           <button class="tab-btn" onclick="UI.tab('t-apikeys',this)">API Keys</button>
+          <button class="tab-btn" data-calendar-tab onclick="UI.tab('t-calendar',this)">Google Agenda</button>
           <button class="tab-btn" onclick="UI.tab('t-notif',this)">Notificações</button>
         </div>
         <div id="t-profile" class="tab-pane active" style="max-width:540px">
@@ -413,6 +414,29 @@
               <div class="form-group" style="margin:0"><label class="field-label">OpenAI Assistant ID</label><input class="field mono" id="sAssistant" type="text" placeholder="asst_..."></div>
               <div class="form-group" style="margin:0"><label class="field-label">Gemini API Key</label><input class="field mono" id="sGemini" type="password" placeholder="AIza..."></div>
               <button class="btn btn-primary" style="width:fit-content" onclick="Settings.saveApiKeys()">Salvar chaves</button>
+            </div>
+          </div>
+        </div>
+        <div id="t-calendar" class="tab-pane" style="max-width:540px">
+          <div class="card">
+            <div class="card-header"><h3>Google Agenda</h3><span class="badge" id="calendarStatusBadge">Desconectado</span></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <label>Agendamento automatico</label>
+                  <small>O bot cria eventos quando identificar pedido de reuniao com data e horario.</small>
+                </div>
+                <label class="toggle"><input type="checkbox" id="calendarEnabled"><span class="toggle-track"></span></label>
+              </div>
+              <div class="form-group" style="margin:0">
+                <label class="field-label">Calendario</label>
+                <input class="field mono" id="calendarId" type="text" placeholder="primary">
+              </div>
+              <div class="flex gap-2" style="flex-wrap:wrap">
+                <button class="btn btn-primary" id="connectGoogleCalendarBtn" onclick="Settings.connectGoogleCalendar()">Conectar Google</button>
+                <button class="btn btn-ghost" id="saveGoogleCalendarBtn" onclick="Settings.saveGoogleCalendar()">Salvar agenda</button>
+                <button class="btn btn-ghost" id="disconnectGoogleCalendarBtn" onclick="Settings.disconnectGoogleCalendar()">Desconectar</button>
+              </div>
             </div>
           </div>
         </div>

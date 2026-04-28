@@ -10,6 +10,7 @@ import { usersRouter } from './routes/users.js'
 import { botsRouter } from './routes/bots.js'
 import { conversationsRouter } from './routes/conversations.js'
 import { billingRouter } from './routes/billing.js'
+import { calendarRouter } from './routes/calendar.js'
 import { errorHandler } from './middleware/errorHandler.js'
 
 function normalizeOrigin(value?: string) {
@@ -120,6 +121,7 @@ export function createApp() {
   app.use('/api/bots', botsRouter)
   app.use('/api/conversations', conversationsRouter)
   app.use('/api/billing', billingRouter)
+  app.use('/api/calendar', calendarRouter)
 
   app.use('*', (_req, res) => {
     res.status(404).json({ error: 'Rota não encontrada' })

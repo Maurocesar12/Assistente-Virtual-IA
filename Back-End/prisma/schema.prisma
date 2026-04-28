@@ -32,12 +32,50 @@ model User {
   bots                Bot[]
   conversations       Conversation[]
   passwordResetTokens PasswordResetToken[]
+  calendarIntegration GoogleCalendarIntegration?
+  calendarEventLogs   CalendarEventLog[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Índice para o scheduler (busca usuários pro com vencimento próximo)
   @@index([plan, planExpiresAt])
+}
+
+model GoogleCalendarIntegration {
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  enabled      Boolean   @default(false)
+  calendarId   String    @default("primary")
+  accessToken  String
+  refreshToken String
+  scope        String?
+  tokenType    String?
+  expiryDate   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CalendarEventLog {
+  id                String   @id @default(cuid())
+  userId            String
+  botId             String
+  contactPhone      String
+  sourceMessageHash String
+  googleEventId     String
+  googleHtmlLink    String?
+  title             String
+  startAt           DateTime
+  endAt             DateTime
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bot  Bot  @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, contactPhone, sourceMessageHash])
+  @@index([userId, createdAt])
 }
 
 model Bot {
@@ -54,6 +92,7 @@ model Bot {
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversations Conversation[]
+  calendarEventLogs CalendarEventLog[]
 
   @@index([userId])
 

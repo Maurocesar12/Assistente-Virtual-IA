@@ -23,6 +23,7 @@ O Assistente Virtual IA foi desenvolvido para centralizar operacao, configuracao
 - Buffer de mensagens para juntar textos enviados em sequencia
 - Pausa manual de conversa e handoff para atendimento humano
 - Eventos em tempo real via SSE para QR Code, status, erros e digitacao
+- Integracao opcional com Google Agenda para criar eventos automaticamente
 - Controle de planos `starter` e `pro`
 - Checkout e webhook com AbacatePay
 - Dashboard com estatisticas de uso, conversas e mensagens
@@ -40,6 +41,7 @@ Express API (TypeScript)
     +-- SSE para eventos em tempo real
     +-- Integracao WhatsApp via WPPConnect
     +-- Integracao IA via OpenAI e Gemini
+    +-- Integracao Google Agenda via OAuth 2.0
     |
     v
 Prisma ORM
@@ -58,6 +60,7 @@ PostgreSQL (Neon)
 - WPPConnect
 - OpenAI API
 - Google Gemini API
+- Google Calendar API
 - Nodemailer
 - Zod
 
@@ -104,6 +107,8 @@ As entidades centrais do projeto sao:
 - `Conversation`: resumo do atendimento por contato
 - `Message`: historico detalhado de mensagens do usuario e da IA
 - `PasswordResetToken`: fluxo de recuperacao de senha
+- `GoogleCalendarIntegration`: conexao OAuth do usuario com Google Agenda
+- `CalendarEventLog`: registro de eventos criados automaticamente
 
 ## Planos e Billing
 
@@ -129,7 +134,8 @@ Fluxo de cobranca:
 - Validacao de payload com `zod`
 - CORS configurado por ambiente
 - Verificacao de assinatura HMAC no webhook de pagamento
-- Chaves de API armazenadas por usuario
+- Chaves de API e tokens do Google armazenados com criptografia
+- OAuth `state` assinado para proteger o callback do Google Agenda
 
 ## API Principal
 
@@ -150,6 +156,11 @@ Rotas mais importantes:
 - `POST /api/billing/checkout`
 - `POST /api/billing/webhook`
 - `GET /api/billing/status`
+- `GET /api/calendar/google/status`
+- `GET /api/calendar/google/connect`
+- `GET /api/calendar/google/callback`
+- `PATCH /api/calendar/google`
+- `DELETE /api/calendar/google`
 
 ## Como Executar Localmente
 
@@ -190,6 +201,11 @@ SMTP_FROM="Assistente Virtual IA <seuemail@gmail.com>"
 
 ABACATEPAY_API_KEY=sua_chave_abacatepay
 ABACATEPAY_WEBHOOK_SECRET=seu_secret_opcional
+
+GOOGLE_CLIENT_ID=seu_client_id_google
+GOOGLE_CLIENT_SECRET=seu_client_secret_google
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/calendar/google/callback
+GOOGLE_CALENDAR_TIMEZONE=America/Sao_Paulo
 ```
 
 Observacao: o Neon usa PostgreSQL. Mantenha a `DATABASE_URL` no formato fornecido pelo Neon e preserve `sslmode=require` quando a conexao exigir SSL.
@@ -219,6 +235,7 @@ O projeto foi estruturado para funcionar bem em ambientes de deploy com Node.js,
 - usar PostgreSQL, como Neon ou equivalente
 - configurar `NODE_ENV=production`
 - definir `FRONTEND_URL` com a URL publica do painel
+- configurar `GOOGLE_REDIRECT_URI` com a URL publica do backend, por exemplo `https://seu-backend.up.railway.app/api/calendar/google/callback`
 - configurar credenciais SMTP validas
 - configurar credenciais da AbacatePay
 - expor `JWT_SECRET` e `ENCRYPTION_KEY` fortes

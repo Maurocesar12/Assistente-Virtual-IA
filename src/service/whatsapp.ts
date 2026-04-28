@@ -7,10 +7,11 @@ import wppconnect from '@wppconnect-team/wppconnect'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { db, type Bot } from '../models/database.js'
+import { db, type Bot, type User } from '../models/database.js'
 import { geminiManager } from './gemini.js'
 import { openaiManager } from './openai.js'
 import { transcribeAudio } from './audio.js'
+import { calendarConfirmation, tryScheduleCalendarEvent } from './calendarAutomation.js'
 import { splitMessages, sendMessagesWithDelay } from '../utils/messages.js'
 import { isMessageLimitReached, getPlanConfig } from '../utils/planLimits.js'
 
@@ -766,6 +767,10 @@ export class WhatsAppManager {
     let answer: string
     try {
       answer = await this.callAIWithRetry(freshBot, user.apiKeys, chatId, message)
+      const calendarResult = await this.tryScheduleFromMessage(user, freshBot, from, message)
+      if (calendarResult?.created) {
+        answer += calendarConfirmation(calendarResult)
+      }
       console.log(`✅ IA respondeu: "${answer.slice(0, 60)}"`)
     } catch (raw) {
       const err = raw instanceof AIError ? raw : classifyError(raw)
@@ -795,6 +800,20 @@ export class WhatsAppManager {
   }
 
   // ── AI ────────────────────────────────────────────────────────────────────
+
+  private async tryScheduleFromMessage(
+    user: User,
+    bot: Bot,
+    contactPhone: string,
+    message: string,
+  ) {
+    try {
+      return await tryScheduleCalendarEvent(user, bot, contactPhone, message)
+    } catch (err) {
+      console.warn('[GoogleCalendar] Falha ao criar evento automaticamente:', err)
+      return null
+    }
+  }
 
   private async callAIWithRetry(
     bot: Bot, apiKeys: import('../models/database.js').ApiKeys,

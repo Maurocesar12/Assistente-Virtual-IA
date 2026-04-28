@@ -4,7 +4,7 @@ const API_URL = 'https://assistente-virtual-ia-production.up.railway.app/api'
 
 const State = {
   token: null, user: null, bots: [], conversations: [],
-  stats: null, activeBotId: null, connectBotId: null, sseSource: null,
+  stats: null, calendar: null, activeBotId: null, connectBotId: null, sseSource: null,
 }
 
 const Store = {
@@ -882,6 +882,7 @@ const Settings = {
         UI.el('sGemini').placeholder = keys.geminiKey ? 'Gemini ja configurada. Preencha somente para trocar.' : 'Cole sua chave Gemini'
       }
     }).catch(() => {})
+    Settings.loadCalendar()
   },
   async saveProfile() {
     try {
@@ -909,6 +910,74 @@ const Settings = {
       Settings.load()
       toast('Chaves de API salvas com seguranca.', 'success')
     } catch (err) { toastError(err) }
+  },
+  renderCalendar(status) {
+    State.calendar = status
+    const connected = Boolean(status?.connected)
+    const enabled = Boolean(status?.enabled)
+    const badge = UI.el('calendarStatusBadge')
+    const toggle = UI.el('calendarEnabled')
+    const calendarId = UI.el('calendarId')
+    const connectBtn = UI.el('connectGoogleCalendarBtn')
+    const disconnectBtn = UI.el('disconnectGoogleCalendarBtn')
+    const saveBtn = UI.el('saveGoogleCalendarBtn')
+
+    if (badge) {
+      badge.textContent = connected ? (enabled ? 'Ativo' : 'Conectado') : 'Desconectado'
+      badge.className = connected && enabled ? 'badge badge-green' : 'badge'
+    }
+    if (toggle) {
+      toggle.checked = enabled
+      toggle.disabled = !connected
+    }
+    if (calendarId) {
+      calendarId.value = status?.calendarId || 'primary'
+      calendarId.disabled = !connected
+    }
+    if (connectBtn) connectBtn.style.display = connected ? 'none' : ''
+    if (disconnectBtn) disconnectBtn.style.display = connected ? '' : 'none'
+    if (saveBtn) saveBtn.disabled = !connected
+  },
+  async loadCalendar() {
+    if (!UI.el('calendarStatusBadge')) return
+    try {
+      const status = await Api.get('/calendar/google/status')
+      Settings.renderCalendar(status)
+    } catch (err) {
+      Settings.renderCalendar({ connected: false, enabled: false, calendarId: 'primary' })
+      toastError(err, 'Nao foi possivel carregar o Google Agenda.')
+    }
+  },
+  async connectGoogleCalendar() {
+    try {
+      const data = await Api.get('/calendar/google/connect')
+      const url = new URL(data.url)
+      if (url.hostname !== 'accounts.google.com') throw new Error('URL de autorizacao Google invalida.')
+      toast('Redirecionando para o Google...', 'info')
+      window.location.href = url.toString()
+    } catch (err) { toastError(err, 'Nao foi possivel iniciar a conexao com o Google.') }
+  },
+  async saveGoogleCalendar() {
+    if (!State.calendar?.connected) {
+      toast('Conecte o Google Agenda antes de habilitar a automacao.', 'error')
+      return
+    }
+    try {
+      const payload = {
+        enabled: Boolean(UI.el('calendarEnabled')?.checked),
+        calendarId: UI.val('calendarId') || 'primary',
+      }
+      const status = await Api.patch('/calendar/google', payload)
+      Settings.renderCalendar(status)
+      toast(status.enabled ? 'Google Agenda ativado para agendamentos automaticos.' : 'Automacao do Google Agenda pausada.', 'success')
+    } catch (err) { toastError(err, 'Nao foi possivel salvar o Google Agenda.') }
+  },
+  async disconnectGoogleCalendar() {
+    try {
+      await Api.delete('/calendar/google')
+      Settings.renderCalendar({ connected: false, enabled: false, calendarId: 'primary' })
+      toast('Google Agenda desconectado.', 'info')
+    } catch (err) { toastError(err, 'Nao foi possivel desconectar o Google Agenda.') }
   },
   async changePassword() {
     const current = UI.el('cp-current')?.value?.trim() ?? '', next = UI.el('cp-new')?.value?.trim() ?? '', confirm = UI.el('cp-confirm')?.value?.trim() ?? ''
@@ -1284,9 +1353,27 @@ document.addEventListener('keydown', e => {
 })
 
 ;(async () => {
+  const params = new URLSearchParams(window.location.search)
+  const calendarOAuthStatus = params.get('calendar')
+  if (calendarOAuthStatus) {
+    params.delete('calendar')
+    params.delete('reason')
+    const clean = `${window.location.pathname}${params.toString() ? `?${params}` : ''}${window.location.hash}`
+    window.history.replaceState({}, document.title, clean)
+  }
+
   Store.load()
   if (State.token && State.user) {
-    try { const me = await Api.get('/auth/me'); State.user = me; Store.save(); await Dashboard.enter() }
+    try {
+      const me = await Api.get('/auth/me'); State.user = me; Store.save(); await Dashboard.enter()
+      if (calendarOAuthStatus) {
+        UI.view('settings')
+        const tab = document.querySelector('[data-calendar-tab]')
+        if (tab) UI.tab('t-calendar', tab)
+        Settings.loadCalendar()
+        toast(calendarOAuthStatus === 'connected' ? 'Google Agenda conectado.' : 'Nao foi possivel conectar o Google Agenda.', calendarOAuthStatus === 'connected' ? 'success' : 'error')
+      }
+    }
     catch (_) { Store.clear(); UI.page('landing') }
   } else { UI.page('landing') }
 })()

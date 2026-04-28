@@ -4,7 +4,7 @@
 
 import { PrismaClient } from '@prisma/client'
 import { COUNTABLE_MESSAGE_ROLES } from '../utils/planLimits.js'
-import { encryptApiKeys, decryptApiKeys } from '../utils/encrypt.js'
+import { encrypt, decrypt, encryptApiKeys, decryptApiKeys } from '../utils/encrypt.js'
 
 const prisma = new PrismaClient()
 
@@ -69,6 +69,53 @@ export interface CreateMessageParams {
   content:           string
   incrementBotCount?: boolean
   botId?:            string
+}
+
+export interface CalendarIntegration {
+  id:           string
+  userId:       string
+  enabled:      boolean
+  calendarId:   string
+  accessToken:  string
+  refreshToken: string
+  scope?:       string | null
+  tokenType?:   string | null
+  expiryDate?:  Date | null
+  createdAt:    Date
+  updatedAt:    Date
+}
+
+export interface SaveCalendarIntegrationParams {
+  userId:       string
+  enabled?:     boolean
+  calendarId?:  string
+  accessToken:  string
+  refreshToken: string
+  scope?:       string | null
+  tokenType?:   string | null
+  expiryDate?:  Date | null
+}
+
+export interface UpdateCalendarIntegrationParams {
+  enabled?:      boolean
+  calendarId?:   string
+  accessToken?:  string
+  refreshToken?: string
+  scope?:        string | null
+  tokenType?:    string | null
+  expiryDate?:   Date | null
+}
+
+export interface CalendarEventLogParams {
+  userId:            string
+  botId:             string
+  contactPhone:      string
+  sourceMessageHash: string
+  googleEventId:     string
+  googleHtmlLink?:   string | null
+  title:             string
+  startAt:           Date
+  endAt:             Date
 }
 
 class Database {
@@ -329,12 +376,69 @@ class Database {
       tokensUsed:         messageCount * 142,
     }
   }
-    async findUsersByPlan(plan: string): Promise<User[]> {
+  async findUsersByPlan(plan: string): Promise<User[]> {
     const users = await prisma.user.findMany({ where: { plan } })
     return users.map((u: any) => this.parseUser(u))
   }
 
   // ── Helpers privados ───────────────────────────────────────────────────────
+
+  async findCalendarIntegrationByUserId(userId: string): Promise<CalendarIntegration | null> {
+    if (!userId || userId === 'undefined') return null
+    const row = await prisma.googleCalendarIntegration.findUnique({ where: { userId } })
+    return row ? this.parseCalendarIntegration(row) : null
+  }
+
+  async saveCalendarIntegration(data: SaveCalendarIntegrationParams): Promise<CalendarIntegration> {
+    const row = await prisma.googleCalendarIntegration.upsert({
+      where: { userId: data.userId },
+      update: {
+        enabled:      data.enabled ?? true,
+        calendarId:   data.calendarId ?? 'primary',
+        accessToken:  encrypt(data.accessToken),
+        refreshToken: encrypt(data.refreshToken),
+        scope:        data.scope ?? null,
+        tokenType:    data.tokenType ?? null,
+        expiryDate:   data.expiryDate ?? null,
+      },
+      create: {
+        userId:       data.userId,
+        enabled:      data.enabled ?? true,
+        calendarId:   data.calendarId ?? 'primary',
+        accessToken:  encrypt(data.accessToken),
+        refreshToken: encrypt(data.refreshToken),
+        scope:        data.scope ?? null,
+        tokenType:    data.tokenType ?? null,
+        expiryDate:   data.expiryDate ?? null,
+      },
+    })
+
+    return this.parseCalendarIntegration(row)
+  }
+
+  async updateCalendarIntegration(userId: string, data: UpdateCalendarIntegrationParams): Promise<CalendarIntegration | null> {
+    const payload: Record<string, unknown> = { ...data }
+    if (data.accessToken) payload.accessToken = encrypt(data.accessToken)
+    if (data.refreshToken) payload.refreshToken = encrypt(data.refreshToken)
+
+    const row = await prisma.googleCalendarIntegration.update({ where: { userId }, data: payload })
+    return this.parseCalendarIntegration(row)
+  }
+
+  async deleteCalendarIntegration(userId: string): Promise<void> {
+    await prisma.googleCalendarIntegration.deleteMany({ where: { userId } })
+  }
+
+  async hasCalendarEventLog(botId: string, contactPhone: string, sourceMessageHash: string): Promise<boolean> {
+    const count = await prisma.calendarEventLog.count({ where: { botId, contactPhone, sourceMessageHash } })
+    return count > 0
+  }
+
+  async createCalendarEventLog(data: CalendarEventLogParams): Promise<void> {
+    await prisma.calendarEventLog.create({ data })
+  }
+
+  // Helpers privados
 
   private parseUser(u: any): User {
     let apiKeys: ApiKeys = {}
@@ -347,14 +451,14 @@ class Database {
     }
 
     return {
-    ...u,
-    plan:                   u.plan as Plan,
-    mustChangePassword:     u.mustChangePassword ?? false,
-    subscriptionId:         u.subscriptionId     ?? null,
-    subscriptionStatus:     u.subscriptionStatus ?? 'none',
-    planExpiresAt:          u.planExpiresAt       ?? null,
-    renewalReminderSentAt:  u.renewalReminderSentAt ?? null,
-    apiKeys,
+      ...u,
+      plan:                  u.plan as Plan,
+      mustChangePassword:    u.mustChangePassword ?? false,
+      subscriptionId:        u.subscriptionId     ?? null,
+      subscriptionStatus:    u.subscriptionStatus ?? 'none',
+      planExpiresAt:         u.planExpiresAt       ?? null,
+      renewalReminderSentAt: u.renewalReminderSentAt ?? null,
+      apiKeys,
     }
   }
 
@@ -377,6 +481,14 @@ class Database {
       ...c,
       isPaused:     c.isPaused     ?? false,
       humanHandoff: c.humanHandoff ?? false,
+    }
+  }
+
+  private parseCalendarIntegration(row: any): CalendarIntegration {
+    return {
+      ...row,
+      accessToken:  decrypt(row.accessToken),
+      refreshToken: decrypt(row.refreshToken),
     }
   }
 }
@@ -409,6 +521,12 @@ export const db = {
   createMessage:                 instance.createMessage.bind(instance),
   findMessagesByConversationId:  instance.findMessagesByConversationId.bind(instance),
   getUserStats:                  instance.getUserStats.bind(instance),
-  findUsersByPlan: instance.findUsersByPlan.bind(instance),
-  findProUsersExpiring: instance.findProUsersExpiring.bind(instance),
+  findUsersByPlan:                 instance.findUsersByPlan.bind(instance),
+  findProUsersExpiring:            instance.findProUsersExpiring.bind(instance),
+  findCalendarIntegrationByUserId: instance.findCalendarIntegrationByUserId.bind(instance),
+  saveCalendarIntegration:         instance.saveCalendarIntegration.bind(instance),
+  updateCalendarIntegration:       instance.updateCalendarIntegration.bind(instance),
+  deleteCalendarIntegration:       instance.deleteCalendarIntegration.bind(instance),
+  hasCalendarEventLog:             instance.hasCalendarEventLog.bind(instance),
+  createCalendarEventLog:          instance.createCalendarEventLog.bind(instance),
 }
