@@ -31,12 +31,14 @@ const CHARS_PER_MS = 120  // simula aproximadamente a velocidade de digitação
 export async function sendMessagesWithDelay(
   client: Whatsapp,
   messages: string[],
-  targetNumber: string
+  targetNumber: string,
+  beforeSend?: (message: string) => void,
 ): Promise<void> {
   for (const msg of messages) {
     const delay = msg.length * CHARS_PER_MS
     await sleep(delay)
 
+    beforeSend?.(msg)
     await client.sendText(targetNumber, msg).catch((err: unknown) => {
       console.error(`[WhatsApp] Failed to send message to ${targetNumber}:`, err)
     })

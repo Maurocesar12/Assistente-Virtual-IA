@@ -240,6 +240,7 @@ export class WhatsAppManager {
   private connectedOnce  = new Set<string>()
   private messageBuffers = new Map<string, string[]>()
   private messageTimers  = new Map<string, NodeJS.Timeout>()
+  private botOutboundMessages = new Map<string, Map<string, number>>()
   private lastQR         = new Map<string, { qrBase64: string; qrAscii: string }>()
   private qrWasShown     = new Map<string, boolean>()
 
@@ -288,6 +289,61 @@ export class WhatsAppManager {
 
   emitBotPause(event: Parameters<PauseListener>[0]): void {
     this.pauseListeners.forEach(l => l(event))
+  }
+
+  private outboundKey(botId: string, contactPhone: string): string {
+    return `${botId}:${contactPhone}`
+  }
+
+  private normalizeOutboundText(text: string): string {
+    return text.replace(/\s+/g, ' ').trim()
+  }
+
+  private markBotOutbound(botId: string, contactPhone: string, text: string): void {
+    const normalized = this.normalizeOutboundText(text)
+    if (!normalized) return
+
+    const key = this.outboundKey(botId, contactPhone)
+    const bucket = this.botOutboundMessages.get(key) ?? new Map<string, number>()
+    bucket.set(normalized, (bucket.get(normalized) ?? 0) + 1)
+    this.botOutboundMessages.set(key, bucket)
+
+    setTimeout(() => {
+      const current = this.botOutboundMessages.get(key)
+      if (!current) return
+      const count = current.get(normalized) ?? 0
+      if (count <= 1) current.delete(normalized)
+      else current.set(normalized, count - 1)
+      if (current.size === 0) this.botOutboundMessages.delete(key)
+    }, 60_000).unref?.()
+  }
+
+  private consumeBotOutbound(botId: string, contactPhone: string, text: string): boolean {
+    const normalized = this.normalizeOutboundText(text)
+    if (!normalized) return false
+
+    const key = this.outboundKey(botId, contactPhone)
+    const bucket = this.botOutboundMessages.get(key)
+    if (!bucket) return false
+
+    const count = bucket.get(normalized) ?? 0
+    if (count <= 0) return false
+    if (count === 1) bucket.delete(normalized)
+    else bucket.set(normalized, count - 1)
+    if (bucket.size === 0) this.botOutboundMessages.delete(key)
+    return true
+  }
+
+  private async sendBotText(
+    client: wppconnect.Whatsapp,
+    bot: Bot,
+    target: string,
+    text: string,
+  ): Promise<void> {
+    this.markBotOutbound(bot.id, target, text)
+    await client.sendText(target, text).catch((err: unknown) => {
+      console.error(`[WhatsApp] Failed to send message to ${target}:`, err)
+    })
   }
 
   // ── Session management ───────────────────────────────────────────────────
@@ -556,8 +612,14 @@ export class WhatsAppManager {
 
       console.log(`📩 [MSG] fromMe=${message.fromMe}|${type}|${from.slice(0, 25)}|${bodyPreview}`)
 
-      // Ignora mensagens enviadas pelo próprio bot — evita loop de auto-resposta
-      if (message.fromMe) return
+      // fromMe pode ser resposta manual do atendente ou mensagem automatica do bot.
+      // Tratamos antes do pipeline de entrada para evitar loop de auto-resposta.
+      if (message.fromMe) {
+        await this.handleOutboundMessage(bot, message).catch(err => {
+          console.error('[WhatsApp] erro ao tratar mensagem manual do atendente:', err)
+        })
+        return
+      }
 
       const isGroup  = message.isGroupMsg || from.includes('@g.us')
       const isStatus = from.includes('status@broadcast')
@@ -587,6 +649,48 @@ export class WhatsAppManager {
 
   // ── Processamento de áudio ────────────────────────────────────────────────
 
+  private samePhone(left: string, right?: string | null): boolean {
+    if (!right) return false
+    return left.replace(/@.*$/, '') === right.replace(/@.*$/, '')
+  }
+
+  private outgoingTarget(bot: Bot, message: any): string {
+    const candidates = [message.chatId, message.to, message.from]
+      .map(value => String(value ?? '').trim())
+      .filter(Boolean)
+    return candidates.find(value => value.includes('@c.us') && !this.samePhone(value, bot.phone))
+      ?? candidates.find(value => value.includes('@c.us'))
+      ?? candidates[0]
+      ?? ''
+  }
+
+  private async handleOutboundMessage(bot: Bot, message: any): Promise<void> {
+    const type = String(message.type ?? '')
+    const target = this.outgoingTarget(bot, message)
+    if (!target || target.includes('@g.us') || target.includes('status@broadcast')) return
+
+    const bodyText = String(message.body ?? '').trim()
+    if (bodyText && this.consumeBotOutbound(bot.id, target, bodyText)) return
+    if (IGNORED_TYPES.has(type) && !bodyText) return
+
+    const conversation = await db.findConversationByBotAndPhone(bot.id, target)
+    if (!conversation || conversation.isPaused) return
+
+    const updated = await db.setConversationPaused(conversation.id, true)
+    if (!updated) return
+
+    this.pauseListeners.forEach(l => l({
+      botId: bot.id,
+      convId: updated.id,
+      contactPhone: target,
+      isPaused: true,
+      humanHandoff: false,
+      reason: 'manual_override',
+    }))
+
+    console.log(`[WhatsApp] Bot pausado automaticamente por resposta manual | bot=${bot.id} | contato=${target}`)
+  }
+
   private async handleAudioMessage(
     bot: Bot, client: wppconnect.Whatsapp,
     chatId: string, from: string, message: any,
@@ -602,7 +706,7 @@ export class WhatsAppManager {
 
     const declaredSize = Number(message.size ?? message.fileSize ?? 0)
     if (declaredSize > MAX_AUDIO_BYTES) {
-      await client.sendText(from, AUDIO_FALLBACK_MESSAGES.transcription_failed).catch(() => {})
+      await this.sendBotText(client, bot, from, AUDIO_FALLBACK_MESSAGES.transcription_failed)
       await this.persistMessage(bot, client, from, '[audio muito grande para processar]', null)
       return
     }
@@ -614,7 +718,7 @@ export class WhatsAppManager {
       console.log(`[Audio] ${(audioBuffer.length / 1024).toFixed(1)}KB | MIME:${mimeType}`)
       if (audioBuffer.length > MAX_AUDIO_BYTES) {
         audioBuffer = Buffer.alloc(0)
-        await client.sendText(from, AUDIO_FALLBACK_MESSAGES.transcription_failed).catch(() => {})
+        await this.sendBotText(client, bot, from, AUDIO_FALLBACK_MESSAGES.transcription_failed)
         await this.persistMessage(bot, client, from, '[audio muito grande para processar]', null)
         return
       }
@@ -624,12 +728,12 @@ export class WhatsAppManager {
       if (bodyStr.length > 100) {
         try { audioBuffer = Buffer.from(bodyStr, 'base64') }
         catch (_) {
-          await client.sendText(from, AUDIO_FALLBACK_MESSAGES.transcription_failed).catch(() => {})
+          await this.sendBotText(client, bot, from, AUDIO_FALLBACK_MESSAGES.transcription_failed)
           await this.persistMessage(bot, client, from, '🎤 [áudio não processado]', null)
           return
         }
       } else {
-        await client.sendText(from, AUDIO_FALLBACK_MESSAGES.transcription_failed).catch(() => {})
+        await this.sendBotText(client, bot, from, AUDIO_FALLBACK_MESSAGES.transcription_failed)
         await this.persistMessage(bot, client, from, '🎤 [áudio não processado]', null)
         return
       }
@@ -641,7 +745,7 @@ export class WhatsAppManager {
 
     if (!result.success) {
       const fallbackMsg = AUDIO_FALLBACK_MESSAGES[result.reason] ?? AUDIO_FALLBACK_MESSAGES.transcription_failed
-      await client.sendText(from, fallbackMsg).catch(() => {})
+      await this.sendBotText(client, bot, from, fallbackMsg)
       await this.persistMessage(bot, client, from, '🎤 [áudio não transcrito]', null)
       return
     }
@@ -748,7 +852,7 @@ export class WhatsAppManager {
           isPaused: true, humanHandoff: true, reason: 'human_handoff',
         }))
       }
-      await client.sendText(from, '👤 Vou transferir você para um de nossos atendentes. Aguarde um momento!').catch(() => {})
+      await this.sendBotText(client, bot, from, '👤 Vou transferir você para um de nossos atendentes. Aguarde um momento!')
       await this.persistMessage(bot, client, from, panelText ?? message, null)
       return
     }
@@ -798,7 +902,12 @@ export class WhatsAppManager {
     }
 
     await this.persistMessage(bot, client, from, panelText ?? message, answer, true, aiResponse.usage)
-    await sendMessagesWithDelay(client, splitMessages(answer), from)
+    await sendMessagesWithDelay(
+      client,
+      splitMessages(answer),
+      from,
+      messagePart => this.markBotOutbound(bot.id, from, messagePart),
+    )
     console.log(`📤 Enviado para ${from.slice(0, 25)}`)
   }
 
