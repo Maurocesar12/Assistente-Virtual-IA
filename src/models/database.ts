@@ -5,6 +5,7 @@
 import { PrismaClient } from '@prisma/client'
 import { COUNTABLE_MESSAGE_ROLES } from '../utils/planLimits.js'
 import { encrypt, decrypt, encryptApiKeys, decryptApiKeys } from '../utils/encrypt.js'
+import { estimateTokenCount, tokenCountForStorage } from '../utils/tokenUsage.js'
 
 const prisma = new PrismaClient()
 
@@ -69,6 +70,22 @@ export interface CreateMessageParams {
   content:           string
   incrementBotCount?: boolean
   botId?:            string
+  tokenCount?:       number
+}
+
+export interface UserAnalytics {
+  totalMessages: number
+  userMessages: number
+  assistantMessages: number
+  totalConversations: number
+  totalBots: number
+  activeBots: number
+  tokensUsed: number
+  avgTokensPerMessage: number
+  avgMessagesPerConversation: number
+  messagesByDay: Array<{ date: string; messages: number; tokens: number }>
+  botBreakdown: Array<{ id: string; name: string; model: string; messages: number; conversations: number; tokens: number }>
+  topConversations: Array<{ id: string; contactName: string; contactPhone: string; messages: number; tokens: number; lastMessageAt: Date }>
 }
 
 export interface CalendarIntegration {
@@ -330,7 +347,14 @@ class Database {
     const { conversationId, role, content, incrementBotCount = true, botId } = params
 
     const message = await prisma.message.create({
-      data: { conversationId, role, content },
+      data: {
+        conversationId,
+        role,
+        content,
+        tokenCount: params.tokenCount !== undefined
+          ? Math.max(0, Math.ceil(params.tokenCount))
+          : tokenCountForStorage(undefined, content),
+      },
     })
 
     if (incrementBotCount && botId) {
@@ -357,7 +381,7 @@ class Database {
       return { totalBots: 0, activeBots: 0, totalConversations: 0, totalMessages: 0, tokensUsed: 0 }
     }
 
-    const [bots, conversations, messageCount] = await Promise.all([
+    const [bots, conversations, messageCount, tokenRows] = await Promise.all([
       prisma.bot.findMany({ where: { userId } }),
       prisma.conversation.findMany({ where: { userId } }),
       prisma.message.count({
@@ -366,14 +390,139 @@ class Database {
           conversation: { userId },
         },
       }),
+      prisma.$queryRaw<Array<{ tokens: number | bigint | null }>>`
+        SELECT COALESCE(SUM(
+          CASE
+            WHEN m."tokenCount" > 0 THEN m."tokenCount"
+            WHEN LENGTH(m."content") > 0 THEN GREATEST(1, CEIL(LENGTH(m."content")::numeric / 4.0))::integer
+            ELSE 0
+          END
+        ), 0) AS tokens
+        FROM "Message" m
+        INNER JOIN "Conversation" c ON c."id" = m."conversationId"
+        WHERE c."userId" = ${userId}
+      `,
     ])
+
+    const rawTokens = tokenRows[0]?.tokens ?? 0
+    const tokensUsed = Number(rawTokens)
 
     return {
       totalBots:          bots.length,
       activeBots:         bots.filter((b: any) => b.isActive && b.isConnected).length,
       totalConversations: conversations.length,
       totalMessages:      messageCount,
-      tokensUsed:         messageCount * 142,
+      tokensUsed,
+    }
+  }
+
+  async getUserAnalytics(userId: string): Promise<UserAnalytics> {
+    const [bots, conversations, messages] = await Promise.all([
+      prisma.bot.findMany({
+        where: { userId },
+        select: { id: true, name: true, model: true, isActive: true, isConnected: true },
+      }),
+      prisma.conversation.findMany({
+        where: { userId },
+        select: { id: true, botId: true, contactName: true, contactPhone: true, lastMessageAt: true },
+      }),
+      prisma.message.findMany({
+        where: { conversation: { userId } },
+        select: {
+          role: true,
+          content: true,
+          tokenCount: true,
+          createdAt: true,
+          conversation: {
+            select: { id: true, botId: true, contactName: true, contactPhone: true, lastMessageAt: true },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ])
+
+    const tokenFor = (message: any) => message.tokenCount > 0
+      ? message.tokenCount
+      : estimateTokenCount(message.content)
+
+    const tokensUsed = messages.reduce((total: number, message: any) => total + tokenFor(message), 0)
+    const userMessages = messages.filter((message: any) => message.role === 'user').length
+    const assistantMessages = messages.filter((message: any) => message.role === 'assistant').length
+
+    const dayMap = new Map<string, { messages: number; tokens: number }>()
+    const today = new Date()
+    for (let offset = 13; offset >= 0; offset--) {
+      const day = new Date(today)
+      day.setDate(today.getDate() - offset)
+      const key = day.toISOString().slice(0, 10)
+      dayMap.set(key, { messages: 0, tokens: 0 })
+    }
+
+    const botMap = new Map<string, { id: string; name: string; model: string; messages: number; conversations: Set<string>; tokens: number }>()
+    for (const bot of bots) {
+      botMap.set(bot.id, { id: bot.id, name: bot.name, model: bot.model, messages: 0, conversations: new Set(), tokens: 0 })
+    }
+
+    const conversationMap = new Map<string, {
+      id: string
+      contactName: string
+      contactPhone: string
+      messages: number
+      tokens: number
+      lastMessageAt: Date
+    }>()
+
+    for (const conversation of conversations) {
+      conversationMap.set(conversation.id, {
+        id: conversation.id,
+        contactName: conversation.contactName,
+        contactPhone: conversation.contactPhone,
+        messages: 0,
+        tokens: 0,
+        lastMessageAt: conversation.lastMessageAt,
+      })
+    }
+
+    for (const message of messages as any[]) {
+      const tokens = tokenFor(message)
+      const dayKey = message.createdAt.toISOString().slice(0, 10)
+      const day = dayMap.get(dayKey)
+      if (day) {
+        day.messages += 1
+        day.tokens += tokens
+      }
+
+      const bot = botMap.get(message.conversation.botId)
+      if (bot) {
+        bot.messages += 1
+        bot.tokens += tokens
+        bot.conversations.add(message.conversation.id)
+      }
+
+      const conversation = conversationMap.get(message.conversation.id)
+      if (conversation) {
+        conversation.messages += 1
+        conversation.tokens += tokens
+      }
+    }
+
+    return {
+      totalMessages: messages.length,
+      userMessages,
+      assistantMessages,
+      totalConversations: conversations.length,
+      totalBots: bots.length,
+      activeBots: bots.filter((bot: any) => bot.isActive && bot.isConnected).length,
+      tokensUsed,
+      avgTokensPerMessage: messages.length ? Math.round(tokensUsed / messages.length) : 0,
+      avgMessagesPerConversation: conversations.length ? Math.round(messages.length / conversations.length) : 0,
+      messagesByDay: [...dayMap.entries()].map(([date, value]) => ({ date, ...value })),
+      botBreakdown: [...botMap.values()]
+        .map(bot => ({ ...bot, conversations: bot.conversations.size }))
+        .sort((a, b) => b.messages - a.messages),
+      topConversations: [...conversationMap.values()]
+        .sort((a, b) => b.messages - a.messages)
+        .slice(0, 8),
     }
   }
   async findUsersByPlan(plan: string): Promise<User[]> {
@@ -381,7 +530,7 @@ class Database {
     return users.map((u: any) => this.parseUser(u))
   }
 
-  // ── Helpers privados ───────────────────────────────────────────────────────
+  // Google Calendar
 
   async findCalendarIntegrationByUserId(userId: string): Promise<CalendarIntegration | null> {
     if (!userId || userId === 'undefined') return null
@@ -521,6 +670,7 @@ export const db = {
   createMessage:                 instance.createMessage.bind(instance),
   findMessagesByConversationId:  instance.findMessagesByConversationId.bind(instance),
   getUserStats:                  instance.getUserStats.bind(instance),
+  getUserAnalytics:              instance.getUserAnalytics.bind(instance),
   findUsersByPlan:                 instance.findUsersByPlan.bind(instance),
   findProUsersExpiring:            instance.findProUsersExpiring.bind(instance),
   findCalendarIntegrationByUserId: instance.findCalendarIntegrationByUserId.bind(instance),

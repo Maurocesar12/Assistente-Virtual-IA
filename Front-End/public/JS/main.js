@@ -4,7 +4,8 @@ const API_URL = 'https://assistente-virtual-ia-production.up.railway.app/api'
 
 const State = {
   token: null, user: null, bots: [], conversations: [],
-  stats: null, calendar: null, activeBotId: null, connectBotId: null, sseSource: null,
+  stats: null, calendar: null, billingStatus: null, activeBotId: null, connectBotId: null, sseSource: null,
+  isDemo: false,
 }
 
 const Store = {
@@ -12,23 +13,33 @@ const Store = {
     try {
       if (State.token) localStorage.setItem('zapgpt_token', State.token)
       if (State.user)  localStorage.setItem('zapgpt_user',  JSON.stringify(State.user))
+      if (State.isDemo) localStorage.setItem('zapgpt_demo', '1')
+      else localStorage.removeItem('zapgpt_demo')
     } catch (_) {}
   },
   load() {
     try {
       State.token = localStorage.getItem('zapgpt_token')
+      State.isDemo = localStorage.getItem('zapgpt_demo') === '1'
       const u = localStorage.getItem('zapgpt_user')
       if (u) State.user = JSON.parse(u)
+      if (State.user && State.isDemo) State.user = { ...State.user, isDemo: true }
     } catch (_) {}
   },
   clear() {
-    try { localStorage.removeItem('zapgpt_token'); localStorage.removeItem('zapgpt_user') } catch (_) {}
-    State.token = null; State.user = null
+    try { localStorage.removeItem('zapgpt_token'); localStorage.removeItem('zapgpt_user'); localStorage.removeItem('zapgpt_demo') } catch (_) {}
+    State.token = null; State.user = null; State.isDemo = false
   },
 }
 
 const Api = {
   async request(method, path, body = null) {
+    if (Demo.blocksMutation(method, path)) {
+      const err = new Error(DEMO_READ_ONLY_MESSAGE)
+      err.status = 403
+      err.code = 'DEMO_READ_ONLY'
+      throw err
+    }
     const headers = { 'Content-Type': 'application/json' }
     if (State.token) headers['Authorization'] = `Bearer ${State.token}`
     let res
@@ -74,7 +85,7 @@ const UI = {
     document.getElementById('viewTitle').textContent = titles[id] ?? id
     if (id === 'settings') Settings.load()
     if (id === 'billing')  Billing.render()
-    if (id === 'analytics') Analytics.render()
+    if (id === 'analytics') Analytics.load()
   },
   tab(id, btn) {
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'))
@@ -111,8 +122,192 @@ function toastError(err, fallback = 'Nao foi possivel concluir a acao. Tente nov
   toast(err?.message || fallback, 'error')
 }
 
+const DEMO_READ_ONLY_MESSAGE = 'Esta demonstracao e somente leitura. Registre sua conta para criar, editar ou conectar recursos.'
+
+const Demo = {
+  isDemoEmail(email) {
+    return /^demo_\d+@zapgpt\.com$/i.test(String(email || ''))
+  },
+
+  isActive(user = State.user) {
+    return Boolean(State.isDemo || user?.isDemo || Demo.isDemoEmail(user?.email))
+  },
+
+  blocksMutation(method, path) {
+    if (!Demo.isActive()) return false
+    if (method === 'GET') return false
+    return !['/auth/logout', '/auth/login', '/auth/register', '/auth/forgot-password'].includes(path)
+  },
+
+  requireRealAccount() {
+    if (!Demo.isActive()) return true
+    toast(DEMO_READ_ONLY_MESSAGE, 'warning')
+    return false
+  },
+
+  start() {
+    Store.clear()
+    State.isDemo = true
+    State.token = null
+    State.user = {
+      id: 'demo-local',
+      name: 'Demo',
+      lastName: 'User',
+      email: 'demo@zapiens.local',
+      plan: 'starter',
+      subscriptionStatus: 'none',
+      apiKeys: {},
+      isDemo: true,
+    }
+    Demo.loadSampleData()
+    Store.save()
+  },
+
+  goRegister() {
+    Connect.cleanup()
+    Store.clear()
+    State.bots = []
+    State.conversations = []
+    State.stats = null
+    State.calendar = null
+    State.billingStatus = null
+    UI.page('register')
+    toast('Crie sua conta gratuita para liberar edicoes, conexoes e configuracoes.', 'info')
+  },
+
+  applyUI() {
+    const active = Demo.isActive()
+    document.body.classList.toggle('demo-readonly', active)
+    const banner = UI.el('demoReadOnlyBanner')
+    if (banner) banner.style.display = active ? '' : 'none'
+    ;['sName', 'sLastName', 'sOpenAI', 'sAssistant', 'sGemini', 'calendarId', 'cp-current', 'cp-new', 'cp-confirm'].forEach(id => {
+      const field = UI.el(id)
+      if (!field) return
+      field.readOnly = active
+      field.onclick = active ? () => Demo.requireRealAccount() : null
+    })
+  },
+
+  loadSampleData() {
+    const now = Date.now()
+    const iso = (minutesAgo) => new Date(now - minutesAgo * 60_000).toISOString()
+
+    State.bots = [
+      {
+        id: 'demo-bot-sales',
+        userId: 'demo-local',
+        name: 'Atendente Comercial',
+        model: 'gemini-2.5-flash',
+        prompt: 'Atenda leads, qualifique necessidades e ofereca reunioes comerciais.',
+        isActive: true,
+        isConnected: true,
+        phone: '5511999998888@c.us',
+        sessionName: 'demo_sales',
+        messageCount: 128,
+        createdAt: iso(14400),
+      },
+      {
+        id: 'demo-bot-support',
+        userId: 'demo-local',
+        name: 'Suporte Pos-venda',
+        model: 'gpt-4',
+        prompt: 'Ajude clientes com duvidas frequentes e encaminhe casos complexos.',
+        isActive: false,
+        isConnected: false,
+        phone: null,
+        sessionName: 'demo_support',
+        messageCount: 42,
+        createdAt: iso(10080),
+      },
+    ]
+
+    State.conversations = [
+      {
+        id: 'demo-conv-ana',
+        botId: 'demo-bot-sales',
+        userId: 'demo-local',
+        contactName: 'Ana Martins',
+        contactPhone: '5511988887777@c.us',
+        lastMessage: 'Perfeito, pode marcar para amanha as 15h.',
+        lastMessageAt: iso(18),
+        unreadCount: 2,
+        isPaused: false,
+        humanHandoff: false,
+      },
+      {
+        id: 'demo-conv-carlos',
+        botId: 'demo-bot-sales',
+        userId: 'demo-local',
+        contactName: 'Carlos Lima',
+        contactPhone: '5521977776666@c.us',
+        lastMessage: 'Quero entender os planos antes de contratar.',
+        lastMessageAt: iso(74),
+        unreadCount: 0,
+        isPaused: true,
+        humanHandoff: false,
+      },
+      {
+        id: 'demo-conv-marina',
+        botId: 'demo-bot-support',
+        userId: 'demo-local',
+        contactName: 'Marina Costa',
+        contactPhone: '5531966665555@c.us',
+        lastMessage: 'Obrigada, resolveu minha duvida.',
+        lastMessageAt: iso(240),
+        unreadCount: 0,
+        isPaused: false,
+        humanHandoff: false,
+      },
+    ]
+
+    State.stats = {
+      activeBots: 1,
+      totalBots: 2,
+      totalMessages: 170,
+      totalConversations: 3,
+      tokensUsed: 24830,
+      plan: 'starter',
+      subscriptionStatus: 'none',
+      analyticsAvailable: false,
+      planLabel: 'Starter',
+      planPrice: 0,
+      messageLimit: 50,
+      remainingMessages: 0,
+      usagePercent: 100,
+      limitReached: false,
+    }
+    State.billingStatus = { plan: 'starter', subscriptionStatus: 'none', planExpiresAt: null, daysUntilExpiry: null, billings: [] }
+    State.calendar = { connected: false, enabled: false, calendarId: 'primary' }
+  },
+
+  messagesFor(convId) {
+    const data = {
+      'demo-conv-ana': [
+        { id: 'm1', role: 'user', content: 'Oi, gostaria de conhecer a plataforma para atendimento no WhatsApp.', createdAt: new Date(Date.now() - 32 * 60_000).toISOString() },
+        { id: 'm2', role: 'assistant', content: 'Claro. Posso te explicar os recursos e, se fizer sentido, agendar uma reuniao rapida.', createdAt: new Date(Date.now() - 31 * 60_000).toISOString() },
+        { id: 'm3', role: 'user', content: 'Tenho disponibilidade amanha as 15h.', createdAt: new Date(Date.now() - 19 * 60_000).toISOString() },
+        { id: 'm4', role: 'assistant', content: 'Perfeito. Identifiquei a data e horario da reuniao. Com Google Agenda conectado, o evento seria criado automaticamente.', createdAt: new Date(Date.now() - 18 * 60_000).toISOString() },
+      ],
+      'demo-conv-carlos': [
+        { id: 'm5', role: 'user', content: 'Quero entender os planos antes de contratar.', createdAt: new Date(Date.now() - 76 * 60_000).toISOString() },
+        { id: 'm6', role: 'assistant', content: 'O Starter permite testar o fluxo. O Pro libera mensagens ilimitadas, Analytics completo e mais recursos de operacao.', createdAt: new Date(Date.now() - 74 * 60_000).toISOString() },
+      ],
+      'demo-conv-marina': [
+        { id: 'm7', role: 'user', content: 'Como eu troco a chave da IA?', createdAt: new Date(Date.now() - 250 * 60_000).toISOString() },
+        { id: 'm8', role: 'assistant', content: 'Acesse Configuracoes > API Keys e cole a nova chave OpenAI ou Gemini. A chave anterior fica preservada se o campo for deixado vazio.', createdAt: new Date(Date.now() - 248 * 60_000).toISOString() },
+        { id: 'm9', role: 'user', content: 'Obrigada, resolveu minha duvida.', createdAt: new Date(Date.now() - 240 * 60_000).toISOString() },
+      ],
+    }
+    return data[convId] ?? []
+  },
+}
+
 const Modals = {
-  open(id) { document.getElementById(`m-${id}`)?.classList.add('open'); if (id === 'connect') Connect.start() },
+  open(id) {
+    if (['newBot', 'checkoutPro', 'changePassword'].includes(id) && !Demo.requireRealAccount()) return
+    document.getElementById(`m-${id}`)?.classList.add('open')
+    if (id === 'connect') Connect.start()
+  },
   close(id) { document.getElementById(`m-${id}`)?.classList.remove('open'); if (id === 'connect') Connect.cleanup() },
 }
 document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open') }))
@@ -244,6 +439,7 @@ const Auth = {
     UI.setLoading('loginBtn', true)
     try {
       const data = await Api.post('/auth/login', { email, password })
+      State.isDemo = false
       State.token = data.token; State.user = data.user
       if (data.mustChangePassword) State.user = { ...State.user, mustChangePassword: true }
       Store.save(); await Dashboard.enter()
@@ -264,6 +460,7 @@ const Auth = {
   UI.setLoading('registerBtn', true)
   try {
     const data = await Api.post('/auth/register', { name, lastName, email, password, planIntent })
+    State.isDemo = false
     State.token = data.token
     State.user  = data.user
     Store.save()
@@ -287,12 +484,9 @@ const Auth = {
   }
 },
   async demoLogin() {
-    const suffix = Date.now()
-    try {
-      const data = await Api.post('/auth/register', { name: 'Demo', lastName: 'User', email: `demo_${suffix}@zapgpt.com`, password: 'demo1234', planIntent: 'starter' })
-      State.token = data.token; State.user = data.user; Store.save()
-      await Dashboard.enter(); toast('Modo demonstração ativado 🚀', 'info')
-    } catch (err) { toast('Erro ao iniciar demo: ' + err.message, 'error') }
+    Demo.start()
+    await Dashboard.enter()
+    toast('Modo demonstracao ativado. A demonstracao e somente leitura.', 'info')
   },
   openForgot() {
     const form = UI.el('fp-form'), success = UI.el('fp-success')
@@ -328,6 +522,7 @@ const Auth = {
     finally { UI.setLoading('forgotBtn', false) }
   },
   async changePassword() {
+    if (!Demo.requireRealAccount()) return
     const current = UI.el('modal-cp-current')?.value?.trim() ?? ''
     const next    = UI.el('modal-cp-new')?.value?.trim()     ?? ''
     const confirm = UI.el('modal-cp-confirm')?.value?.trim() ?? ''
@@ -347,8 +542,8 @@ const Auth = {
   },
   async logout() {
     Connect.cleanup(); PlanLimit.hideBanner()
-    try { await Api.post('/auth/logout') } catch (_) {}
-    Store.clear(); State.bots = []; State.conversations = []; State.stats = null
+    try { if (State.token) await Api.post('/auth/logout') } catch (_) {}
+    Store.clear(); State.bots = []; State.conversations = []; State.stats = null; State.calendar = null; State.billingStatus = null
     UI.page('landing'); toast('Até logo! 👋', 'info')
   },
 }
@@ -394,7 +589,9 @@ const Register = {
 const Dashboard = {
   async enter() {
      UI.page('dashboard'); UI.view('overview'); Dashboard.updateSidebar()
+     Demo.applyUI()
      await Dashboard.refresh()
+     Demo.applyUI()
 
   if (State.user?.mustChangePassword) setTimeout(() => Modals.open('changePassword'), 500)
    },
@@ -402,16 +599,25 @@ const Dashboard = {
     try { await Promise.all([Dashboard.loadStats(), Bots.load(), Conversations.load()]) }
     catch (err) { console.error('Dashboard refresh error:', err) }
   },
-  async loadStats() {
-    try {
-      const stats = await Api.get('/users/me/stats')
-      State.stats = stats
+  renderStats(stats) {
+      if (!stats) return
       UI.el('s-bots').textContent      = stats.activeBots
       UI.el('s-msgs').textContent      = stats.totalMessages.toLocaleString('pt-BR')
       UI.el('s-convs').textContent     = stats.totalConversations
       UI.el('s-tokens').textContent    = stats.tokensUsed.toLocaleString('pt-BR')
       UI.el('s-bots-meta').textContent = `${stats.totalBots} total`
       PlanLimit.applyFromStats(stats)
+  },
+  async loadStats() {
+    if (Demo.isActive()) {
+      Demo.loadSampleData()
+      Dashboard.renderStats(State.stats)
+      return
+    }
+    try {
+      const stats = await Api.get('/users/me/stats')
+      State.stats = stats
+      Dashboard.renderStats(stats)
 
       // Busca status de billing e aplica banners/toasts
       try {
@@ -434,7 +640,7 @@ const Dashboard = {
     const u = State.user; if (!u) return
     UI.el('sbAvatar').textContent = u.name[0].toUpperCase()
     UI.el('sbName').textContent   = `${u.name} ${u.lastName || ''}`
-    UI.el('sbPlan').textContent   = (u.plan ?? 'starter').toUpperCase()
+    UI.el('sbPlan').textContent   = Demo.isActive() ? 'DEMO' : (u.plan ?? 'starter').toUpperCase()
   },
   filterConvs(query) {
     const q = query.toLowerCase()
@@ -450,6 +656,11 @@ const MODEL_META = {
 
 const Bots = {
   async load() {
+    if (Demo.isActive()) {
+      Demo.loadSampleData()
+      Bots.render(); Bots.renderOverview(); Bots.updateSteps()
+      return
+    }
     try { const result = await Api.get('/bots'); State.bots = Array.isArray(result) ? result : []; Bots.render(); Bots.renderOverview(); Bots.updateSteps() }
     catch (err) { State.bots = []; toastError(err, 'Nao foi possivel carregar seus bots.') }
   },
@@ -476,6 +687,7 @@ const Bots = {
     if (hasMsgs) UI.el('step3')?.classList.add('done')
   },
   async create() {
+    if (!Demo.requireRealAccount()) return
     const name = UI.val('bName'), model = UI.val('bModel'), prompt = UI.val('bPrompt');
     
     // 1. Verifica se escolheu o modelo
@@ -513,6 +725,7 @@ const Bots = {
     finally { UI.setLoading('createBotBtn', false) }
   },
   openEdit(botId) {
+    if (!Demo.requireRealAccount()) return
     const bot = State.bots.find(b => b.id === botId); if (!bot) return
     State.activeBotId = botId
     const m = MODEL_META[bot.model] ?? { label: bot.model }
@@ -527,6 +740,7 @@ const Bots = {
     Modals.open('editBot')
   },
   async save() {
+    if (!Demo.requireRealAccount()) return
     const id = State.activeBotId; if (!id) return
     try {
       const updated = await Api.patch(`/bots/${id}`, { prompt: UI.el('eBotPrompt').value, isActive: UI.el('eBotActive').checked })
@@ -536,6 +750,7 @@ const Bots = {
     } catch (err) { toast(err.message, 'error') }
   },
   async delete() {
+    if (!Demo.requireRealAccount()) return
     const id = State.activeBotId; if (!id) return
     const bot = State.bots.find(b => b.id === id)
     if (!confirm(`Excluir o bot "${bot?.name}"? Esta ação não pode ser desfeita.`)) return
@@ -544,8 +759,9 @@ const Bots = {
       Modals.close('editBot'); Bots.render(); Bots.renderOverview(); toast('Bot excluído', 'info')
     } catch (err) { toast(err.message, 'error') }
   },
-  connectFromEdit() { const id = State.activeBotId; if (!id) return; Modals.close('editBot'); Connect.open(id) },
+  connectFromEdit() { if (!Demo.requireRealAccount()) return; const id = State.activeBotId; if (!id) return; Modals.close('editBot'); Connect.open(id) },
   async disconnectFromEdit() {
+    if (!Demo.requireRealAccount()) return
     const id = State.activeBotId; if (!id) return
     const bot = State.bots.find(b => b.id === id); if (!bot) return
     if (!confirm(`Desconectar o bot "${bot.name}" do WhatsApp?`)) return
@@ -578,6 +794,11 @@ const Bots = {
 
 const Conversations = {
   async load() {
+    if (Demo.isActive()) {
+      Demo.loadSampleData()
+      Conversations.render(); Conversations.renderOverview()
+      return
+    }
     try { const result = await Api.get('/conversations'); State.conversations = Array.isArray(result) ? result : []; Conversations.render(); Conversations.renderOverview() }
     catch (err) { State.conversations = []; toastError(err, 'Nao foi possivel carregar suas conversas.') }
   },
@@ -643,6 +864,7 @@ const Conversations = {
     }).join('')
   },
   async deleteChat(convId) {
+    if (!Demo.requireRealAccount()) return
     if (!confirm('Excluir esta conversa? Todas as mensagens serão apagadas permanentemente.')) return
     try {
       await Api.delete(`/conversations/${convId}`)
@@ -651,6 +873,7 @@ const Conversations = {
     } catch (err) { toast('Erro ao excluir: ' + err.message, 'error') }
   },
   async pause(convId) {
+    if (!Demo.requireRealAccount()) return
     try {
       const updated = await Api.post(`/conversations/${convId}/pause`)
       const idx = State.conversations.findIndex(c => c.id === convId)
@@ -660,6 +883,7 @@ const Conversations = {
     } catch (err) { toast('Erro ao pausar: ' + err.message, 'error') }
   },
   async resume(convId) {
+    if (!Demo.requireRealAccount()) return
     try {
       const updated = await Api.post(`/conversations/${convId}/resume`)
       const idx = State.conversations.findIndex(c => c.id === convId)
@@ -712,9 +936,10 @@ const BotAlerts = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Connect = {
-  open(botId) { State.connectBotId = botId; Modals.open('connect') },
+  open(botId) { if (!Demo.requireRealAccount()) return; State.connectBotId = botId; Modals.open('connect') },
 
   start() {
+    if (!Demo.requireRealAccount()) return
     const botId = State.connectBotId; if (!botId) return
     Api.post(`/bots/${botId}/connect`).catch((err) => {
       Connect.log(err.message || 'Nao foi possivel iniciar a conexao.', 'error')
@@ -866,6 +1091,14 @@ const Settings = {
     if (UI.el('sName'))     UI.el('sName').value     = u.name ?? ''
     if (UI.el('sLastName')) UI.el('sLastName').value  = u.lastName ?? ''
     if (UI.el('sEmail'))    UI.el('sEmail').value     = u.email ?? ''
+    if (Demo.isActive()) {
+      if (UI.el('sOpenAI')) UI.el('sOpenAI').placeholder = 'Disponivel apos criar sua conta'
+      if (UI.el('sAssistant')) UI.el('sAssistant').placeholder = 'Disponivel apos criar sua conta'
+      if (UI.el('sGemini')) UI.el('sGemini').placeholder = 'Disponivel apos criar sua conta'
+      Settings.renderCalendar({ connected: false, enabled: false, calendarId: 'primary' })
+      Demo.applyUI()
+      return
+    }
     Api.get('/auth/me').then(user => {
       State.user = user; Store.save()
       const keys = user.apiKeys ?? {}
@@ -885,6 +1118,7 @@ const Settings = {
     Settings.loadCalendar()
   },
   async saveProfile() {
+    if (!Demo.requireRealAccount()) return
     try {
       const updated = await Api.patch('/users/me', { name: UI.val('sName'), lastName: UI.val('sLastName') })
       State.user = { ...State.user, ...updated }; Store.save(); Dashboard.updateSidebar()
@@ -892,6 +1126,7 @@ const Settings = {
     } catch (err) { toast(err.message, 'error') }
   },
   async saveApiKeys() {
+    if (!Demo.requireRealAccount()) return
     try {
       const payload = {}
       const openaiKey = UI.val('sOpenAI')
@@ -940,6 +1175,10 @@ const Settings = {
   },
   async loadCalendar() {
     if (!UI.el('calendarStatusBadge')) return
+    if (Demo.isActive()) {
+      Settings.renderCalendar({ connected: false, enabled: false, calendarId: 'primary' })
+      return
+    }
     try {
       const status = await Api.get('/calendar/google/status')
       Settings.renderCalendar(status)
@@ -949,6 +1188,7 @@ const Settings = {
     }
   },
   async connectGoogleCalendar() {
+    if (!Demo.requireRealAccount()) return
     try {
       const data = await Api.get('/calendar/google/connect')
       const url = new URL(data.url)
@@ -958,6 +1198,7 @@ const Settings = {
     } catch (err) { toastError(err, 'Nao foi possivel iniciar a conexao com o Google.') }
   },
   async saveGoogleCalendar() {
+    if (!Demo.requireRealAccount()) return
     if (!State.calendar?.connected) {
       toast('Conecte o Google Agenda antes de habilitar a automacao.', 'error')
       return
@@ -973,6 +1214,7 @@ const Settings = {
     } catch (err) { toastError(err, 'Nao foi possivel salvar o Google Agenda.') }
   },
   async disconnectGoogleCalendar() {
+    if (!Demo.requireRealAccount()) return
     try {
       await Api.delete('/calendar/google')
       Settings.renderCalendar({ connected: false, enabled: false, calendarId: 'primary' })
@@ -980,6 +1222,7 @@ const Settings = {
     } catch (err) { toastError(err, 'Nao foi possivel desconectar o Google Agenda.') }
   },
   async changePassword() {
+    if (!Demo.requireRealAccount()) return
     const current = UI.el('cp-current')?.value?.trim() ?? '', next = UI.el('cp-new')?.value?.trim() ?? '', confirm = UI.el('cp-confirm')?.value?.trim() ?? ''
     if (!current || !next || !confirm) { toast('Preencha todos os campos', 'error'); return }
     if (next.length < 8)  { toast('Nova senha deve ter pelo menos 8 caracteres', 'error'); return }
@@ -997,12 +1240,99 @@ const Settings = {
 }
 
 const Analytics = {
-  render() {
-    const s = State.stats; if (!s) return
-    UI.el('an-total').textContent  = s.totalMessages.toLocaleString('pt-BR')
-    UI.el('an-avg').textContent    = Math.floor(s.totalMessages / 7).toLocaleString('pt-BR')
-    UI.el('an-convs').textContent  = s.totalConversations
-    UI.el('an-tokens').textContent = s.tokensUsed.toLocaleString('pt-BR')
+  showLocked() {
+    const locked = UI.el('analyticsLocked')
+    const content = UI.el('analyticsContent')
+    if (locked) locked.style.display = ''
+    if (content) content.style.display = 'none'
+  },
+  showContent() {
+    const locked = UI.el('analyticsLocked')
+    const content = UI.el('analyticsContent')
+    if (locked) locked.style.display = 'none'
+    if (content) content.style.display = ''
+  },
+  async load() {
+    if (Demo.isActive()) {
+      Analytics.showLocked()
+      return
+    }
+    const stats = State.stats
+    if (stats && !stats.analyticsAvailable) {
+      Analytics.showLocked()
+      return
+    }
+
+    try {
+      const analytics = await Api.get('/users/me/analytics')
+      Analytics.showContent()
+      Analytics.render(analytics)
+    } catch (err) {
+      if (err?.status === 403) {
+        Analytics.showLocked()
+        return
+      }
+      toastError(err, 'Nao foi possivel carregar o Analytics.')
+    }
+  },
+  render(data) {
+    UI.el('an-total').textContent = data.totalMessages.toLocaleString('pt-BR')
+    UI.el('an-convs').textContent = data.totalConversations.toLocaleString('pt-BR')
+    UI.el('an-tokens').textContent = data.tokensUsed.toLocaleString('pt-BR')
+    UI.el('an-avg').textContent = data.avgMessagesPerConversation.toLocaleString('pt-BR')
+    UI.el('an-msgs-meta').textContent = `${data.userMessages.toLocaleString('pt-BR')} clientes / ${data.assistantMessages.toLocaleString('pt-BR')} IA`
+    UI.el('an-convs-meta').textContent = `${data.activeBots.toLocaleString('pt-BR')} bots ativos`
+    Analytics.renderDays(data.messagesByDay ?? [])
+    Analytics.renderBots(data.botBreakdown ?? [])
+    Analytics.renderConversations(data.topConversations ?? [])
+  },
+  renderDays(days) {
+    const el = UI.el('an-days'); if (!el) return
+    if (!days.length) {
+      el.innerHTML = `<div class="empty" style="padding:24px"><h3>Sem dados recentes</h3></div>`
+      return
+    }
+    const max = Math.max(...days.map(d => d.messages), 1)
+    el.innerHTML = days.map(day => {
+      const label = new Date(`${day.date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+      const width = Math.max(4, Math.round((day.messages / max) * 100))
+      return `<div style="display:grid;grid-template-columns:54px 1fr 86px;gap:10px;align-items:center;margin-bottom:10px">
+        <span class="text-xs text-dim">${label}</span>
+        <div class="progress-track" style="height:8px"><div class="progress-fill" style="width:${width}%"></div></div>
+        <span class="text-xs text-muted" style="text-align:right">${day.messages.toLocaleString('pt-BR')} msg</span>
+      </div>`
+    }).join('')
+  },
+  renderBots(bots) {
+    const el = UI.el('an-bots'); if (!el) return
+    if (!bots.length) {
+      el.innerHTML = `<div class="empty" style="padding:24px"><h3>Nenhum bot ainda</h3></div>`
+      return
+    }
+    const rows = bots.map(bot => `<tr>
+      <td><strong>${Bots.escape(bot.name)}</strong><div class="text-xs text-dim">${Bots.escape(bot.model)}</div></td>
+      <td>${bot.messages.toLocaleString('pt-BR')}</td>
+      <td>${bot.tokens.toLocaleString('pt-BR')}</td>
+    </tr>`).join('')
+    el.innerHTML = `<table class="table"><thead><tr><th>Bot</th><th>Msgs</th><th>Tokens</th></tr></thead><tbody>${rows}</tbody></table>`
+  },
+  renderConversations(conversations) {
+    const el = UI.el('an-conversations'); if (!el) return
+    if (!conversations.length) {
+      el.innerHTML = `<div class="empty" style="padding:24px"><h3>Nenhuma conversa ainda</h3></div>`
+      return
+    }
+    const rows = conversations.map(conv => {
+      const date = new Date(conv.lastMessageAt).toLocaleDateString('pt-BR')
+      const name = conv.contactName && conv.contactName !== conv.contactPhone ? conv.contactName : _formatPhone(conv.contactPhone)
+      return `<tr>
+        <td><strong>${Bots.escape(name)}</strong><div class="text-xs text-dim">${Bots.escape(_formatPhone(conv.contactPhone))}</div></td>
+        <td>${conv.messages.toLocaleString('pt-BR')}</td>
+        <td>${conv.tokens.toLocaleString('pt-BR')}</td>
+        <td class="text-muted">${date}</td>
+      </tr>`
+    }).join('')
+    el.innerHTML = `<table class="table"><thead><tr><th>Contato</th><th>Mensagens</th><th>Tokens</th><th>Ultima</th></tr></thead><tbody>${rows}</tbody></table>`
   },
 }
 
@@ -1020,7 +1350,7 @@ const Billing = {
  
     // Busca status de billing para preencher detalhes
     let billingStatus = State.billingStatus ?? null
-    if (!billingStatus) {
+    if (!billingStatus && !Demo.isActive()) {
       try { billingStatus = await Api.get('/billing/status') } catch (_) {}
     }
  
@@ -1132,12 +1462,14 @@ const Billing = {
   },
  
   openCheckout() {
+    if (!Demo.requireRealAccount()) return
     const ti = UI.el('checkoutTaxId'), ph = UI.el('checkoutPhone')
     if (ti) ti.value = ''; if (ph) ph.value = ''
     Modals.open('checkoutPro')
   },
  
   async startCheckout() {
+    if (!Demo.requireRealAccount()) return
     const taxId     = UI.val('checkoutTaxId')
     const cellphone = UI.val('checkoutPhone')
     if (taxId.replace(/\D/g, '').length < 11) { toast('Informe um CPF ou CNPJ válido', 'error'); return }
@@ -1190,7 +1522,9 @@ const ChatViewer = {
     UI.el('chatMsgCount').textContent = '...'
 
     try {
-      const messages = await Api.get(`/conversations/${convId}/messages`)
+      const messages = Demo.isActive()
+        ? Demo.messagesFor(convId)
+        : await Api.get(`/conversations/${convId}/messages`)
       ChatViewer.render(messages, bot, displayName)
     } catch (err) {
       toastError(err, 'Nao foi possivel carregar as mensagens desta conversa.')
@@ -1279,8 +1613,8 @@ const ChatViewer = {
     }
   },
 
-  async pauseCurrentChat()  { const id = ChatViewer._activeConvId; if (id) await Conversations.pause(id) },
-  async resumeCurrentChat() { const id = ChatViewer._activeConvId; if (id) await Conversations.resume(id) },
+  async pauseCurrentChat()  { if (!Demo.requireRealAccount()) return; const id = ChatViewer._activeConvId; if (id) await Conversations.pause(id) },
+  async resumeCurrentChat() { if (!Demo.requireRealAccount()) return; const id = ChatViewer._activeConvId; if (id) await Conversations.resume(id) },
 
   // ── ✦ Feature 4 — IA digitando (bot-typing) ──────────────────────────────
 
@@ -1344,6 +1678,14 @@ const ChatViewer = {
   },
 }
 
+document.addEventListener('change', e => {
+  const target = e.target
+  if (!Demo.isActive() || !(target instanceof HTMLInputElement)) return
+  if (target.type !== 'checkbox' || !target.closest('#view-settings')) return
+  target.checked = !target.checked
+  Demo.requireRealAccount()
+})
+
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') document.querySelectorAll('.overlay.open').forEach(o => o.classList.remove('open'))
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -1363,6 +1705,14 @@ document.addEventListener('keydown', e => {
   }
 
   Store.load()
+  if (Demo.isActive()) {
+    State.isDemo = true
+    if (State.user) State.user = { ...State.user, isDemo: true }
+    else State.user = { id: 'demo-local', name: 'Demo', lastName: 'User', email: 'demo@zapiens.local', plan: 'starter', subscriptionStatus: 'none', apiKeys: {}, isDemo: true }
+    Demo.loadSampleData()
+    await Dashboard.enter()
+    return
+  }
   if (State.token && State.user) {
     try {
       const me = await Api.get('/auth/me'); State.user = me; Store.save(); await Dashboard.enter()

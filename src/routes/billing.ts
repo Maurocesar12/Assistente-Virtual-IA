@@ -19,6 +19,7 @@ import { z }              from 'zod'
 import crypto             from 'crypto'
 import { db }             from '../models/database.js'
 import { authenticate }   from '../middleware/authenticate.js'
+import { demoReadOnlyGuard } from '../middleware/demoReadOnlyGuard.js'
 import { validate }       from '../middleware/validate.js'
 import { ApiError, ok, created } from '../utils/http.js'
 import { env }            from '../config/env.js'
@@ -63,7 +64,7 @@ const checkoutSchema = z.object({
 // Gera uma cobrança ONE_TIME de R$9,99.
 // Funciona tanto para primeira assinatura quanto para renovações manuais.
 
-billingRouter.post('/checkout', authenticate, validate(checkoutSchema), async (req, res, next) => {
+billingRouter.post('/checkout', authenticate, demoReadOnlyGuard, validate(checkoutSchema), async (req, res, next) => {
   try {
     const user = await db.findUserById(req.userId)
     if (!user) throw ApiError.notFound('Usuário não encontrado')

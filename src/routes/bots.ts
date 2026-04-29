@@ -12,6 +12,7 @@ import { ApiError, ok, created, noContent } from '../utils/http.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { validate } from '../middleware/validate.js'
 import { planGuard } from '../middleware/planGuard.js'
+import { demoReadOnlyGuard } from '../middleware/demoReadOnlyGuard.js'
 
 export const botsRouter = Router()
 
@@ -77,7 +78,7 @@ botsRouter.get('/:id', async (req, res, next) => {
 
 // ─── POST /bots ───────────────────────────────────────────────────────────────
 
-botsRouter.post('/', validate(createBotSchema), async (req, res, next) => {
+botsRouter.post('/', demoReadOnlyGuard, validate(createBotSchema), async (req, res, next) => {
   try {
     const { name, model, prompt } = req.body
     const bot = await db.createBot({
@@ -96,7 +97,7 @@ botsRouter.post('/', validate(createBotSchema), async (req, res, next) => {
 
 // ─── PATCH /bots/:id ──────────────────────────────────────────────────────────
 
-botsRouter.patch('/:id', validate(updateBotSchema), async (req, res, next) => {
+botsRouter.patch('/:id', demoReadOnlyGuard, validate(updateBotSchema), async (req, res, next) => {
   try {
     const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
@@ -107,7 +108,7 @@ botsRouter.patch('/:id', validate(updateBotSchema), async (req, res, next) => {
 
 // ─── DELETE /bots/:id ─────────────────────────────────────────────────────────
 
-botsRouter.delete('/:id', async (req, res, next) => {
+botsRouter.delete('/:id', demoReadOnlyGuard, async (req, res, next) => {
   try {
     const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
@@ -121,7 +122,7 @@ botsRouter.delete('/:id', async (req, res, next) => {
 // planGuard: impede conexão de bot quando limite do plano foi atingido.
 // Sem isso, um atacante com JWT válido poderia conectar bots via API direta.
 
-botsRouter.post('/:id/connect', planGuard, async (req, res, next) => {
+botsRouter.post('/:id/connect', demoReadOnlyGuard, planGuard, async (req, res, next) => {
   try {
     const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
@@ -143,7 +144,7 @@ botsRouter.post('/:id/connect', planGuard, async (req, res, next) => {
 
 // ─── POST /bots/:id/disconnect ────────────────────────────────────────────────
 
-botsRouter.post('/:id/disconnect', async (req, res, next) => {
+botsRouter.post('/:id/disconnect', demoReadOnlyGuard, async (req, res, next) => {
   try {
     const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')

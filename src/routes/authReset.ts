@@ -6,6 +6,7 @@ import { hashPassword } from '../utils/auth.js'
 import { ApiError, ok } from '../utils/http.js'
 import { validate } from '../middleware/validate.js'
 import { authenticate } from '../middleware/authenticate.js'
+import { demoReadOnlyGuard } from '../middleware/demoReadOnlyGuard.js'
 import {
   generateTempPassword,
   generateResetToken,
@@ -108,6 +109,7 @@ authResetRouter.post(
 authResetRouter.post(
   '/change-password',
   authenticate,               // ✅ JWT obrigatório — injeta req.userId
+  demoReadOnlyGuard,
   validate(changePasswordSchema),
   async (req, res, next) => {
     try {

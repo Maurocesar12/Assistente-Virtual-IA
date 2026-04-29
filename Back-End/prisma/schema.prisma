@@ -130,6 +130,7 @@ model Message {
   conversationId String
   role           String
   content        String
+  tokenCount     Int    @default(0)
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 

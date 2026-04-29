@@ -14,6 +14,7 @@ import { transcribeAudio } from './audio.js'
 import { calendarConfirmation, tryScheduleCalendarEvent } from './calendarAutomation.js'
 import { splitMessages, sendMessagesWithDelay } from '../utils/messages.js'
 import { isMessageLimitReached, getPlanConfig } from '../utils/planLimits.js'
+import type { AITextResponse, AIUsage } from '../utils/tokenUsage.js'
 
 const __dirname  = path.dirname(fileURLToPath(import.meta.url))
 const TOKENS_DIR = path.join(__dirname, '..', '..', 'tokens')
@@ -764,9 +765,11 @@ export class WhatsAppManager {
       }))
     }
 
+    let aiResponse: AITextResponse
     let answer: string
     try {
-      answer = await this.callAIWithRetry(freshBot, user.apiKeys, chatId, message)
+      aiResponse = await this.callAIWithRetry(freshBot, user.apiKeys, chatId, message)
+      answer = aiResponse.text
       const calendarResult = await this.tryScheduleFromMessage(user, freshBot, from, message)
       if (calendarResult?.created) {
         answer += calendarConfirmation(calendarResult)
@@ -794,7 +797,7 @@ export class WhatsAppManager {
       }))
     }
 
-    await this.persistMessage(bot, client, from, panelText ?? message, answer)
+    await this.persistMessage(bot, client, from, panelText ?? message, answer, true, aiResponse.usage)
     await sendMessagesWithDelay(client, splitMessages(answer), from)
     console.log(`📤 Enviado para ${from.slice(0, 25)}`)
   }
@@ -818,7 +821,7 @@ export class WhatsAppManager {
   private async callAIWithRetry(
     bot: Bot, apiKeys: import('../models/database.js').ApiKeys,
     chatId: string, message: string,
-  ): Promise<string> {
+  ): Promise<AITextResponse> {
     let lastError: AIError | undefined
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
@@ -836,7 +839,7 @@ export class WhatsAppManager {
   private async callAI(
     bot: Bot, apiKeys: import('../models/database.js').ApiKeys,
     chatId: string, message: string,
-  ): Promise<string> {
+  ): Promise<AITextResponse> {
     const sessionKey = `${bot.id}:${chatId}`
     if (bot.model === 'gemini-2.5-flash' as any) {
       if (!apiKeys.geminiKey) throw new AIError('config', 'Gemini API key não configurada.')
@@ -879,6 +882,7 @@ export class WhatsAppManager {
     bot: Bot, client: wppconnect.Whatsapp,
     from: string, userText: string, answer: string | null,
     incrementBotCount = true,
+    aiUsage?: AIUsage,
   ): Promise<void> {
     let contactName = from
     try {
@@ -907,6 +911,7 @@ export class WhatsAppManager {
       content:           userText,
       incrementBotCount,
       botId:             bot.id,
+      tokenCount:        aiUsage?.totalTokens ? 0 : undefined,
     })
 
     // Resposta da IA — nunca incrementa (apenas mensagens 'user' contam para limite)
@@ -916,6 +921,7 @@ export class WhatsAppManager {
         role:              'assistant',
         content:           answer,
         incrementBotCount: false,
+        tokenCount:        aiUsage?.totalTokens,
       })
     }
   }

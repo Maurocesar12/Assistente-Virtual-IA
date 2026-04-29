@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { sleep } from '../utils/messages.js'
+import { normalizeUsage, type AITextResponse, type AIUsage } from '../utils/tokenUsage.js'
 
 const MAX_THREAD_CACHE = 300
 
@@ -29,7 +30,7 @@ export class OpenAISessionManager {
     return thread.id
   }
 
-  async sendMessage(chatId: string, message: string, options: OpenAIOptions): Promise<string> {
+  async sendMessage(chatId: string, message: string, options: OpenAIOptions): Promise<AITextResponse> {
      console.log(`🤖 Iniciando sessão para chat: ${chatId}`);
     const openai = this.buildClient(options.apiKey)
     const threadId = await this.ensureThread(chatId, options)
@@ -51,14 +52,17 @@ export class OpenAISessionManager {
     })
 
     // Poll until complete
-    const messages = await this.pollRunCompletion(openai, threadId, run.id)
+    const result = await this.pollRunCompletion(openai, threadId, run.id)
 
-    const latest = messages.data[0]
+    const latest = result.messages.data[0]
     const block = latest.content[0]
 
     if (block.type !== 'text') throw new Error('Unexpected response type from OpenAI')
 
-    return block.text.value
+    return {
+      text: block.text.value,
+      usage: normalizeUsage(result.usage, `${message}\n${block.text.value}`),
+    }
   }
 
   private async pollRunCompletion(
@@ -66,12 +70,21 @@ export class OpenAISessionManager {
     threadId: string,
     runId: string,
     maxAttempts = 30
-  ): Promise<OpenAI.Beta.Threads.Messages.MessagesPage> {
+  ): Promise<{ messages: OpenAI.Beta.Threads.Messages.MessagesPage; usage: AIUsage }> {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const run = await openai.beta.threads.runs.retrieve(threadId, runId)
 
       if (run.status === 'completed') {
-        return openai.beta.threads.messages.list(threadId)
+        const usage = (run as any).usage ?? {}
+        return {
+          messages: await openai.beta.threads.messages.list(threadId),
+          usage: {
+            inputTokens:  usage.prompt_tokens,
+            outputTokens: usage.completion_tokens,
+            totalTokens:  usage.total_tokens,
+            source:       usage.total_tokens ? 'provider' : 'estimate',
+          },
+        }
       }
 
       if (['failed', 'cancelled', 'expired'].includes(run.status)) {

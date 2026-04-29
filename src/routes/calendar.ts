@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { env } from '../config/env.js'
 import { authenticate } from '../middleware/authenticate.js'
+import { demoReadOnlyGuard } from '../middleware/demoReadOnlyGuard.js'
 import { validate } from '../middleware/validate.js'
 import { db } from '../models/database.js'
 import { googleCalendarService } from '../service/googleCalendar.js'
@@ -59,7 +60,7 @@ calendarRouter.get('/google/status', async (req, res, next) => {
   }
 })
 
-calendarRouter.get('/google/connect', async (req, res, next) => {
+calendarRouter.get('/google/connect', demoReadOnlyGuard, async (req, res, next) => {
   try {
     return ok(res, { url: googleCalendarService.buildAuthUrl(req.userId) })
   } catch (err) {
@@ -67,7 +68,7 @@ calendarRouter.get('/google/connect', async (req, res, next) => {
   }
 })
 
-calendarRouter.patch('/google', validate(updateCalendarSchema), async (req, res, next) => {
+calendarRouter.patch('/google', demoReadOnlyGuard, validate(updateCalendarSchema), async (req, res, next) => {
   try {
     const integration = await db.findCalendarIntegrationByUserId(req.userId)
     if (!integration) {
@@ -89,7 +90,7 @@ calendarRouter.patch('/google', validate(updateCalendarSchema), async (req, res,
   }
 })
 
-calendarRouter.delete('/google', async (req, res, next) => {
+calendarRouter.delete('/google', demoReadOnlyGuard, async (req, res, next) => {
   try {
     await googleCalendarService.revokeAndDelete(req.userId)
     return noContent(res)
@@ -97,4 +98,3 @@ calendarRouter.delete('/google', async (req, res, next) => {
     next(err)
   }
 })
-

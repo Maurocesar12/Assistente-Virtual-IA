@@ -23,6 +23,7 @@
  */
 
 import { GoogleGenerativeAI, type Content, type ChatSession } from '@google/generative-ai'
+import { normalizeUsage, type AITextResponse } from '../utils/tokenUsage.js'
 
 const MAX_SESSION_CACHE = 300
 
@@ -70,7 +71,7 @@ export class GeminiSessionManager {
     ]
   }
 
-  async sendMessage(chatId: string, message: string, options: GeminiOptions): Promise<string> {
+  async sendMessage(chatId: string, message: string, options: GeminiOptions): Promise<AITextResponse> {
     const model        = options.model        ?? 'gemini-2.5-flash'
     const systemPrompt = options.systemPrompt ?? 'Você é um assistente útil e amigável. Responda de forma clara e concisa.'
 
@@ -82,6 +83,7 @@ export class GeminiSessionManager {
 
     const result       = await chat.sendMessage(message)
     const responseText = result.response.text()
+    const usage = (result.response as any).usageMetadata ?? {}
 
     // Adiciona a nova troca e aplica o limite de histórico
     const updated = this.trimHistory([
@@ -91,7 +93,15 @@ export class GeminiSessionManager {
     ])
     this.sessions.set(chatId, updated)
 
-    return responseText
+    return {
+      text: responseText,
+      usage: normalizeUsage({
+        inputTokens:  usage.promptTokenCount,
+        outputTokens: usage.candidatesTokenCount,
+        totalTokens:  usage.totalTokenCount,
+        source:       usage.totalTokenCount ? 'provider' : 'estimate',
+      }, `${message}\n${responseText}`),
+    }
   }
 
   clearSession(chatId: string): void {

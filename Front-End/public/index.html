@@ -309,6 +309,14 @@
 
     <div class="content">
 
+      <div id="demoReadOnlyBanner" class="demo-banner" style="display:none">
+        <div>
+          <strong>Demonstracao somente leitura</strong>
+          <span>Voce pode navegar pela plataforma, mas para criar, editar, conectar WhatsApp, salvar chaves ou assinar e preciso registrar sua conta.</span>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="Demo.goRegister()">Criar conta gratuita</button>
+      </div>
+
       <!-- BOT ALERTS CONTAINER -->
       <div id="botAlertsContainer" style="margin-bottom:0"></div>
 
@@ -318,7 +326,7 @@
           <div class="stat-card"><div class="stat-card-label">Bots Ativos</div><div class="stat-card-value" id="s-bots">—</div><div class="stat-card-meta up" id="s-bots-meta">carregando...</div></div>
           <div class="stat-card"><div class="stat-card-label">Mensagens</div><div class="stat-card-value" id="s-msgs">—</div><div class="stat-card-meta" id="s-msgs-meta">total</div></div>
           <div class="stat-card"><div class="stat-card-label">Conversas</div><div class="stat-card-value" id="s-convs">—</div><div class="stat-card-meta">únicas</div></div>
-          <div class="stat-card"><div class="stat-card-label">Tokens Usados</div><div class="stat-card-value" id="s-tokens">—</div><div class="stat-card-meta">estimado</div></div>
+          <div class="stat-card"><div class="stat-card-label">Tokens Usados</div><div class="stat-card-value" id="s-tokens">—</div><div class="stat-card-meta">real + fallback</div></div>
         </div>
         <div class="steps-row mb-6" id="stepsRow">
           <div class="step-card clickable" id="step1" onclick="Modals.open('newBot')">
@@ -332,6 +340,18 @@
           <div class="step-card" id="step3" style="opacity:0.45">
             <div class="step-num">3️⃣</div><div class="step-title">Receber mensagens</div>
             <div class="step-desc">Seu bot responde automaticamente 24/7</div>
+          </div>
+        </div>
+        <div class="card mb-6">
+          <div class="card-header">
+            <h3>Como usar a plataforma</h3>
+            <button class="btn btn-ghost btn-sm" onclick="UI.view('settings')">Configurar API Keys</button>
+          </div>
+          <div class="card-body guide-grid">
+            <div><div class="text-xs text-dim mb-1">1. Chave de IA</div><div style="font-size:13px;color:var(--text-muted);line-height:1.55">Adicione sua OpenAI API Key ou Gemini API Key em Configuracoes. Sem uma chave valida, o bot nao consegue responder.</div></div>
+            <div><div class="text-xs text-dim mb-1">2. Bot</div><div style="font-size:13px;color:var(--text-muted);line-height:1.55">Crie um bot, escolha o modelo e escreva o prompt com o tom, regras e objetivo do atendimento.</div></div>
+            <div><div class="text-xs text-dim mb-1">3. WhatsApp</div><div style="font-size:13px;color:var(--text-muted);line-height:1.55">Conecte o numero lendo o QR Code. Quando estiver conectado, o bot passa a receber as mensagens.</div></div>
+            <div><div class="text-xs text-dim mb-1">4. Operacao</div><div style="font-size:13px;color:var(--text-muted);line-height:1.55">Acompanhe conversas, pausas, tokens e desempenho. Analytics completo fica disponivel no plano Pro.</div></div>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
@@ -364,14 +384,37 @@
 
       <!-- ANALYTICS -->
       <div id="view-analytics" class="view">
-        <div class="stats-row">
-          <div class="stat-card"><div class="stat-card-label">Total Mensagens</div><div class="stat-card-value" id="an-total">—</div></div>
-          <div class="stat-card"><div class="stat-card-label">Média Diária</div><div class="stat-card-value" id="an-avg">—</div></div>
-          <div class="stat-card"><div class="stat-card-label">Conversas</div><div class="stat-card-value" id="an-convs">—</div></div>
-          <div class="stat-card"><div class="stat-card-label">Tokens</div><div class="stat-card-value" id="an-tokens">—</div></div>
+        <div id="analyticsLocked" class="card" style="display:none">
+          <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap">
+            <div>
+              <div class="text-xs text-dim mb-1">Analytics Pro</div>
+              <h3 style="margin-bottom:6px">Analise completa disponivel no plano pago</h3>
+              <p class="text-muted" style="font-size:13px;line-height:1.6;max-width:640px">Assine o Pro para acompanhar volume de mensagens, conversas mais ativas, desempenho por bot e tokens usados pela IA. O calculo usa o consumo real informado por OpenAI/Gemini quando disponivel e estimativa por texto apenas como fallback.</p>
+            </div>
+            <button class="btn btn-primary" onclick="UI.view('billing');Billing.openCheckout()">Assinar Pro</button>
+          </div>
         </div>
-        <div class="card">
-          <div class="empty"><div class="empty-icon">📊</div><h3>Dados insuficientes</h3><p>Os gráficos serão exibidos após 7 dias de uso</p></div>
+        <div id="analyticsContent">
+          <div class="stats-row">
+            <div class="stat-card"><div class="stat-card-label">Mensagens</div><div class="stat-card-value" id="an-total">—</div><div class="stat-card-meta" id="an-msgs-meta">total</div></div>
+            <div class="stat-card"><div class="stat-card-label">Conversas</div><div class="stat-card-value" id="an-convs">—</div><div class="stat-card-meta" id="an-convs-meta">ativas</div></div>
+            <div class="stat-card"><div class="stat-card-label">Tokens</div><div class="stat-card-value" id="an-tokens">—</div><div class="stat-card-meta">consumidos</div></div>
+            <div class="stat-card"><div class="stat-card-label">Media por conversa</div><div class="stat-card-value" id="an-avg">—</div><div class="stat-card-meta">mensagens</div></div>
+          </div>
+          <div class="analytics-grid">
+            <div class="card">
+              <div class="card-header"><h3>Ultimos 14 dias</h3><span class="text-xs text-dim">mensagens e tokens</span></div>
+              <div id="an-days" class="card-body"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><h3>Uso por bot</h3></div>
+              <div id="an-bots"></div>
+            </div>
+          </div>
+          <div class="card mt-4">
+            <div class="card-header"><h3>Conversas com maior movimento</h3><span class="text-xs text-dim">ranking por mensagens</span></div>
+            <div id="an-conversations"></div>
+          </div>
         </div>
       </div>
 
@@ -449,7 +492,7 @@
               <div class="toggle-row"><div class="toggle-info"><label>Email de novos usuários</label><small>Receba notificação quando um contato iniciar conversa</small></div><label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label></div>
               <div class="toggle-row"><div class="toggle-info"><label>Alertas de erro</label><small>Notificação se o bot apresentar falhas</small></div><label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label></div>
               <div class="toggle-row"><div class="toggle-info"><label>Relatório semanal</label><small>Resumo de performance toda segunda-feira</small></div><label class="toggle"><input type="checkbox"><span class="toggle-track"></span></label></div>
-              <button class="btn btn-primary mt-4" onclick="toast('Preferências salvas!','success')">Salvar preferências</button>
+              <button class="btn btn-primary mt-4" onclick="Demo.requireRealAccount() && toast('Preferências salvas!','success')">Salvar preferências</button>
             </div>
           </div>
         </div>
