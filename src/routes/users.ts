@@ -18,8 +18,7 @@ usersRouter.use(authenticate)
 
 function hasPaidAnalytics(user: Awaited<ReturnType<typeof db.findUserById>>) {
   if (!user) return false
-  if (user.plan === 'enterprise') return true
-  return user.plan === 'pro' && user.subscriptionStatus === 'active'
+  return user.plan === 'pro' || user.plan === 'enterprise'
 }
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -109,7 +108,7 @@ usersRouter.get('/me/analytics', async (req, res, next) => {
     const user = await db.findUserById(req.userId)
     if (!user) throw ApiError.notFound('UsuÃ¡rio nÃ£o encontrado')
     if (!hasPaidAnalytics(user)) {
-      throw ApiError.forbidden('Analytics completo disponivel apenas para usuarios com plano Pro ativo.')
+      throw ApiError.forbidden('Analytics completo disponivel apenas para usuarios com plano Pro.')
     }
 
     const analytics = await db.getUserAnalytics(req.userId)
