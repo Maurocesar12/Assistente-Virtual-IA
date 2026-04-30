@@ -307,6 +307,7 @@ const Modals = {
     if (['newBot', 'checkoutPro', 'changePassword'].includes(id) && !Demo.requireRealAccount()) return
     document.getElementById(`m-${id}`)?.classList.add('open')
     if (id === 'connect') Connect.start()
+    if (id === 'newBot') Bots.updateModelPrompt()
   },
   close(id) { document.getElementById(`m-${id}`)?.classList.remove('open'); if (id === 'connect') Connect.cleanup() },
 }
@@ -337,12 +338,12 @@ const PlanLimit = {
     const main = document.querySelector('.main')
     if (main) main.style.paddingTop = '52px'
   },
- 
+
   hideBanner() {
     const banner = UI.el('planLimitBanner'); if (banner) banner.remove()
     const main = document.querySelector('.main'); if (main) main.style.paddingTop = ''
   },
- 
+
   // Mostra banner de plano vencido (past_due)
   showExpiredBanner(daysOverdue) {
     if (UI.el('planExpiredBanner')) return
@@ -354,7 +355,7 @@ const PlanLimit = {
     const main = document.querySelector('.main')
     if (main) main.style.paddingTop = '52px'
   },
- 
+
   // Mostra banner de aviso de vencimento próximo (5 dias ou menos)
   showReminderBanner(daysLeft, expiresAt) {
     if (UI.el('planReminderBanner')) return
@@ -369,7 +370,7 @@ const PlanLimit = {
     const main = document.querySelector('.main')
     if (main) main.style.paddingTop = '52px'
   },
- 
+
   dismissReminderBanner() {
     const banner = UI.el('planReminderBanner'); if (banner) banner.remove()
     const main = document.querySelector('.main')
@@ -380,14 +381,14 @@ const PlanLimit = {
     // Guarda no sessionStorage para não mostrar de novo na mesma sessão
     try { sessionStorage.setItem('reminderDismissed', '1') } catch (_) {}
   },
- 
+
   hideAllBanners() {
     ;['planLimitBanner', 'planExpiredBanner', 'planReminderBanner'].forEach(id => {
       const el = UI.el(id); if (el) el.remove()
     })
     const main = document.querySelector('.main'); if (main) main.style.paddingTop = ''
   },
- 
+
   // Aplica o estado correto de banner baseado nos stats + status de billing
   applyFromStats(stats) {
     // Limite de starter atingido
@@ -397,16 +398,16 @@ const PlanLimit = {
     }
     PlanLimit.hideBanner?.() // compat
   },
- 
+
   // Aplica o estado de billing (vencimento)
   applyFromBillingStatus(billingStatus) {
     const { subscriptionStatus, daysUntilExpiry, planExpiresAt } = billingStatus
- 
+
     if (subscriptionStatus === 'past_due') {
       PlanLimit.showExpiredBanner(0)
       return
     }
- 
+
     if (
       subscriptionStatus === 'active' &&
       daysUntilExpiry !== null &&
@@ -420,7 +421,7 @@ const PlanLimit = {
       PlanLimit.showReminderBanner(daysUntilExpiry, planExpiresAt)
     }
   },
- 
+
   // Toast mostrado ao fazer login quando o plano está vencendo ou vencido
   showLoginToast(billingStatus) {
     const { subscriptionStatus, daysUntilExpiry } = billingStatus
@@ -552,19 +553,19 @@ const Register = {
   selectPlan(plan) {
     // Atualiza o campo hidden
     document.getElementById('r-plan').value = plan
- 
+
     const starter = document.getElementById('plan-card-starter')
     const pro     = document.getElementById('plan-card-pro')
     const checkS  = document.getElementById('plan-check-starter')
     const checkP  = document.getElementById('plan-check-pro')
- 
+
     if (plan === 'starter') {
       starter.style.borderColor = 'var(--green)'
       starter.style.background  = 'rgba(0,212,106,0.06)'
       checkS.style.background   = 'var(--green)'
       checkS.style.borderColor  = 'var(--green)'
       checkS.innerHTML = '<div style="width:6px;height:6px;border-radius:50%;background:#000"></div>'
- 
+
       pro.style.borderColor = 'var(--border)'
       pro.style.background  = 'var(--surface2)'
       checkP.style.background  = 'transparent'
@@ -576,7 +577,7 @@ const Register = {
       checkP.style.background  = 'var(--green)'
       checkP.style.borderColor = 'var(--green)'
       checkP.innerHTML = '<div style="width:6px;height:6px;border-radius:50%;background:#000"></div>'
- 
+
       starter.style.borderColor = 'var(--border)'
       starter.style.background  = 'var(--surface2)'
       checkS.style.background   = 'transparent'
@@ -686,32 +687,68 @@ const Bots = {
     if (hasConnected) { UI.el('step2')?.classList.add('done'); const s3 = UI.el('step3'); if (s3) s3.style.opacity = '1' }
     if (hasMsgs) UI.el('step3')?.classList.add('done')
   },
+  isGptModel(model) {
+    return String(model ?? '').startsWith('gpt-')
+  },
+  ensureAssistantNote(id, anchor, text) {
+    let note = UI.el(id)
+    if (!note && anchor) {
+      note = document.createElement('div')
+      note.id = id
+      note.className = 'settings-note'
+      anchor.insertAdjacentElement('afterend', note)
+    }
+    if (note) note.textContent = text
+    return note
+  },
+  updateModelPrompt() {
+    const model = UI.val('bModel')
+    const isGpt = Bots.isGptModel(model)
+    const prompt = UI.el('bPrompt')
+    const group = prompt?.closest('.form-group')
+    const note = Bots.ensureAssistantNote(
+      'bGptAssistantNote',
+      group,
+      'Para GPT, crie o Assistant na OpenAI e informe sua OpenAI Key + Assistant ID em Configuracoes > API Keys. O prompt fica dentro do Assistant.',
+    )
+    const legacyNote = document.querySelector('#m-newBot .modal-actions p')
+    if (legacyNote) legacyNote.style.display = 'none'
+    if (group) group.style.display = isGpt ? 'none' : ''
+    if (note) note.style.display = isGpt ? '' : 'none'
+    if (isGpt && prompt) prompt.value = ''
+  },
+  applyEditPromptVisibility(bot) {
+    const isGpt = Bots.isGptModel(bot?.model)
+    const prompt = UI.el('eBotPrompt')
+    const group = prompt?.closest('.form-group')
+    const note = Bots.ensureAssistantNote(
+      'eGptAssistantNote',
+      group,
+      'Este bot usa GPT. Ajuste o comportamento diretamente no Assistant da OpenAI e confira a OpenAI Key + Assistant ID em Configuracoes > API Keys.',
+    )
+    if (group) group.style.display = isGpt ? 'none' : ''
+    if (note) note.style.display = isGpt ? '' : 'none'
+  },
   async create() {
     if (!Demo.requireRealAccount()) return
-    const name = UI.val('bName'), model = UI.val('bModel'), prompt = UI.val('bPrompt');
-    
+    const name = UI.val('bName'), model = UI.val('bModel')
+    const prompt = Bots.isGptModel(model) ? undefined : UI.val('bPrompt')
+
     // 1. Verifica se escolheu o modelo
-    if (!model) { 
-        toast('Selecione um modelo', 'error'); 
-        return; 
+    if (!model) {
+        toast('Selecione um modelo', 'error');
+        return;
     }
-    
+
     // 2. Regra do Gemini: Prompt é obrigatório E tem que ter no mínimo 10 caracteres
-    if (model === 'gemini-2.5-flash' && (!prompt || prompt.length < 10)) { 
-        toast('O prompt é obrigatório e deve ter pelo menos 10 caracteres para o modelo Gemini', 'error'); 
+    if (model === 'gemini-2.5-flash' && (!prompt || prompt.length < 10)) {
+        toast('O prompt é obrigatório e deve ter pelo menos 10 caracteres para o modelo Gemini', 'error');
         return; // Interrompe a criação aqui
     }
-    
-    // 3. Regra do GPT: Apenas avisa se estiver vazio (Note os parênteses extras em volta dos modelos)
-    if (model === 'gpt-4' || model === 'gpt-3.5-turbo') {
-        toast('O prompt não é obrigatório para GPT, mas recomendamos verificar seu assist da OpenAI', 'info');
-        // Não tem o "return", então a criação do bot vai continuar normalmente!
-    }
-    
-    // 4. Verifica o nome
-    if (!name || name.length < 2) { 
-        toast('O nome do bot deve ter pelo menos 2 caracteres', 'error'); 
-        return; 
+    // 3. Verifica o nome
+    if (!name || name.length < 2) {
+        toast('O nome do bot deve ter pelo menos 2 caracteres', 'error');
+        return;
     }
     UI.setLoading('createBotBtn', true)
     try {
@@ -732,6 +769,7 @@ const Bots = {
     UI.el('eBotTitle').textContent = bot.name
     UI.el('eBotMeta').textContent  = `${m.label} · criado em ${new Date(bot.createdAt).toLocaleDateString('pt-BR')}`
     UI.el('eBotPrompt').value = bot.prompt; UI.el('eBotActive').checked = bot.isActive
+    Bots.applyEditPromptVisibility(bot)
     const connStatus = UI.el('eBotConnStatus'), connectBtn = UI.el('eBotConnectBtn'), disconnBtn = UI.el('eBotDisconnectBtn')
     const phoneFormatted = bot.phone ? ' — ' + _formatPhone(bot.phone) : ''
     if (connStatus) connStatus.textContent = bot.isConnected ? '🟢 Conectado ao WhatsApp' + phoneFormatted : '🔴 Desconectado'
@@ -745,7 +783,10 @@ const Bots = {
     if (!Demo.requireRealAccount()) return
     const id = State.activeBotId; if (!id) return
     try {
-      const updated = await Api.patch(`/bots/${id}`, { prompt: UI.el('eBotPrompt').value, isActive: UI.el('eBotActive').checked })
+      const bot = State.bots.find(b => b.id === id)
+      const payload = { isActive: UI.el('eBotActive').checked }
+      if (!Bots.isGptModel(bot?.model)) payload.prompt = UI.el('eBotPrompt').value
+      const updated = await Api.patch(`/bots/${id}`, payload)
       const idx = State.bots.findIndex(b => b.id === id); if (idx >= 0) State.bots[idx] = updated
       Modals.close('editBot'); Bots.render(); Bots.renderOverview(); Bots.updateSteps()
       toast('Bot atualizado!', 'success')
@@ -1527,34 +1568,34 @@ const Billing = {
     const plan = u.plan ?? 'starter'
     const planLabels = { starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' }
     const planPills  = { starter: 'GRÁTIS',  pro: 'PRO', enterprise: 'ENTERPRISE' }
- 
+
     UI.el('bilPlan').textContent = planLabels[plan]
     const pill = UI.el('bilPill')
     if (pill) { pill.textContent = planPills[plan]; pill.className = `plan-pill ${plan}` }
- 
+
     // Busca status de billing para preencher detalhes
     let billingStatus = State.billingStatus ?? null
     if (!billingStatus && !Demo.isActive()) {
       try { billingStatus = await Api.get('/billing/status') } catch (_) {}
     }
- 
+
     const isPro           = plan === 'pro' || plan === 'enterprise'
     const subStatus       = billingStatus?.subscriptionStatus ?? 'none'
     const daysLeft        = billingStatus?.daysUntilExpiry ?? null
     const expiresAt       = billingStatus?.planExpiresAt ? new Date(billingStatus.planExpiresAt) : null
     const isExpired       = subStatus === 'past_due'
- 
+
     // Visibilidade das seções
     const upgradeSection = UI.el('bilUpgradeSection')
     const subInfoSection = UI.el('bilSubInfo')
     const usageSection   = UI.el('bilUsageSection')
     const renewSection   = UI.el('bilRenewSection')
- 
+
     if (upgradeSection) upgradeSection.style.display = isPro  ? 'none' : ''
     if (subInfoSection) subInfoSection.style.display  = isPro  ? '' : 'none'
     if (usageSection)   usageSection.style.display    = isPro  ? 'none' : ''
     if (renewSection)   renewSection.style.display    = isPro  ? '' : 'none'
- 
+
     // Alerta de vencimento no topo do card
     const alertEl = UI.el('bilExpiryAlert')
     if (alertEl) {
@@ -1568,7 +1609,7 @@ const Billing = {
         alertEl.style.display = 'none'
       }
     }
- 
+
     // Info da assinatura Pro
     if (isPro && expiresAt) {
       const statusMap = {
@@ -1582,7 +1623,7 @@ const Billing = {
       const eEl = UI.el('bilSubExpiry')
       if (eEl) eEl.textContent = expiresAt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
     }
- 
+
     // Uso (starter)
     if (!isPro && s) {
       const msgs       = s.totalMessages ?? 0
@@ -1590,7 +1631,7 @@ const Billing = {
       const percent    = s.usagePercent ?? 0
       const remaining  = s.remainingMessages
       const limited    = s.limitReached ?? false
- 
+
       const usageEl = UI.el('bilUsage')
       if (usageEl) usageEl.textContent = `${msgs.toLocaleString('pt-BR')} / ${limit === null ? '∞' : limit.toLocaleString('pt-BR')}`
       const barEl = UI.el('bilBar')
@@ -1611,10 +1652,10 @@ const Billing = {
         }
       }
     }
- 
+
     Billing.loadHistory(billingStatus?.billings ?? [])
   },
- 
+
   loadHistory(billings) {
     const container = UI.el('bilInvoices'); if (!container) return
     if (!billings.length) {
@@ -1644,14 +1685,14 @@ const Billing = {
       </tr>`
     }).join('')
   },
- 
+
   openCheckout() {
     if (!Demo.requireRealAccount()) return
     const ti = UI.el('checkoutTaxId'), ph = UI.el('checkoutPhone')
     if (ti) ti.value = ''; if (ph) ph.value = ''
     Modals.open('checkoutPro')
   },
- 
+
   async startCheckout() {
     if (!Demo.requireRealAccount()) return
     const taxId     = UI.val('checkoutTaxId')

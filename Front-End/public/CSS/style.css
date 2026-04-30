@@ -315,7 +315,25 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .modal-subtitle { font-size: 14px; color: var(--text-muted); margin-bottom: 26px; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
 
-#m-editBot .modal { max-width: 720px; max-height: 92vh; overflow-y: auto; }
+#m-editBot .modal {
+  max-width: 720px;
+  max-height: 92vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  clip-path: inset(0 round 18px);
+  overscroll-behavior: contain;
+}
+.settings-note {
+  padding: 12px 14px;
+  margin: 0 0 18px;
+  border-radius: var(--r-sm);
+  background: rgba(64,128,240,0.08);
+  border: 1px solid rgba(64,128,240,0.18);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
 .kb-panel {
   margin: 18px 0 4px;
   padding: 16px;

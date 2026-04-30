@@ -638,7 +638,7 @@
     <div class="form-group"><label class="field-label">Nome do Bot</label><input class="field" id="bName" type="text" placeholder="Ex: Atendente Virtual"></div>
     <div class="form-group">
       <label class="field-label">Modelo de IA</label>
-      <select class="field" id="bModel">
+      <select class="field" id="bModel" onchange="Bots.updateModelPrompt()">
         <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado — usa sua Gemini Key)</option>
         <option value="gpt-4">GPT-4 (usa sua OpenAI Key + Assistant)</option>
         <option value="gpt-3.5-turbo">GPT-3.5 Turbo (usa sua OpenAI Key + Assistant)</option>
