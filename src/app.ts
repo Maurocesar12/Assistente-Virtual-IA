@@ -68,7 +68,7 @@ export function createApp() {
   // Registramos o parser de JSON com uma opção `verify` que salva o raw body
   // antes de parsear, acessível via req.rawBody nos webhooks.
   app.use(express.json({
-    limit: '1mb',
+    limit: '6mb',
     verify: (req: any, _res, buf) => { req.rawBody = buf },
   }))
   app.use(express.urlencoded({ extended: true }))

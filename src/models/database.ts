@@ -102,6 +102,50 @@ export interface CalendarIntegration {
   updatedAt:    Date
 }
 
+export type KnowledgeBaseType = 'text' | 'faq' | 'link' | 'pdf'
+
+export interface KnowledgeBaseItem {
+  id:        string
+  botId:     string
+  userId:    string
+  type:      KnowledgeBaseType
+  title:     string
+  content:   string
+  sourceUrl?: string | null
+  question?:  string | null
+  answer?:    string | null
+  fileName?:  string | null
+  mimeType?:  string | null
+  sizeBytes?: number | null
+  isActive:   boolean
+  createdAt:  Date
+  updatedAt:  Date
+}
+
+export interface CreateKnowledgeBaseItemParams {
+  botId:     string
+  userId:    string
+  type:      KnowledgeBaseType
+  title:     string
+  content:   string
+  sourceUrl?: string | null
+  question?:  string | null
+  answer?:    string | null
+  fileName?:  string | null
+  mimeType?:  string | null
+  sizeBytes?: number | null
+  isActive?:  boolean
+}
+
+export interface UpdateKnowledgeBaseItemParams {
+  title?:    string
+  content?:  string
+  sourceUrl?: string | null
+  question?:  string | null
+  answer?:    string | null
+  isActive?:  boolean
+}
+
 export interface SaveCalendarIntegrationParams {
   userId:       string
   enabled?:     boolean
@@ -259,6 +303,61 @@ class Database {
     await prisma.message.deleteMany({ where: { conversation: { botId: id } } })
     await prisma.conversation.deleteMany({ where: { botId: id } })
     await prisma.bot.delete({ where: { id } })
+  }
+
+  async createKnowledgeBaseItem(data: CreateKnowledgeBaseItemParams): Promise<KnowledgeBaseItem> {
+    const item = await prisma.knowledgeBaseItem.create({
+      data: {
+        botId:     data.botId,
+        userId:    data.userId,
+        type:      data.type,
+        title:     data.title,
+        content:   data.content,
+        sourceUrl: data.sourceUrl ?? null,
+        question:  data.question ?? null,
+        answer:    data.answer ?? null,
+        fileName:  data.fileName ?? null,
+        mimeType:  data.mimeType ?? null,
+        sizeBytes: data.sizeBytes ?? null,
+        isActive:  data.isActive ?? true,
+      },
+    })
+    return this.parseKnowledgeBaseItem(item)
+  }
+
+  async findKnowledgeBaseItemsByBotId(botId: string): Promise<KnowledgeBaseItem[]> {
+    const rows = await prisma.knowledgeBaseItem.findMany({
+      where: { botId },
+      orderBy: { createdAt: 'desc' },
+    })
+    return rows.map((row: any) => this.parseKnowledgeBaseItem(row))
+  }
+
+  async countKnowledgeBaseItemsByBotId(botId: string): Promise<number> {
+    return prisma.knowledgeBaseItem.count({ where: { botId } })
+  }
+
+  async findActiveKnowledgeBaseItemsByBotId(botId: string): Promise<KnowledgeBaseItem[]> {
+    const rows = await prisma.knowledgeBaseItem.findMany({
+      where: { botId, isActive: true },
+      orderBy: { updatedAt: 'desc' },
+      take: 50,
+    })
+    return rows.map((row: any) => this.parseKnowledgeBaseItem(row))
+  }
+
+  async findKnowledgeBaseItemById(id: string): Promise<KnowledgeBaseItem | null> {
+    const row = await prisma.knowledgeBaseItem.findUnique({ where: { id } })
+    return row ? this.parseKnowledgeBaseItem(row) : null
+  }
+
+  async updateKnowledgeBaseItem(id: string, data: UpdateKnowledgeBaseItemParams): Promise<KnowledgeBaseItem | null> {
+    const row = await prisma.knowledgeBaseItem.update({ where: { id }, data })
+    return this.parseKnowledgeBaseItem(row)
+  }
+
+  async deleteKnowledgeBaseItem(id: string): Promise<void> {
+    await prisma.knowledgeBaseItem.delete({ where: { id } })
   }
 
   // ── Conversations ──────────────────────────────────────────────────────────
@@ -625,6 +724,20 @@ class Database {
     return { ...b, model: b.model as AIModel }
   }
 
+  private parseKnowledgeBaseItem(row: any): KnowledgeBaseItem {
+    return {
+      ...row,
+      type: row.type as KnowledgeBaseType,
+      sourceUrl: row.sourceUrl ?? null,
+      question: row.question ?? null,
+      answer: row.answer ?? null,
+      fileName: row.fileName ?? null,
+      mimeType: row.mimeType ?? null,
+      sizeBytes: row.sizeBytes ?? null,
+      isActive: row.isActive ?? true,
+    }
+  }
+
   private parseConversation(c: any): Conversation {
     return {
       ...c,
@@ -659,6 +772,13 @@ export const db = {
   findBotsByUserId:              instance.findBotsByUserId.bind(instance),
   updateBot:                     instance.updateBot.bind(instance),
   deleteBot:                     instance.deleteBot.bind(instance),
+  createKnowledgeBaseItem:       instance.createKnowledgeBaseItem.bind(instance),
+  findKnowledgeBaseItemsByBotId: instance.findKnowledgeBaseItemsByBotId.bind(instance),
+  countKnowledgeBaseItemsByBotId: instance.countKnowledgeBaseItemsByBotId.bind(instance),
+  findActiveKnowledgeBaseItemsByBotId: instance.findActiveKnowledgeBaseItemsByBotId.bind(instance),
+  findKnowledgeBaseItemById:     instance.findKnowledgeBaseItemById.bind(instance),
+  updateKnowledgeBaseItem:       instance.updateKnowledgeBaseItem.bind(instance),
+  deleteKnowledgeBaseItem:       instance.deleteKnowledgeBaseItem.bind(instance),
   upsertConversation:            instance.upsertConversation.bind(instance),
   findConversationsByUserId:     instance.findConversationsByUserId.bind(instance),
   findConversationsByBotId:      instance.findConversationsByBotId.bind(instance),

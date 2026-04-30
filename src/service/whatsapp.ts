@@ -15,6 +15,7 @@ import { calendarConfirmation, tryScheduleCalendarEvent } from './calendarAutoma
 import { splitMessages, sendMessagesWithDelay } from '../utils/messages.js'
 import { isMessageLimitReached, getPlanConfig } from '../utils/planLimits.js'
 import type { AITextResponse, AIUsage } from '../utils/tokenUsage.js'
+import { buildKnowledgeContext } from '../utils/knowledgeContext.js'
 
 const __dirname  = path.dirname(fileURLToPath(import.meta.url))
 const TOKENS_DIR = path.join(__dirname, '..', '..', 'tokens')
@@ -872,7 +873,8 @@ export class WhatsAppManager {
     let aiResponse: AITextResponse
     let answer: string
     try {
-      aiResponse = await this.callAIWithRetry(freshBot, user.apiKeys, chatId, message)
+      const aiInput = await this.withKnowledgeContext(freshBot, message)
+      aiResponse = await this.callAIWithRetry(freshBot, user.apiKeys, chatId, aiInput)
       answer = aiResponse.text
       const calendarResult = await this.tryScheduleFromMessage(user, freshBot, from, message)
       if (calendarResult?.created) {
@@ -912,6 +914,16 @@ export class WhatsAppManager {
   }
 
   // ── AI ────────────────────────────────────────────────────────────────────
+
+  private async withKnowledgeContext(bot: Bot, message: string): Promise<string> {
+    try {
+      const items = await db.findActiveKnowledgeBaseItemsByBotId(bot.id)
+      return buildKnowledgeContext(items, message)
+    } catch (err) {
+      console.warn('[KnowledgeBase] Falha ao montar contexto:', err)
+      return message
+    }
+  }
 
   private async tryScheduleFromMessage(
     user: User,

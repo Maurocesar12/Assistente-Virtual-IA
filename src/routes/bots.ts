@@ -13,12 +13,18 @@ import { authenticate } from '../middleware/authenticate.js'
 import { validate } from '../middleware/validate.js'
 import { planGuard } from '../middleware/planGuard.js'
 import { demoReadOnlyGuard } from '../middleware/demoReadOnlyGuard.js'
+import { extractPdfTextFromBase64 } from '../utils/pdfText.js'
+import { fetchPublicLinkText } from '../utils/linkContent.js'
 
 export const botsRouter = Router()
 
 botsRouter.use(authenticate)
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
+
+const MAX_KNOWLEDGE_CONTENT_CHARS = 30_000
+const MAX_KNOWLEDGE_FILE_BASE64_CHARS = 4_500_000
+const MAX_KNOWLEDGE_ITEMS_PER_BOT = 100
 
 const createBotSchema = z.object({
   name:   z.string().min(2, 'Name must be at least 2 characters'),
@@ -56,6 +62,131 @@ const updateBotSchema = z.object({
     }
   }
 });
+
+// ─── Knowledge base schemas/helpers ───────────────────────────────────────────
+
+const knowledgeTypeSchema = z.enum(['text', 'faq', 'link', 'pdf'])
+
+const createKnowledgeSchema = z.object({
+  type:       knowledgeTypeSchema,
+  title:      z.string().trim().min(2).max(140),
+  content:    z.string().trim().max(MAX_KNOWLEDGE_CONTENT_CHARS).optional(),
+  sourceUrl:  z.string().trim().url().max(2048).optional(),
+  question:   z.string().trim().max(500).optional(),
+  answer:     z.string().trim().max(MAX_KNOWLEDGE_CONTENT_CHARS).optional(),
+  fileName:   z.string().trim().max(180).optional(),
+  mimeType:   z.string().trim().max(120).optional(),
+  fileBase64: z.string().max(MAX_KNOWLEDGE_FILE_BASE64_CHARS).optional(),
+})
+
+const updateKnowledgeSchema = z.object({
+  title:     z.string().trim().min(2).max(140).optional(),
+  content:   z.string().trim().min(1).max(MAX_KNOWLEDGE_CONTENT_CHARS).optional(),
+  sourceUrl: z.string().trim().url().max(2048).nullable().optional(),
+  question:  z.string().trim().max(500).nullable().optional(),
+  answer:    z.string().trim().max(MAX_KNOWLEDGE_CONTENT_CHARS).nullable().optional(),
+  isActive:  z.boolean().optional(),
+})
+
+function compactKnowledgeContent(value: string): string {
+  return value
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .slice(0, MAX_KNOWLEDGE_CONTENT_CHARS)
+}
+
+async function resolveOwnedBot(botId: string, userId: string) {
+  const bot = await db.findBotById(botId)
+  if (!bot || bot.userId !== userId) throw ApiError.notFound('Bot not found')
+  return bot
+}
+
+async function resolveOwnedKnowledgeItem(botId: string, itemId: string, userId: string) {
+  const [bot, item] = await Promise.all([
+    db.findBotById(botId),
+    db.findKnowledgeBaseItemById(itemId),
+  ])
+  if (!bot || bot.userId !== userId) throw ApiError.notFound('Bot not found')
+  if (!item || item.botId !== bot.id || item.userId !== userId) {
+    throw ApiError.notFound('Knowledge item not found')
+  }
+  return { bot, item }
+}
+
+async function buildKnowledgePayload(botId: string, userId: string, body: z.infer<typeof createKnowledgeSchema>) {
+  if (body.type === 'faq') {
+    const question = compactKnowledgeContent(body.question ?? '')
+    const answer = compactKnowledgeContent(body.answer ?? '')
+    if (!question || !answer) {
+      throw ApiError.badRequest('Informe pergunta e resposta para cadastrar um FAQ.', 'KNOWLEDGE_FAQ_REQUIRED')
+    }
+    return {
+      botId, userId,
+      type: body.type,
+      title: body.title,
+      content: `Pergunta: ${question}\nResposta: ${answer}`,
+      question,
+      answer,
+      sourceUrl: null,
+    }
+  }
+
+  if (body.type === 'link') {
+    if (!body.sourceUrl) {
+      throw ApiError.badRequest('Informe a URL para importar um link.', 'KNOWLEDGE_LINK_REQUIRED')
+    }
+    const content = compactKnowledgeContent(body.content ?? await fetchPublicLinkText(body.sourceUrl))
+    if (!content) {
+      throw ApiError.badRequest('Nao foi possivel importar conteudo util deste link.', 'KNOWLEDGE_EMPTY_CONTENT')
+    }
+    return {
+      botId, userId,
+      type: body.type,
+      title: body.title,
+      content,
+      sourceUrl: body.sourceUrl,
+      question: null,
+      answer: null,
+    }
+  }
+
+  if (body.type === 'pdf') {
+    if (!body.fileBase64) {
+      throw ApiError.badRequest('Envie um arquivo PDF para importar.', 'KNOWLEDGE_PDF_REQUIRED')
+    }
+    const extracted = extractPdfTextFromBase64(body.fileBase64)
+    return {
+      botId, userId,
+      type: body.type,
+      title: body.title,
+      content: compactKnowledgeContent(extracted.text),
+      sourceUrl: null,
+      question: null,
+      answer: null,
+      fileName: body.fileName ?? null,
+      mimeType: body.mimeType ?? 'application/pdf',
+      sizeBytes: extracted.sizeBytes,
+    }
+  }
+
+  const content = compactKnowledgeContent(body.content ?? '')
+  if (!content) {
+    throw ApiError.badRequest('Informe o conteudo de texto da base de conhecimento.', 'KNOWLEDGE_TEXT_REQUIRED')
+  }
+  return {
+    botId, userId,
+    type: body.type,
+    title: body.title,
+    content,
+    sourceUrl: null,
+    question: null,
+    answer: null,
+    fileName: body.fileName ?? null,
+    mimeType: body.mimeType ?? null,
+  }
+}
 
 // ─── GET /bots ────────────────────────────────────────────────────────────────
 
@@ -114,6 +245,65 @@ botsRouter.delete('/:id', demoReadOnlyGuard, async (req, res, next) => {
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
     if (whatsappManager.isRunning(bot.id)) await whatsappManager.stopSession(bot.id)
     await db.deleteBot(bot.id)
+    return noContent(res)
+  } catch (err) { next(err) }
+})
+
+// Base de conhecimento por bot
+
+botsRouter.get('/:id/knowledge', async (req, res, next) => {
+  try {
+    const bot = await resolveOwnedBot(req.params.id, req.userId)
+    const items = await db.findKnowledgeBaseItemsByBotId(bot.id)
+    return ok(res, items)
+  } catch (err) { next(err) }
+})
+
+botsRouter.post('/:id/knowledge', demoReadOnlyGuard, validate(createKnowledgeSchema), async (req, res, next) => {
+  try {
+    const bot = await resolveOwnedBot(req.params.id, req.userId)
+    const currentItems = await db.countKnowledgeBaseItemsByBotId(bot.id)
+    if (currentItems >= MAX_KNOWLEDGE_ITEMS_PER_BOT) {
+      throw ApiError.badRequest('Este bot atingiu o limite de itens na base de conhecimento.', 'KNOWLEDGE_LIMIT_REACHED')
+    }
+
+    const payload = await buildKnowledgePayload(bot.id, req.userId, req.body)
+    const item = await db.createKnowledgeBaseItem(payload)
+    return created(res, item)
+  } catch (err) { next(err) }
+})
+
+botsRouter.patch('/:id/knowledge/:itemId', demoReadOnlyGuard, validate(updateKnowledgeSchema), async (req, res, next) => {
+  try {
+    const { item } = await resolveOwnedKnowledgeItem(req.params.id, req.params.itemId, req.userId)
+    const body = req.body
+    const payload: import('../models/database.js').UpdateKnowledgeBaseItemParams = {}
+
+    if (body.title !== undefined) payload.title = body.title
+    if (body.content !== undefined) payload.content = compactKnowledgeContent(body.content)
+    if (body.sourceUrl !== undefined) payload.sourceUrl = body.sourceUrl
+    if (body.question !== undefined) payload.question = body.question === null ? null : compactKnowledgeContent(body.question)
+    if (body.answer !== undefined) payload.answer = body.answer === null ? null : compactKnowledgeContent(body.answer)
+    if (body.isActive !== undefined) payload.isActive = body.isActive
+
+    if (item.type === 'faq' && (body.question !== undefined || body.answer !== undefined)) {
+      const question = String(payload.question ?? item.question ?? item.title).trim()
+      const answer = String(payload.answer ?? item.answer ?? item.content).trim()
+      if (!question || !answer) {
+        throw ApiError.badRequest('FAQ precisa manter pergunta e resposta.', 'KNOWLEDGE_FAQ_REQUIRED')
+      }
+      payload.content = `Pergunta: ${question}\nResposta: ${answer}`
+    }
+
+    const updated = await db.updateKnowledgeBaseItem(item.id, payload)
+    return ok(res, updated)
+  } catch (err) { next(err) }
+})
+
+botsRouter.delete('/:id/knowledge/:itemId', demoReadOnlyGuard, async (req, res, next) => {
+  try {
+    const { item } = await resolveOwnedKnowledgeItem(req.params.id, req.params.itemId, req.userId)
+    await db.deleteKnowledgeBaseItem(item.id)
     return noContent(res)
   } catch (err) { next(err) }
 })

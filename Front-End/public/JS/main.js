@@ -738,6 +738,8 @@ const Bots = {
     if (connectBtn) connectBtn.style.display = bot.isConnected ? 'none' : ''
     if (disconnBtn) disconnBtn.style.display  = bot.isConnected ? '' : 'none'
     Modals.open('editBot')
+    Knowledge.resetForm()
+    Knowledge.load(botId)
   },
   async save() {
     if (!Demo.requireRealAccount()) return
@@ -789,6 +791,188 @@ const Bots = {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;')
+  },
+}
+
+const Knowledge = {
+  items: [],
+
+  resetForm() {
+    ;['kbTitle', 'kbUrl', 'kbQuestion', 'kbAnswer', 'kbContent', 'kbFile'].forEach(id => {
+      const el = UI.el(id)
+      if (!el) return
+      el.value = ''
+    })
+    const type = UI.el('kbType')
+    if (type) type.value = 'text'
+    Knowledge.items = []
+    Knowledge.updateForm()
+    Knowledge.render()
+  },
+
+  updateForm() {
+    const type = UI.val('kbType') || 'text'
+    const visible = {
+      text: ['content', 'file'],
+      faq:  ['question', 'answer'],
+      link: ['url', 'content'],
+      pdf:  ['file'],
+    }[type] ?? ['content']
+
+    document.querySelectorAll('[data-kb-field]').forEach(el => {
+      el.style.display = visible.includes(el.dataset.kbField) ? '' : 'none'
+    })
+
+    const content = UI.el('kbContent')
+    if (content) {
+      content.placeholder = type === 'link'
+        ? 'Opcional: cole um resumo se quiser evitar importar todo o link...'
+        : 'Cole aqui informacoes, regras, catalogo, servicos ou instrucoes...'
+    }
+  },
+
+  async load(botId = State.activeBotId) {
+    if (!botId) return
+    const list = UI.el('knowledgeList')
+    if (list) list.innerHTML = '<div class="text-xs text-dim">Carregando base...</div>'
+    try {
+      const result = await Api.get(`/bots/${botId}/knowledge`)
+      Knowledge.items = Array.isArray(result) ? result : []
+      Knowledge.render()
+    } catch (err) {
+      Knowledge.items = []
+      Knowledge.render()
+      toastError(err, 'Nao foi possivel carregar a base de conhecimento.')
+    }
+  },
+
+  async create() {
+    if (!Demo.requireRealAccount()) return
+    const botId = State.activeBotId
+    if (!botId) return
+
+    const type = UI.val('kbType') || 'text'
+    const title = UI.val('kbTitle')
+    if (title.length < 2) { toast('Informe um titulo para a base.', 'error'); return }
+
+    const payload = { type, title }
+    const file = UI.el('kbFile')?.files?.[0]
+
+    try {
+      if (type === 'faq') {
+        payload.question = UI.val('kbQuestion')
+        payload.answer = UI.val('kbAnswer')
+        if (!payload.question || !payload.answer) throw new Error('Informe pergunta e resposta.')
+      } else if (type === 'link') {
+        payload.sourceUrl = UI.val('kbUrl')
+        payload.content = UI.val('kbContent') || undefined
+        if (!payload.sourceUrl) throw new Error('Informe a URL.')
+      } else if (type === 'pdf') {
+        if (!file) throw new Error('Selecione um PDF.')
+        if (file.size > 3 * 1024 * 1024) throw new Error('PDF muito grande. Envie ate 3MB.')
+        if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') throw new Error('Selecione um arquivo PDF valido.')
+        payload.fileName = file.name
+        payload.mimeType = file.type || 'application/pdf'
+        payload.fileBase64 = await Knowledge.readFile(file, 'dataUrl')
+      } else {
+        payload.content = UI.val('kbContent')
+        if (file) {
+          if (file.size > 512 * 1024) throw new Error('Arquivo de texto muito grande. Use ate 512KB.')
+          payload.content = await Knowledge.readFile(file, 'text')
+          payload.fileName = file.name
+          payload.mimeType = file.type || 'text/plain'
+        }
+        if (!payload.content) throw new Error('Informe o conteudo da base.')
+      }
+
+      UI.setLoading('kbCreateBtn', true)
+      const item = await Api.post(`/bots/${botId}/knowledge`, payload)
+      Knowledge.items.unshift(item)
+      Knowledge.clearInputs()
+      Knowledge.render()
+      toast('Base de conhecimento adicionada.', 'success')
+    } catch (err) {
+      toastError(err, 'Nao foi possivel adicionar a base.')
+    } finally {
+      UI.setLoading('kbCreateBtn', false)
+    }
+  },
+
+  clearInputs() {
+    ;['kbTitle', 'kbUrl', 'kbQuestion', 'kbAnswer', 'kbContent', 'kbFile'].forEach(id => {
+      const el = UI.el(id)
+      if (el) el.value = ''
+    })
+  },
+
+  readFile(file, mode) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result ?? ''))
+      reader.onerror = () => reject(new Error('Nao foi possivel ler o arquivo.'))
+      if (mode === 'text') reader.readAsText(file)
+      else reader.readAsDataURL(file)
+    })
+  },
+
+  async toggle(itemId, isActive) {
+    if (!Demo.requireRealAccount()) return
+    const botId = State.activeBotId
+    if (!botId) return
+    try {
+      const updated = await Api.patch(`/bots/${botId}/knowledge/${itemId}`, { isActive: !isActive })
+      const idx = Knowledge.items.findIndex(item => item.id === itemId)
+      if (idx >= 0) Knowledge.items[idx] = updated
+      Knowledge.render()
+      toast(updated.isActive ? 'Item ativado.' : 'Item pausado.', 'info')
+    } catch (err) { toastError(err, 'Nao foi possivel atualizar o item.') }
+  },
+
+  async delete(itemId) {
+    if (!Demo.requireRealAccount()) return
+    const botId = State.activeBotId
+    if (!botId) return
+    const item = Knowledge.items.find(entry => entry.id === itemId)
+    if (!confirm(`Remover "${item?.title ?? 'item'}" da base?`)) return
+    try {
+      await Api.delete(`/bots/${botId}/knowledge/${itemId}`)
+      Knowledge.items = Knowledge.items.filter(entry => entry.id !== itemId)
+      Knowledge.render()
+      toast('Item removido da base.', 'info')
+    } catch (err) { toastError(err, 'Nao foi possivel remover o item.') }
+  },
+
+  render() {
+    const list = UI.el('knowledgeList')
+    const badge = UI.el('kbCountBadge')
+    if (badge) badge.textContent = `${Knowledge.items.length} ${Knowledge.items.length === 1 ? 'item' : 'itens'}`
+    if (!list) return
+    if (!Knowledge.items.length) {
+      list.innerHTML = '<div class="kb-empty">Nenhum material adicionado ainda.</div>'
+      return
+    }
+
+    const labels = { text: 'Texto', faq: 'FAQ', link: 'Link', pdf: 'PDF' }
+    list.innerHTML = Knowledge.items.map(item => {
+      const active = item.isActive !== false
+      const previewSource = item.type === 'faq' ? (item.answer || item.content) : item.content
+      const preview = String(previewSource ?? '').replace(/\s+/g, ' ').slice(0, 180)
+      return `<div class="kb-item ${active ? '' : 'is-off'}">
+        <div class="kb-item-main">
+          <div class="kb-item-top">
+            <strong>${Bots.escape(item.title)}</strong>
+            <span class="kb-chip">${labels[item.type] ?? item.type}</span>
+            ${active ? '<span class="kb-state on">Ativo</span>' : '<span class="kb-state off">Pausado</span>'}
+          </div>
+          <div class="kb-preview">${Bots.escape(preview || 'Sem previa')}</div>
+          ${item.sourceUrl ? `<div class="kb-source">${Bots.escape(item.sourceUrl)}</div>` : ''}
+        </div>
+        <div class="kb-item-actions">
+          <button class="btn btn-ghost btn-sm" onclick="Knowledge.toggle('${item.id}', ${active})">${active ? 'Pausar' : 'Ativar'}</button>
+          <button class="btn btn-ghost btn-sm" onclick="Knowledge.delete('${item.id}')">Remover</button>
+        </div>
+      </div>`
+    }).join('')
   },
 }
 

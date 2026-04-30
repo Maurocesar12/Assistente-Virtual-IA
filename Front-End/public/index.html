@@ -60,6 +60,7 @@
       <div class="feat-card"><div class="feat-icon">🤖</div><h3>GPT-4 & Gemini</h3><p>Escolha entre os melhores modelos do mercado com prompts personalizados por bot.</p></div>
       <div class="feat-card"><div class="feat-icon">⚡</div><h3>Resposta instantânea</h3><p>Seu assistente responde em segundos, 24h por dia, 7 dias por semana.</p></div>
       <div class="feat-card"><div class="feat-icon">🧠</div><h3>Memória de contexto</h3><p>A IA lembra toda a conversa e responde com coerência contínua.</p></div>
+      <div class="feat-card"><div class="feat-icon">KB</div><h3>Base de conhecimento</h3><p>Suba PDFs, links, textos e FAQs para cada bot responder com informações da sua empresa.</p></div>
       <div class="feat-card"><div class="feat-icon">📊</div><h3>Analytics em tempo real</h3><p>Métricas de mensagens, conversas ativas e uso de tokens no painel.</p></div>
       <div class="feat-card"><div class="feat-icon">📅</div><h3>Google Agenda</h3><p>Conecte sua agenda para o bot marcar possiveis reunioes quando identificar data e horario na conversa.</p></div>
       <div class="feat-card"><div class="feat-icon">🔗</div><h3>Multi-contas</h3><p>Gerencie múltiplos números de WhatsApp em um único painel centralizado.</p></div>
@@ -658,6 +659,58 @@
     <div class="modal-title" id="eBotTitle">Editar Bot</div>
     <div class="modal-subtitle" id="eBotMeta">—</div>
     <div class="form-group"><label class="field-label">Prompt de sistema</label><textarea class="field" id="eBotPrompt" rows="5"></textarea></div>
+    <div class="kb-panel">
+      <div class="kb-head">
+        <div>
+          <div class="kb-title">Base de conhecimento</div>
+          <div class="kb-subtitle">Adicione textos, FAQs, links e PDFs para este bot usar nas respostas.</div>
+        </div>
+        <span class="badge badge-green" id="kbCountBadge">0 itens</span>
+      </div>
+      <div class="kb-grid">
+        <div class="form-group">
+          <label class="field-label">Tipo</label>
+          <select class="field" id="kbType" onchange="Knowledge.updateForm()">
+            <option value="text">Texto</option>
+            <option value="faq">Pergunta frequente</option>
+            <option value="link">Link</option>
+            <option value="pdf">PDF</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="field-label">Titulo</label>
+          <input class="field" id="kbTitle" type="text" placeholder="Ex: Politica de atendimento">
+        </div>
+      </div>
+      <div class="form-group kb-field" data-kb-field="url">
+        <label class="field-label">URL</label>
+        <input class="field" id="kbUrl" type="url" placeholder="https://suaempresa.com/duvidas">
+      </div>
+      <div class="form-group kb-field" data-kb-field="question">
+        <label class="field-label">Pergunta</label>
+        <input class="field" id="kbQuestion" type="text" placeholder="Ex: Como funciona o reembolso?">
+      </div>
+      <div class="form-group kb-field" data-kb-field="answer">
+        <label class="field-label">Resposta</label>
+        <textarea class="field" id="kbAnswer" rows="4" placeholder="Resposta que o bot deve usar..."></textarea>
+      </div>
+      <div class="form-group kb-field" data-kb-field="content">
+        <label class="field-label">Conteudo</label>
+        <textarea class="field" id="kbContent" rows="5" placeholder="Cole aqui informacoes, regras, catalogo, servicos ou instrucoes..."></textarea>
+      </div>
+      <div class="form-group kb-field" data-kb-field="file">
+        <label class="field-label">Arquivo</label>
+        <input class="field" id="kbFile" type="file" accept=".pdf,.txt,.md,text/plain,application/pdf">
+        <div class="text-xs text-dim mt-1">PDF ate 3MB com texto selecionavel, ou arquivo TXT/MD.</div>
+      </div>
+      <div class="flex-between kb-actions">
+        <span class="text-xs text-dim">O bot prioriza estes materiais quando a pergunta combinar com a base.</span>
+        <button class="btn btn-primary btn-sm" id="kbCreateBtn" onclick="Knowledge.create()">Adicionar</button>
+      </div>
+      <div class="kb-list" id="knowledgeList">
+        <div class="text-xs text-dim">Carregando base...</div>
+      </div>
+    </div>
     <div style="padding:14px 0;border-top:1px solid var(--border)">
       <div class="toggle-row" style="padding:0;border:none">
         <div class="toggle-info"><label>Bot ativo</label><small>Quando ativo, o bot responde mensagens recebidas</small></div>

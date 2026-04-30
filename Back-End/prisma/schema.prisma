@@ -31,6 +31,7 @@ model User {
 
   bots                Bot[]
   conversations       Conversation[]
+  knowledgeBaseItems  KnowledgeBaseItem[]
   passwordResetTokens PasswordResetToken[]
   calendarIntegration GoogleCalendarIntegration?
   calendarEventLogs   CalendarEventLog[]
@@ -93,11 +94,36 @@ model Bot {
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversations Conversation[]
   calendarEventLogs CalendarEventLog[]
+  knowledgeBaseItems KnowledgeBaseItem[]
 
   @@index([userId])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model KnowledgeBaseItem {
+  id          String   @id @default(cuid())
+  botId       String
+  userId      String
+  type        String
+  title       String
+  content     String
+  sourceUrl   String?
+  question    String?
+  answer      String?
+  fileName    String?
+  mimeType    String?
+  sizeBytes   Int?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot  Bot  @relation(fields: [botId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([botId, isActive])
+  @@index([userId, createdAt])
 }
 
 model Conversation {
