@@ -374,12 +374,41 @@
 
       <!-- CONVERSATIONS -->
       <div id="view-convs" class="view">
-        <div class="card">
-          <div class="card-header">
-            <h3>Todas as conversas</h3>
-            <input class="field" type="text" placeholder="Buscar..." id="convSearch" oninput="Dashboard.filterConvs(this.value)" style="width:200px;padding:7px 12px;font-size:12px">
+        <div class="human-inbox">
+          <div class="card inbox-list-card">
+            <div class="card-header">
+              <div>
+                <h3>Inbox humana</h3>
+                <span class="text-xs text-dim">Atenda conversas pausadas ou em atendimento humano</span>
+              </div>
+              <input class="field" type="text" placeholder="Buscar..." id="convSearch" oninput="Dashboard.filterConvs(this.value)" style="width:200px;padding:7px 12px;font-size:12px">
+            </div>
+            <div id="convsList"></div>
           </div>
-          <div id="convsList"></div>
+
+          <div class="card inbox-thread-card">
+            <div class="inbox-thread-head">
+              <div class="inbox-contact-wrap">
+                <div class="inbox-contact" id="inboxContactName">Selecione uma conversa</div>
+                <div class="inbox-phone" id="inboxContactPhone">As mensagens apareceram aqui</div>
+              </div>
+              <div class="inbox-head-actions">
+                <span class="badge" id="inboxBotBadge">Bot</span>
+                <div id="inboxPauseStatus"></div>
+              </div>
+            </div>
+            <div id="inboxMessages" class="inbox-messages">
+              <div class="inbox-empty">Selecione uma conversa para atender.</div>
+            </div>
+            <div class="inbox-composer">
+              <div id="inboxComposerNotice" class="inbox-notice">Pause o bot ou aguarde um pedido de atendimento humano para responder manualmente.</div>
+              <textarea class="field" id="inboxReply" rows="3" placeholder="Escreva uma resposta manual..." onkeydown="HumanInbox.handleKeydown(event)" disabled></textarea>
+              <div class="flex-between inbox-composer-actions">
+                <span class="text-xs text-dim" id="inboxReplyHint">O envio manual mantem o bot pausado nesta conversa.</span>
+                <button class="btn btn-primary" id="inboxSendBtn" onclick="HumanInbox.send()" disabled>Enviar</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

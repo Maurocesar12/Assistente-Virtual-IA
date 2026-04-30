@@ -1,15 +1,21 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import { db } from '../models/database.js'
 import { whatsappManager } from '../service/whatsapp.js'
 import { ApiError, ok, noContent } from '../utils/http.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { demoReadOnlyGuard } from '../middleware/demoReadOnlyGuard.js'
+import { validate } from '../middleware/validate.js'
 
 export const conversationsRouter = Router()
 
 conversationsRouter.use(authenticate)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const manualReplySchema = z.object({
+  content: z.string().trim().min(1).max(4000),
+})
 
 async function resolveConversation(conversationId: string, userId: string) {
   const conversations = await db.findConversationsByUserId(userId)
@@ -36,6 +42,38 @@ conversationsRouter.get('/:id/messages', async (req, res, next) => {
     await resolveConversation(req.params.id, req.userId)
     const messages = await db.findMessagesByConversationId(req.params.id)
     return ok(res, messages)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// POST /conversations/:id/reply
+// Inbox humana: permite resposta manual somente quando o bot esta pausado ou em handoff.
+
+conversationsRouter.post('/:id/reply', demoReadOnlyGuard, validate(manualReplySchema), async (req, res, next) => {
+  try {
+    const conv = await resolveConversation(req.params.id, req.userId)
+    if (!conv.isPaused && !conv.humanHandoff) {
+      throw ApiError.badRequest('Pause o bot nesta conversa antes de responder manualmente.', 'CONVERSATION_NOT_PAUSED')
+    }
+
+    const bot = await db.findBotById(conv.botId)
+    if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
+    if (!whatsappManager.isRunning(bot.id)) {
+      throw ApiError.conflict('O bot precisa estar conectado ao WhatsApp para enviar mensagens.')
+    }
+
+    let result
+    try {
+      result = await whatsappManager.sendManualReply(bot, conv, req.body.content)
+    } catch (sendErr) {
+      const message = sendErr instanceof Error
+        ? sendErr.message
+        : 'Nao foi possivel enviar a mensagem pelo WhatsApp.'
+      throw ApiError.conflict(message)
+    }
+
+    return ok(res, result)
   } catch (err) {
     next(err)
   }

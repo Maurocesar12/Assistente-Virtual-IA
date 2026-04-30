@@ -7,7 +7,7 @@ import wppconnect from '@wppconnect-team/wppconnect'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { db, type Bot, type User } from '../models/database.js'
+import { db, type Bot, type Conversation, type User } from '../models/database.js'
 import { geminiManager } from './gemini.js'
 import { openaiManager } from './openai.js'
 import { transcribeAudio } from './audio.js'
@@ -567,6 +567,32 @@ export class WhatsAppManager {
   }
 
   isRunning(botId: string): boolean { return this.clients.has(botId) }
+
+  async sendManualReply(
+    bot: Bot,
+    conversation: Conversation,
+    content: string,
+  ): Promise<{ conversation: Conversation | null; message: unknown }> {
+    const client = this.clients.get(bot.id)
+    if (!client) throw new Error('Bot nao esta conectado ao WhatsApp.')
+
+    const text = content.trim()
+    if (!text) throw new Error('Mensagem vazia.')
+
+    this.markBotOutbound(bot.id, conversation.contactPhone, text)
+    await client.sendText(conversation.contactPhone, text)
+
+    const message = await db.createMessage({
+      conversationId:    conversation.id,
+      role:              'human',
+      content:           text,
+      incrementBotCount: false,
+      tokenCount:        0,
+    })
+
+    const updated = await db.updateConversationAfterManualReply(conversation.id, text)
+    return { conversation: updated, message }
+  }
 
   async resumeBot(botId: string, convId: string): Promise<void> {
     await db.setConversationHandoff(convId, false)

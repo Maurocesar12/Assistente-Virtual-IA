@@ -66,7 +66,7 @@ export interface Conversation {
 
 export interface CreateMessageParams {
   conversationId:    string
-  role:              'user' | 'assistant'
+  role:              'user' | 'assistant' | 'human'
   content:           string
   incrementBotCount?: boolean
   botId?:            string
@@ -433,6 +433,19 @@ class Database {
     return this.parseConversation(row)
   }
 
+  async updateConversationAfterManualReply(id: string, lastMessage: string): Promise<Conversation | null> {
+    const row = await prisma.conversation.update({
+      where: { id },
+      data: {
+        lastMessage,
+        lastMessageAt: new Date(),
+        unreadCount:   0,
+        messageCount:  { increment: 1 },
+      },
+    })
+    return this.parseConversation(row)
+  }
+
   async findConversationByBotAndPhone(botId: string, contactPhone: string): Promise<Conversation | null> {
     const row = await prisma.conversation.findUnique({
       where: { botId_contactPhone: { botId, contactPhone } },
@@ -500,6 +513,7 @@ class Database {
         FROM "Message" m
         INNER JOIN "Conversation" c ON c."id" = m."conversationId"
         WHERE c."userId" = ${userId}
+          AND m."role" <> 'human'
       `,
     ])
 
@@ -540,7 +554,9 @@ class Database {
       }),
     ])
 
-    const tokenFor = (message: any) => message.tokenCount > 0
+    const tokenFor = (message: any) => message.role === 'human'
+      ? 0
+      : message.tokenCount > 0
       ? message.tokenCount
       : estimateTokenCount(message.content)
 
@@ -786,6 +802,7 @@ export const db = {
   deleteConversation:            instance.deleteConversation.bind(instance),
   setConversationPaused:         instance.setConversationPaused.bind(instance),
   setConversationHandoff:        instance.setConversationHandoff.bind(instance),
+  updateConversationAfterManualReply: instance.updateConversationAfterManualReply.bind(instance),
   findConversationByBotAndPhone: instance.findConversationByBotAndPhone.bind(instance),
   createMessage:                 instance.createMessage.bind(instance),
   findMessagesByConversationId:  instance.findMessagesByConversationId.bind(instance),

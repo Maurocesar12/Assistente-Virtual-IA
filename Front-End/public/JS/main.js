@@ -1018,6 +1018,13 @@ const Knowledge = {
 }
 
 const Conversations = {
+  upsertLocal(updated) {
+    if (!updated?.id) return null
+    const idx = State.conversations.findIndex(c => c.id === updated.id)
+    if (idx >= 0) State.conversations[idx] = { ...State.conversations[idx], ...updated }
+    else State.conversations.unshift(updated)
+    return State.conversations.find(c => c.id === updated.id) ?? null
+  },
   async load() {
     if (Demo.isActive()) {
       Demo.loadSampleData()
@@ -1031,6 +1038,7 @@ const Conversations = {
     const el = UI.el('convsList'); if (!el) return
     if (!State.conversations.length) {
       el.innerHTML = `<div class="empty"><div class="empty-icon">💬</div><h3>Nenhuma conversa</h3><p>As conversas aparecerão quando seu bot estiver ativo</p></div>`
+      HumanInbox.clearIfMissing()
       return
     }
     el.innerHTML = State.conversations.map(c => {
@@ -1038,6 +1046,7 @@ const Conversations = {
       const displayName = (c.contactName && c.contactName !== c.contactPhone)
         ? c.contactName
         : _formatPhone(c.contactPhone)
+      const selected = HumanInbox.activeConvId === c.id ? ' active' : ''
 
       // ✅ FIX: flex-shrink:0 nos badges para não comprimirem e não
       // empurrarem o nome para fora da tela
@@ -1052,13 +1061,13 @@ const Conversations = {
         : `<button class="btn btn-ghost btn-sm" title="Pausar bot" onclick="Conversations.pause('${c.id}')" style="padding:3px 7px;font-size:10px;flex-shrink:0">⏸</button>`
       const unreadBadge = c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''
 
-      return `<div class="conv-row" id="conv-row-${c.id}" data-search="${Bots.escape(displayName.toLowerCase())} ${Bots.escape(c.lastMessage?.toLowerCase() ?? '')}">
+      return `<div class="conv-row${selected}" id="conv-row-${c.id}" data-search="${Bots.escape(displayName.toLowerCase())} ${Bots.escape(c.lastMessage?.toLowerCase() ?? '')}">
           <div class="conv-avatar" style="cursor:pointer;flex-shrink:0"
-               onclick="ChatViewer.open('${c.id}','${Bots.escape(displayName)}','${Bots.escape(c.contactPhone)}')">👤</div>
+               onclick="HumanInbox.open('${c.id}')">&#128100;</div>
 
           <!-- ✅ FIX: overflow:hidden no corpo principal impede expansão além do flex -->
           <div style="flex:1;min-width:0;cursor:pointer;overflow:hidden"
-               onclick="ChatViewer.open('${c.id}','${Bots.escape(displayName)}','${Bots.escape(c.contactPhone)}')">
+               onclick="HumanInbox.open('${c.id}')">
 
             <!-- ✅ FIX: nome com flex:1;min-width:0 trunca antes do badge -->
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;min-width:0">
@@ -1094,6 +1103,7 @@ const Conversations = {
     try {
       await Api.delete(`/conversations/${convId}`)
       State.conversations = State.conversations.filter(c => c.id !== convId)
+      if (HumanInbox.activeConvId === convId) HumanInbox.clear()
       Conversations.render(); Conversations.renderOverview(); toast('Conversa excluída', 'info')
     } catch (err) { toast('Erro ao excluir: ' + err.message, 'error') }
   },
@@ -1101,9 +1111,8 @@ const Conversations = {
     if (!Demo.requireRealAccount()) return
     try {
       const updated = await Api.post(`/conversations/${convId}/pause`)
-      const idx = State.conversations.findIndex(c => c.id === convId)
-      if (idx >= 0) State.conversations[idx] = { ...State.conversations[idx], ...updated }
-      Conversations.render(); ChatViewer.updatePauseStatus(convId, true, false)
+      Conversations.upsertLocal(updated)
+      Conversations.render(); ChatViewer.updatePauseStatus(convId, true, false); HumanInbox.refreshActiveState()
       toast('Bot pausado para esta conversa ⏸', 'info')
     } catch (err) { toast('Erro ao pausar: ' + err.message, 'error') }
   },
@@ -1111,9 +1120,8 @@ const Conversations = {
     if (!Demo.requireRealAccount()) return
     try {
       const updated = await Api.post(`/conversations/${convId}/resume`)
-      const idx = State.conversations.findIndex(c => c.id === convId)
-      if (idx >= 0) State.conversations[idx] = { ...State.conversations[idx], ...updated }
-      Conversations.render(); ChatViewer.updatePauseStatus(convId, false, false)
+      Conversations.upsertLocal(updated)
+      Conversations.render(); ChatViewer.updatePauseStatus(convId, false, false); HumanInbox.refreshActiveState()
       toast('Bot retomado ▶', 'success')
     } catch (err) { toast('Erro ao retomar: ' + err.message, 'error') }
   },
@@ -1123,8 +1131,229 @@ const Conversations = {
     el.innerHTML = State.conversations.slice(0, 4).map(c => {
       const time = new Date(c.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
       const name = (c.contactName && c.contactName !== c.contactPhone) ? c.contactName : _formatPhone(c.contactPhone)
-      return `<div class="conv-row" style="cursor:pointer" onclick="UI.view('convs')"><div class="conv-avatar">👤</div><div class="conv-body" style="min-width:0"><div class="conv-name">${Bots.escape(name)}</div><div class="conv-preview" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Bots.escape(c.lastMessage)}</div></div><div class="conv-right" style="flex-shrink:0"><div class="conv-time">${time}</div>${c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''}</div></div>`
+      return `<div class="conv-row" style="cursor:pointer" onclick="UI.view('convs');HumanInbox.open('${c.id}')"><div class="conv-avatar">&#128100;</div><div class="conv-body" style="min-width:0"><div class="conv-name">${Bots.escape(name)}</div><div class="conv-preview" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Bots.escape(c.lastMessage)}</div></div><div class="conv-right" style="flex-shrink:0"><div class="conv-time">${time}</div>${c.unreadCount > 0 ? `<div class="conv-unread">${c.unreadCount}</div>` : ''}</div></div>`
     }).join('')
+  },
+}
+
+const HumanInbox = {
+  activeConvId: null,
+  activeMessages: [],
+
+  get activeConv() {
+    return State.conversations.find(c => c.id === HumanInbox.activeConvId) ?? null
+  },
+
+  activeBot(conv = HumanInbox.activeConv) {
+    return conv ? State.bots.find(b => b.id === conv.botId) ?? null : null
+  },
+
+  displayName(conv) {
+    if (!conv) return 'Selecione uma conversa'
+    return (conv.contactName && conv.contactName !== conv.contactPhone)
+      ? conv.contactName
+      : _formatPhone(conv.contactPhone)
+  },
+
+  canReply(conv = HumanInbox.activeConv) {
+    return Boolean(conv && (conv.isPaused || conv.humanHandoff))
+  },
+
+  clearIfMissing() {
+    if (HumanInbox.activeConvId && !State.conversations.some(c => c.id === HumanInbox.activeConvId)) HumanInbox.clear()
+  },
+
+  clear() {
+    HumanInbox.activeConvId = null
+    HumanInbox.activeMessages = []
+    const name = UI.el('inboxContactName')
+    const phone = UI.el('inboxContactPhone')
+    const badge = UI.el('inboxBotBadge')
+    const status = UI.el('inboxPauseStatus')
+    const messages = UI.el('inboxMessages')
+    if (name) name.textContent = 'Selecione uma conversa'
+    if (phone) phone.textContent = 'As mensagens apareceram aqui'
+    if (badge) badge.textContent = 'Bot'
+    if (status) status.innerHTML = ''
+    if (messages) messages.innerHTML = '<div class="inbox-empty">Selecione uma conversa para atender.</div>'
+    HumanInbox.renderComposer()
+  },
+
+  async open(convId) {
+    const conv = State.conversations.find(c => c.id === convId)
+    if (!conv) return
+    HumanInbox.activeConvId = convId
+    HumanInbox.activeMessages = []
+    HumanInbox.renderHeader()
+    HumanInbox.renderLoading()
+    HumanInbox.renderComposer()
+    Conversations.render()
+
+    try {
+      const messages = Demo.isActive()
+        ? Demo.messagesFor(convId)
+        : await Api.get(`/conversations/${convId}/messages`)
+      if (HumanInbox.activeConvId !== convId) return
+      HumanInbox.activeMessages = messages
+      HumanInbox.renderMessages()
+    } catch (err) {
+      toastError(err, 'Nao foi possivel carregar as mensagens desta conversa.')
+      const messages = UI.el('inboxMessages')
+      if (messages) messages.innerHTML = '<div class="inbox-empty inbox-error">Erro ao carregar mensagens.</div>'
+    }
+  },
+
+  renderHeader() {
+    const conv = HumanInbox.activeConv
+    const bot = HumanInbox.activeBot(conv)
+    const name = UI.el('inboxContactName')
+    const phone = UI.el('inboxContactPhone')
+    const badge = UI.el('inboxBotBadge')
+    const status = UI.el('inboxPauseStatus')
+    if (name) name.textContent = HumanInbox.displayName(conv)
+    if (phone) phone.textContent = conv ? _formatPhone(conv.contactPhone) : 'As mensagens apareceram aqui'
+    if (badge) badge.textContent = bot ? `Bot: ${bot.name}` : 'Bot'
+    if (status) status.innerHTML = HumanInbox.statusHtml(conv)
+  },
+
+  statusHtml(conv) {
+    if (!conv) return ''
+    if (conv.humanHandoff) {
+      return `<span class="inbox-state warn">Humano</span><button class="btn btn-ghost btn-sm" onclick="Conversations.resume('${conv.id}')">Retomar</button>`
+    }
+    if (conv.isPaused) {
+      return `<span class="inbox-state warn">Pausado</span><button class="btn btn-ghost btn-sm" onclick="Conversations.resume('${conv.id}')">Retomar</button>`
+    }
+    return `<span class="inbox-state ok">Bot ativo</span><button class="btn btn-ghost btn-sm" onclick="Conversations.pause('${conv.id}')">Pausar</button>`
+  },
+
+  renderLoading() {
+    const messages = UI.el('inboxMessages')
+    if (messages) {
+      messages.innerHTML = '<div class="inbox-empty"><span class="spinner"></span><span>Carregando mensagens...</span></div>'
+    }
+  },
+
+  renderMessages() {
+    const container = UI.el('inboxMessages')
+    if (!container) return
+    const conv = HumanInbox.activeConv
+    const bot = HumanInbox.activeBot(conv)
+    const contactName = HumanInbox.displayName(conv)
+    const botName = bot?.name ?? 'Bot'
+    const messages = Array.isArray(HumanInbox.activeMessages) ? HumanInbox.activeMessages : []
+
+    if (!messages.length) {
+      container.innerHTML = '<div class="inbox-empty">Nenhuma mensagem ainda.</div>'
+      return
+    }
+
+    container.innerHTML = messages.map((m, idx) => {
+      const isUser = m.role === 'user'
+      const isHuman = m.role === 'human'
+      const isError = !isUser && String(m.content || '').startsWith('⚠️')
+      const senderName = isUser ? contactName : isHuman ? 'Atendente' : botName
+      const time = new Date(m.createdAt || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      const prev = messages[idx - 1]
+      const showLabel = !prev || prev.role !== m.role
+      return `<div class="inbox-msg ${isUser ? 'user' : 'assistant'}${isError ? ' is-error' : ''}">
+        ${showLabel ? `<div class="inbox-msg-label">${Bots.escape(senderName)}</div>` : ''}
+        <div class="inbox-bubble">${Bots.escape(m.content || '')}</div>
+        <span class="inbox-time">${time}</span>
+      </div>`
+    }).join('')
+
+    setTimeout(() => { container.scrollTop = container.scrollHeight }, 30)
+  },
+
+  renderComposer() {
+    const conv = HumanInbox.activeConv
+    const bot = HumanInbox.activeBot(conv)
+    const reply = UI.el('inboxReply')
+    const send = UI.el('inboxSendBtn')
+    const notice = UI.el('inboxComposerNotice')
+    const hint = UI.el('inboxReplyHint')
+    const canReply = HumanInbox.canReply(conv)
+    const connected = Demo.isActive() || Boolean(bot?.isConnected)
+    const enabled = Boolean(conv && canReply && connected && !Demo.isActive())
+
+    if (reply) reply.disabled = !enabled
+    if (send) send.disabled = !enabled
+    if (hint) hint.textContent = conv ? 'O envio manual mantem o bot pausado nesta conversa.' : 'Selecione uma conversa para iniciar o atendimento.'
+    if (!notice) return
+
+    notice.classList.toggle('ready', enabled)
+    if (!conv) {
+      notice.textContent = 'Selecione uma conversa para visualizar o historico e responder.'
+    } else if (Demo.isActive()) {
+      notice.textContent = DEMO_READ_ONLY_MESSAGE
+    } else if (!connected) {
+      notice.textContent = 'Conecte este bot ao WhatsApp antes de enviar uma resposta manual.'
+    } else if (!canReply) {
+      notice.textContent = 'Pause o bot nesta conversa antes de responder manualmente.'
+    } else {
+      notice.textContent = 'Atendimento humano liberado. A resposta sera enviada pelo WhatsApp conectado.'
+    }
+  },
+
+  handleKeydown(event) {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      event.preventDefault()
+      HumanInbox.send()
+    }
+  },
+
+  async send() {
+    if (!Demo.requireRealAccount()) return
+    const conv = HumanInbox.activeConv
+    if (!conv) { toast('Selecione uma conversa para responder.', 'warning'); return }
+    if (!HumanInbox.canReply(conv)) { toast('Pause o bot nesta conversa antes de responder manualmente.', 'warning'); return }
+    const bot = HumanInbox.activeBot(conv)
+    if (!bot?.isConnected) { toast('Conecte o bot ao WhatsApp para enviar a resposta.', 'warning'); return }
+
+    const reply = UI.el('inboxReply')
+    const content = reply?.value?.trim() ?? ''
+    if (!content) { toast('Digite uma mensagem antes de enviar.', 'warning'); return }
+
+    const button = UI.el('inboxSendBtn')
+    const original = button?.innerHTML
+    if (button) { button.disabled = true; button.innerHTML = '<span class="spinner"></span>' }
+
+    try {
+      const result = await Api.post(`/conversations/${conv.id}/reply`, { content })
+      const updated = Conversations.upsertLocal(result?.conversation)
+      if (result?.message) {
+        HumanInbox.activeMessages.push(result.message)
+      } else {
+        HumanInbox.activeMessages.push({
+          id: `local-${Date.now()}`,
+          role: 'human',
+          content,
+          createdAt: new Date().toISOString(),
+        })
+      }
+      if (updated) HumanInbox.activeConvId = updated.id
+      if (reply) reply.value = ''
+      HumanInbox.renderHeader()
+      HumanInbox.renderMessages()
+      HumanInbox.renderComposer()
+      Conversations.render()
+      Conversations.renderOverview()
+      toast('Mensagem enviada pelo atendimento humano.', 'success')
+    } catch (err) {
+      toastError(err, 'Nao foi possivel enviar a resposta manual.')
+    } finally {
+      if (button && original) button.innerHTML = original
+      HumanInbox.renderComposer()
+    }
+  },
+
+  refreshActiveState() {
+    if (!HumanInbox.activeConvId) return
+    HumanInbox.clearIfMissing()
+    HumanInbox.renderHeader()
+    HumanInbox.renderComposer()
+    Conversations.render()
   },
 }
 
@@ -1234,6 +1463,7 @@ const Connect = {
       const idx = State.bots.findIndex(b => b.id === updatedBot.id)
       if (idx >= 0) State.bots[idx] = updatedBot
       Bots.render(); Bots.renderOverview(); Bots.updateSteps()
+      HumanInbox.refreshActiveState()
       if (updatedBot.isConnected && connectedOk) {
         clearTimeout(errorGraceTimer); source.close(); BotAlerts.dismissByBotId(botId)
         setTimeout(() => { Modals.close('connect'); toast(`Bot conectado ao WhatsApp! 🟢`, 'success') }, 2500)
@@ -1248,6 +1478,7 @@ const Connect = {
       else if (reason === 'manual_override') toast(`⏸ Bot pausado para ${contactPhone}`, 'info')
       else if (reason === 'resumed')         toast(`▶ Bot retomado para ${contactPhone}`, 'success')
       ChatViewer.updatePauseStatus(convId, isPaused, humanHandoff)
+      HumanInbox.refreshActiveState()
     })
 
     // ✦ Feature 4 — bot-typing: IA gerando resposta
@@ -1787,10 +2018,11 @@ const ChatViewer = {
 
     container.innerHTML = messages.map((m, idx) => {
       const isUser      = m.role === 'user'
+      const isHuman     = m.role === 'human'
       const isError     = m.role === 'assistant' && m.content.startsWith('⚠️')
       const time        = new Date(m.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
       const text        = Bots.escape(m.content)
-      const senderName  = isUser ? contactName : botName
+      const senderName  = isUser ? contactName : isHuman ? 'Atendente' : botName
       const senderEmoji = isUser ? '👤' : '🤖'
       const senderColor = isUser ? 'var(--text-dim)' : 'var(--green)'
 
