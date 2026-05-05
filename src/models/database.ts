@@ -11,6 +11,8 @@ const prisma = new PrismaClient()
 
 export type AIModel = 'gemini-2.5-flash' | 'gpt-4' | 'gpt-3.5-turbo'
 export type Plan    = 'starter' | 'pro' | 'enterprise'
+export const LEAD_STAGES = ['new_lead', 'in_service', 'meeting_scheduled', 'closed', 'lost'] as const
+export type LeadStage = typeof LEAD_STAGES[number]
 
 export interface ApiKeys {
   openaiKey?:         string
@@ -62,6 +64,7 @@ export interface Conversation {
   messageCount:  number
   isPaused:      boolean
   humanHandoff:  boolean
+  leadStage:     LeadStage
 }
 
 export interface CreateMessageParams {
@@ -433,6 +436,11 @@ class Database {
     return this.parseConversation(row)
   }
 
+  async setConversationLeadStage(id: string, leadStage: LeadStage): Promise<Conversation | null> {
+    const row = await prisma.conversation.update({ where: { id }, data: { leadStage } as any })
+    return this.parseConversation(row)
+  }
+
   async updateConversationAfterManualReply(id: string, lastMessage: string): Promise<Conversation | null> {
     const row = await prisma.conversation.update({
       where: { id },
@@ -755,10 +763,12 @@ class Database {
   }
 
   private parseConversation(c: any): Conversation {
+    const leadStage = LEAD_STAGES.includes(c.leadStage) ? c.leadStage : 'new_lead'
     return {
       ...c,
       isPaused:     c.isPaused     ?? false,
       humanHandoff: c.humanHandoff ?? false,
+      leadStage,
     }
   }
 
@@ -802,6 +812,7 @@ export const db = {
   deleteConversation:            instance.deleteConversation.bind(instance),
   setConversationPaused:         instance.setConversationPaused.bind(instance),
   setConversationHandoff:        instance.setConversationHandoff.bind(instance),
+  setConversationLeadStage:      instance.setConversationLeadStage.bind(instance),
   updateConversationAfterManualReply: instance.updateConversationAfterManualReply.bind(instance),
   findConversationByBotAndPhone: instance.findConversationByBotAndPhone.bind(instance),
   createMessage:                 instance.createMessage.bind(instance),

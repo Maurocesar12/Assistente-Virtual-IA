@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { db } from '../models/database.js'
+import { db, LEAD_STAGES } from '../models/database.js'
 import { whatsappManager } from '../service/whatsapp.js'
 import { ApiError, ok, noContent } from '../utils/http.js'
 import { authenticate } from '../middleware/authenticate.js'
@@ -17,10 +17,13 @@ const manualReplySchema = z.object({
   content: z.string().trim().min(1).max(4000),
 })
 
+const leadStageSchema = z.object({
+  leadStage: z.enum(LEAD_STAGES),
+})
+
 async function resolveConversation(conversationId: string, userId: string) {
-  const conversations = await db.findConversationsByUserId(userId)
-  const conv = conversations.find(c => c.id === conversationId)
-  if (!conv) throw ApiError.notFound('Conversation not found')
+  const conv = await db.findConversationById(conversationId)
+  if (!conv || conv.userId !== userId) throw ApiError.notFound('Conversation not found')
   return conv
 }
 
@@ -42,6 +45,19 @@ conversationsRouter.get('/:id/messages', async (req, res, next) => {
     await resolveConversation(req.params.id, req.userId)
     const messages = await db.findMessagesByConversationId(req.params.id)
     return ok(res, messages)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// PATCH /conversations/:id/lead-stage
+// Funil de leads: altera uma conversa para uma etapa validada e pertencente ao usuario.
+
+conversationsRouter.patch('/:id/lead-stage', demoReadOnlyGuard, validate(leadStageSchema), async (req, res, next) => {
+  try {
+    const conv = await resolveConversation(req.params.id, req.userId)
+    const updated = await db.setConversationLeadStage(conv.id, req.body.leadStage)
+    return ok(res, updated)
   } catch (err) {
     next(err)
   }

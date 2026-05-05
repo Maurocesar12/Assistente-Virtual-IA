@@ -233,6 +233,7 @@ const Demo = {
         unreadCount: 2,
         isPaused: false,
         humanHandoff: false,
+        leadStage: 'meeting_scheduled',
       },
       {
         id: 'demo-conv-carlos',
@@ -245,6 +246,7 @@ const Demo = {
         unreadCount: 0,
         isPaused: true,
         humanHandoff: false,
+        leadStage: 'in_service',
       },
       {
         id: 'demo-conv-marina',
@@ -257,6 +259,7 @@ const Demo = {
         unreadCount: 0,
         isPaused: false,
         humanHandoff: false,
+        leadStage: 'closed',
       },
     ]
 
@@ -321,6 +324,16 @@ function _formatPhone(raw) {
   if (digits.length === 12) return `+${digits.slice(0,2)} ${digits.slice(2,4)} ${digits.slice(4,8)}-${digits.slice(8)}`
   return digits || raw
 }
+
+const LEAD_STAGES = {
+  new_lead:          { label: 'Novo lead',        cls: 'new' },
+  in_service:        { label: 'Em atendimento',   cls: 'service' },
+  meeting_scheduled: { label: 'Reuniao marcada',  cls: 'meeting' },
+  closed:            { label: 'Fechado',          cls: 'closed' },
+  lost:              { label: 'Perdido',          cls: 'lost' },
+}
+const LEAD_STAGE_ORDER = Object.keys(LEAD_STAGES)
+function _leadStage(value) { return LEAD_STAGES[value] ? value : 'new_lead' }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PLAN LIMIT
@@ -798,9 +811,32 @@ const Bots = {
     const bot = State.bots.find(b => b.id === id)
     if (!confirm(`Excluir o bot "${bot?.name}"? Esta ação não pode ser desfeita.`)) return
     try {
-      await Api.delete(`/bots/${id}`); State.bots = State.bots.filter(b => b.id !== id)
-      Modals.close('editBot'); Bots.render(); Bots.renderOverview(); toast('Bot excluído', 'info')
+      await Api.delete(`/bots/${id}`)
+      Bots.removeLocal(id)
+      Modals.close('editBot')
+      Bots.render(); Bots.renderOverview(); Bots.updateSteps()
+      Conversations.render(); Conversations.renderOverview()
+      Dashboard.loadStats()
+      Analytics.reloadIfVisible()
+      toast('Bot excluído', 'info')
     } catch (err) { toast(err.message, 'error') }
+  },
+  removeLocal(botId) {
+    const removedConversationIds = new Set(State.conversations.filter(c => c.botId === botId).map(c => c.id))
+    State.bots = State.bots.filter(b => b.id !== botId)
+    State.conversations = State.conversations.filter(c => c.botId !== botId)
+
+    if (State.activeBotId === botId) State.activeBotId = null
+    if (State.connectBotId === botId) {
+      State.connectBotId = null
+      Modals.close('connect')
+      Connect.cleanup()
+    }
+    BotAlerts.dismissByBotId(botId)
+    Knowledge.items = []
+
+    if (HumanInbox.activeConvId && removedConversationIds.has(HumanInbox.activeConvId)) HumanInbox.clear()
+    if (ChatViewer.hasActiveConversation(removedConversationIds)) ChatViewer.clear()
   },
   connectFromEdit() { if (!Demo.requireRealAccount()) return; const id = State.activeBotId; if (!id) return; Modals.close('editBot'); Connect.open(id) },
   async disconnectFromEdit() {
@@ -1025,6 +1061,32 @@ const Conversations = {
     else State.conversations.unshift(updated)
     return State.conversations.find(c => c.id === updated.id) ?? null
   },
+  leadStageBadge(stage) {
+    const key = _leadStage(stage)
+    const meta = LEAD_STAGES[key]
+    return `<span class="lead-stage-badge lead-stage-${meta.cls}">${meta.label}</span>`
+  },
+  leadStageOptions(selected) {
+    const current = _leadStage(selected)
+    return LEAD_STAGE_ORDER.map(key => `<option value="${key}" ${key === current ? 'selected' : ''}>${LEAD_STAGES[key].label}</option>`).join('')
+  },
+  async updateLeadStage(convId, leadStage) {
+    if (!Demo.requireRealAccount()) return
+    const nextStage = _leadStage(leadStage)
+    const previous = State.conversations.find(c => c.id === convId)?.leadStage ?? 'new_lead'
+    if (previous === nextStage) return
+    try {
+      const updated = await Api.patch(`/conversations/${convId}/lead-stage`, { leadStage: nextStage })
+      Conversations.upsertLocal(updated)
+      Conversations.render(); Conversations.renderOverview(); HumanInbox.refreshActiveState()
+      toast(`Funil atualizado: ${LEAD_STAGES[nextStage].label}`, 'success')
+    } catch (err) {
+      const current = State.conversations.find(c => c.id === convId)
+      if (current) current.leadStage = previous
+      Conversations.render(); HumanInbox.refreshActiveState()
+      toastError(err, 'Nao foi possivel atualizar o funil.')
+    }
+  },
   async load() {
     if (Demo.isActive()) {
       Demo.loadSampleData()
@@ -1047,6 +1109,7 @@ const Conversations = {
         ? c.contactName
         : _formatPhone(c.contactPhone)
       const selected = HumanInbox.activeConvId === c.id ? ' active' : ''
+      const leadBadge = Conversations.leadStageBadge(c.leadStage)
 
       // ✅ FIX: flex-shrink:0 nos badges para não comprimirem e não
       // empurrarem o nome para fora da tela
@@ -1076,6 +1139,7 @@ const Conversations = {
                           flex:1;min-width:0">
                 ${Bots.escape(displayName)}
               </div>
+              ${leadBadge}
               ${pauseBadge}
             </div>
             <div style="font-size:12px;color:var(--text-muted);
@@ -1216,15 +1280,22 @@ const HumanInbox = {
     if (status) status.innerHTML = HumanInbox.statusHtml(conv)
   },
 
+  stageSelectHtml(conv) {
+    if (!conv) return ''
+    const disabled = Demo.isActive() ? ' disabled' : ''
+    return `<select class="lead-stage-select" onchange="Conversations.updateLeadStage('${conv.id}', this.value)"${disabled}>${Conversations.leadStageOptions(conv.leadStage)}</select>`
+  },
+
   statusHtml(conv) {
     if (!conv) return ''
+    const stageSelect = HumanInbox.stageSelectHtml(conv)
     if (conv.humanHandoff) {
-      return `<span class="inbox-state warn">Humano</span><button class="btn btn-ghost btn-sm" onclick="Conversations.resume('${conv.id}')">Retomar</button>`
+      return `${stageSelect}<span class="inbox-state warn">Humano</span><button class="btn btn-ghost btn-sm" onclick="Conversations.resume('${conv.id}')">Retomar</button>`
     }
     if (conv.isPaused) {
-      return `<span class="inbox-state warn">Pausado</span><button class="btn btn-ghost btn-sm" onclick="Conversations.resume('${conv.id}')">Retomar</button>`
+      return `${stageSelect}<span class="inbox-state warn">Pausado</span><button class="btn btn-ghost btn-sm" onclick="Conversations.resume('${conv.id}')">Retomar</button>`
     }
-    return `<span class="inbox-state ok">Bot ativo</span><button class="btn btn-ghost btn-sm" onclick="Conversations.pause('${conv.id}')">Pausar</button>`
+    return `${stageSelect}<span class="inbox-state ok">Bot ativo</span><button class="btn btn-ghost btn-sm" onclick="Conversations.pause('${conv.id}')">Pausar</button>`
   },
 
   renderLoading() {
@@ -1731,6 +1802,9 @@ const Analytics = {
       toastError(err, 'Nao foi possivel carregar o Analytics.')
     }
   },
+  reloadIfVisible() {
+    if (document.getElementById('view-analytics')?.classList.contains('active')) Analytics.load()
+  },
   render(data) {
     UI.el('an-total').textContent = data.totalMessages.toLocaleString('pt-BR')
     UI.el('an-convs').textContent = data.totalConversations.toLocaleString('pt-BR')
@@ -1948,6 +2022,28 @@ const Billing = {
 const ChatViewer = {
   _activeConvId:    null,
   _activeConvPhone: null,
+
+  hasActiveConversation(conversationIds) {
+    return Boolean(ChatViewer._activeConvId && conversationIds?.has(ChatViewer._activeConvId))
+  },
+
+  clear() {
+    ChatViewer._activeConvId = null
+    ChatViewer._activeConvPhone = null
+    document.getElementById('m-chat')?.classList.remove('open')
+    const name = UI.el('chatContactName')
+    const phone = UI.el('chatContactPhone')
+    const badge = UI.el('chatBotBadge')
+    const status = UI.el('chatPauseStatus')
+    const messages = UI.el('chatMessages')
+    const count = UI.el('chatMsgCount')
+    if (name) name.textContent = 'Conversa'
+    if (phone) phone.textContent = ''
+    if (badge) badge.textContent = 'Bot'
+    if (status) status.innerHTML = ''
+    if (messages) messages.innerHTML = ''
+    if (count) count.textContent = '0 mensagens'
+  },
 
   async open(convId, contactName, contactPhone) {
     ChatViewer._activeConvId    = convId

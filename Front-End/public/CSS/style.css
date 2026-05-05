@@ -711,6 +711,21 @@ textarea.field { resize: vertical; line-height: 1.6; }
   background: var(--green); color: #000;
   font-size: 9px; font-weight: 700; border-radius: 9px; margin-top: 4px;
 }
+.lead-stage-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.lead-stage-new { color: #8fb8ff; background: rgba(64,128,240,0.1); border: 1px solid rgba(64,128,240,0.22); }
+.lead-stage-service { color: var(--yellow); background: rgba(240,179,64,0.1); border: 1px solid rgba(240,179,64,0.22); }
+.lead-stage-meeting { color: #b090ff; background: rgba(144,96,224,0.1); border: 1px solid rgba(144,96,224,0.22); }
+.lead-stage-closed { color: var(--green); background: rgba(0,212,106,0.08); border: 1px solid rgba(0,212,106,0.2); }
+.lead-stage-lost { color: var(--red); background: rgba(240,80,96,0.08); border: 1px solid rgba(240,80,96,0.2); }
 .conv-row.active {
   background: rgba(0,212,106,0.06);
   border-left: 3px solid var(--green);
@@ -766,6 +781,24 @@ textarea.field { resize: vertical; line-height: 1.6; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+#inboxPauseStatus {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lead-stage-select {
+  height: 28px;
+  min-width: 150px;
+  padding: 0 28px 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
 }
 .inbox-state {
   display: inline-flex;
@@ -972,6 +1005,9 @@ textarea.field { resize: vertical; line-height: 1.6; }
     flex-direction: column;
     align-items: flex-start;
   }
+  #inboxPauseStatus,
+  .lead-stage-select { width: 100%; }
+  #inboxPauseStatus { justify-content: flex-start; }
   .inbox-composer-actions .btn {
     width: 100%;
     justify-content: center;

@@ -138,6 +138,7 @@ model Conversation {
   messageCount  Int      @default(0)
   isPaused      Boolean  @default(false)
   humanHandoff  Boolean  @default(false)
+  leadStage     String   @default("new_lead")
 
   bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
