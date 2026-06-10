@@ -9,6 +9,8 @@ const MAX_THREAD_CACHE = 300
 export interface OpenAIOptions {
   apiKey: string
   assistantId: string
+  model?: string
+  systemPrompt?: string
 }
 
 // ─── Thread Manager ───────────────────────────────────────────────────────────
@@ -45,11 +47,14 @@ export class OpenAISessionManager {
       content: message,
     })
 
-    // Create run
-    const run = await openai.beta.threads.runs.create(threadId, {
+    const runPayload = {
       assistant_id: assistant.id,
-      instructions: assistant.instructions ?? undefined,
-    })
+      instructions: options.systemPrompt?.trim() || assistant.instructions || undefined,
+      ...(options.model ? { model: options.model } : {}),
+    } as any
+
+    // Create run
+    const run = await openai.beta.threads.runs.create(threadId, runPayload)
 
     // Poll until complete
     const result = await this.pollRunCompletion(openai, threadId, run.id)

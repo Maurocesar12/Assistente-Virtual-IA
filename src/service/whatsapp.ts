@@ -13,7 +13,7 @@ import { openaiManager } from './openai.js'
 import { transcribeAudio } from './audio.js'
 import { calendarConfirmation, tryScheduleCalendarEvent } from './calendarAutomation.js'
 import { splitMessages, sendMessagesWithDelay } from '../utils/messages.js'
-import { isMessageLimitReached, getPlanConfig } from '../utils/planLimits.js'
+import { evaluateAutomationAccess, type AccessDecision } from '../utils/accessControl.js'
 import type { AITextResponse, AIUsage } from '../utils/tokenUsage.js'
 import { buildKnowledgeContext } from '../utils/knowledgeContext.js'
 
@@ -58,7 +58,16 @@ export interface BotPauseEvent {
 }
 export interface TypingEvent        { botId: string; convId: string; contactPhone: string; isTyping: boolean }
 export interface ContactTypingEvent { botId: string; contactPhone: string; isTyping: boolean }
-export interface PlanLimitEvent     { botId: string; userId: string; plan: string; totalMessages: number; messageLimit: number }
+export interface PlanLimitEvent {
+  botId: string
+  userId: string
+  plan: string
+  totalMessages: number
+  messageLimit: number | null
+  code: string
+  message: string
+  subscriptionStatus?: string
+}
 
 type QRListener            = (e: QRCodeEvent)        => void
 type SessionListener       = (e: SessionEvent)       => void
@@ -281,6 +290,12 @@ export class WhatsAppManager {
   onContactTyping(l: ContactTypingListener): () => void { return this.addListener(this.contactTypingListeners, l) }
   onPlanLimit(l: PlanLimitListener): () => void          { return this.addListener(this.planLimitListeners, l) }
 
+  clearBotContext(botId: string): void {
+    this.clearMessageBuffer(botId)
+    geminiManager.clearSessionsForBot(botId)
+    openaiManager.clearSessionsForBot(botId)
+  }
+
   onQRCodeForBot(botId: string, l: QRListener): () => void {
     const unsub  = this.addListener(this.qrListeners, l)
     const cached = this.lastQR.get(botId)
@@ -290,6 +305,25 @@ export class WhatsAppManager {
 
   emitBotPause(event: Parameters<PauseListener>[0]): void {
     this.pauseListeners.forEach(l => l(event))
+  }
+
+  private emitAccessDenied(bot: Bot, userId: string, decision: AccessDecision): void {
+    if (decision.allowed) return
+
+    this.planLimitListeners.forEach(l => l({
+      botId: bot.id,
+      userId,
+      plan: String(decision.data.plan ?? ''),
+      totalMessages: Number(decision.data.totalMessages ?? 0),
+      messageLimit: decision.data.messageLimit === null || decision.data.messageLimit === undefined
+        ? null
+        : Number(decision.data.messageLimit),
+      code: decision.code,
+      message: decision.message,
+      subscriptionStatus: typeof decision.data.subscriptionStatus === 'string'
+        ? decision.data.subscriptionStatus
+        : undefined,
+    }))
   }
 
   private outboundKey(botId: string, contactPhone: string): string {
@@ -495,7 +529,14 @@ export class WhatsAppManager {
     // Libera o base64 do QR imediatamente — é a string mais pesada em memória
     this.lastQR.delete(bot.id)
 
-    await db.updateBot(bot.id, { isConnected: true, isActive: true }).catch(() => {})
+    const [user, stats] = await Promise.all([
+      db.findUserById(bot.userId),
+      db.getUserStats(bot.userId),
+    ])
+    const decision = user ? evaluateAutomationAccess(user, stats) : ({ allowed: true } as AccessDecision)
+
+    await db.updateBot(bot.id, { isConnected: true, isActive: decision.allowed }).catch(() => {})
+    if (!decision.allowed) this.emitAccessDenied(bot, bot.userId, decision)
     console.log(`[WhatsApp] ✅ Bot conectado: ${bot.name}`)
 
     // GC imediato 5s após a conexão — momento de maior RSS
@@ -836,16 +877,13 @@ export class WhatsAppManager {
     // Verificação de limite — getUserStats faz 3 queries paralelas,
     // só chamamos quando o bot está efetivamente ativo e processando
     const stats = await db.getUserStats(bot.userId)
-    if (isMessageLimitReached(user.plan, stats.totalMessages)) {
-      const config = getPlanConfig(user.plan)
+    const access = evaluateAutomationAccess(user, stats)
+    if (!access.allowed) {
       console.log(
-        `[PlanLimit] Limite atingido | userId=${bot.userId} | ` +
-        `plano=${user.plan} | ${stats.totalMessages}/${config.messageLimit}`
+        `[AccessControl] Bloqueado | userId=${bot.userId} | ` +
+        `code=${access.code} | plano=${user.plan} | mensagens=${stats.totalMessages}`
       )
-      this.planLimitListeners.forEach(l => l({
-        botId: bot.id, userId: bot.userId, plan: user.plan,
-        totalMessages: stats.totalMessages, messageLimit: config.messageLimit,
-      }))
+      this.emitAccessDenied(bot, bot.userId, access)
       // Grava a mensagem para o operador ver no painel, sem contar como consumo
       await this.persistMessage(bot, client, from, panelText ?? message, null, false)
       return
@@ -998,7 +1036,10 @@ export class WhatsAppManager {
       throw new AIError('config', 'Credenciais OpenAI não configuradas.')
     }
     return openaiManager.sendMessage(sessionKey, message, {
-      apiKey: apiKeys.openaiKey, assistantId: apiKeys.openaiAssistantId,
+      apiKey: apiKeys.openaiKey,
+      assistantId: apiKeys.openaiAssistantId,
+      model: bot.model,
+      systemPrompt: bot.prompt,
     })
   }
 

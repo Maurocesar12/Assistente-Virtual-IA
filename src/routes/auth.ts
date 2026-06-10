@@ -24,9 +24,17 @@ function setAuthCookie(res: import('express').Response, token: string) {
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
     secure: env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: env.NODE_ENV === 'production' ? 'none' : 'lax',
     path: '/',
     maxAge: COOKIE_MAX_AGE,
+  })
+}
+
+function clearAuthCookie(res: import('express').Response) {
+  res.clearCookie(COOKIE_NAME, {
+    secure: env.NODE_ENV === 'production',
+    sameSite: env.NODE_ENV === 'production' ? 'none' : 'lax',
+    path: '/',
   })
 }
 
@@ -125,7 +133,7 @@ authRouter.post('/login', validate(loginSchema), async (req, res, next) => {
 // ─── POST /auth/logout ────────────────────────────────────────────────────────
 
 authRouter.post('/logout', (_req, res) => {
-  res.clearCookie(COOKIE_NAME, { path: '/' })
+  clearAuthCookie(res)
   return ok(res, { message: 'Logged out' })
 })
 

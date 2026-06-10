@@ -5,10 +5,10 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src --format esm",
+    "build": "tsup src/index.ts --format esm",
     "start": "node --max-old-space-size=350 dist/index.js",
-    "setup": "node setup.js",
-    "lint": "eslint src --ext .ts",
+    "setup": "npm run prisma:generate",
+    "lint": "npm run typecheck",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate --schema Back-End/prisma/schema.prisma",
     "postinstall": "prisma generate --schema Back-End/prisma/schema.prisma"

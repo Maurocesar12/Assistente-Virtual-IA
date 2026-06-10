@@ -15,6 +15,11 @@ import { planGuard } from '../middleware/planGuard.js'
 import { demoReadOnlyGuard } from '../middleware/demoReadOnlyGuard.js'
 import { extractPdfTextFromBase64 } from '../utils/pdfText.js'
 import { fetchPublicLinkText } from '../utils/linkContent.js'
+import {
+  accessDecisionToError,
+  evaluateAutomationAccess,
+  evaluateBotCreationAccess,
+} from '../utils/accessControl.js'
 
 export const botsRouter = Router()
 
@@ -101,6 +106,30 @@ async function resolveOwnedBot(botId: string, userId: string) {
   const bot = await db.findBotById(botId)
   if (!bot || bot.userId !== userId) throw ApiError.notFound('Bot not found')
   return bot
+}
+
+async function assertCanCreateBot(userId: string) {
+  const [user, bots] = await Promise.all([
+    db.findUserById(userId),
+    db.findBotsByUserId(userId),
+  ])
+
+  if (!user) throw ApiError.notFound('Usuario nao encontrado')
+
+  const error = accessDecisionToError(evaluateBotCreationAccess(user, bots.length))
+  if (error) throw error
+}
+
+async function assertCanActivateBot(userId: string) {
+  const [user, stats] = await Promise.all([
+    db.findUserById(userId),
+    db.getUserStats(userId),
+  ])
+
+  if (!user) throw ApiError.notFound('Usuario nao encontrado')
+
+  const error = accessDecisionToError(evaluateAutomationAccess(user, stats))
+  if (error) throw error
 }
 
 async function resolveOwnedKnowledgeItem(botId: string, itemId: string, userId: string) {
@@ -212,6 +241,8 @@ botsRouter.get('/:id', async (req, res, next) => {
 botsRouter.post('/', demoReadOnlyGuard, validate(createBotSchema), async (req, res, next) => {
   try {
     const { name, model, prompt } = req.body
+    await assertCanCreateBot(req.userId)
+
     const bot = await db.createBot({
       userId:       req.userId,
       name,
@@ -232,7 +263,19 @@ botsRouter.patch('/:id', demoReadOnlyGuard, validate(updateBotSchema), async (re
   try {
     const bot = await db.findBotById(req.params.id)
     if (!bot || bot.userId !== req.userId) throw ApiError.notFound('Bot not found')
+
+    if (req.body.isActive === true) {
+      if (!bot.isConnected) {
+        throw ApiError.conflict('Conecte o bot ao WhatsApp antes de ativa-lo.')
+      }
+      await assertCanActivateBot(req.userId)
+    }
+
     const updated = await db.updateBot(req.params.id, req.body)
+    if (req.body.model !== undefined || req.body.prompt !== undefined) {
+      whatsappManager.clearBotContext(bot.id)
+    }
+
     return ok(res, updated)
   } catch (err) { next(err) }
 })

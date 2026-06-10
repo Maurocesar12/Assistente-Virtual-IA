@@ -1,6 +1,6 @@
 'use strict'
 
-const API_URL = 'https://assistente-virtual-ia-production.up.railway.app/api'
+const API_URL = window.ZAPIENS_API_URL || 'https://assistente-virtual-ia-production.up.railway.app/api'
 
 const State = {
   token: null, user: null, bots: [], conversations: [],
@@ -11,7 +11,6 @@ const State = {
 const Store = {
   save() {
     try {
-      if (State.token) localStorage.setItem('zapgpt_token', State.token)
       if (State.user)  localStorage.setItem('zapgpt_user',  JSON.stringify(State.user))
       if (State.isDemo) localStorage.setItem('zapgpt_demo', '1')
       else localStorage.removeItem('zapgpt_demo')
@@ -19,7 +18,7 @@ const Store = {
   },
   load() {
     try {
-      State.token = localStorage.getItem('zapgpt_token')
+      State.token = null
       State.isDemo = localStorage.getItem('zapgpt_demo') === '1'
       const u = localStorage.getItem('zapgpt_user')
       if (u) State.user = JSON.parse(u)
@@ -59,6 +58,11 @@ const Api = {
       err.status = res.status
       err.code = json?.error?.code
       err.data = json?.error?.data
+      if (err.code === 'PASSWORD_CHANGE_REQUIRED') {
+        State.user = { ...(State.user || {}), mustChangePassword: true }
+        Store.save()
+        setTimeout(() => Modals.open('changePassword'), 50)
+      }
       throw err
     }
     return json.data ?? json
@@ -341,12 +345,15 @@ function _leadStage(value) { return LEAD_STAGES[value] ? value : 'new_lead' }
 
 const PlanLimit = {
   // Mostra banner de limite de mensagens (starter atingiu 50)
-  showBanner(totalMessages, messageLimit) {
+  showBanner(totalMessages, messageLimit, message) {
     if (UI.el('planLimitBanner')) return
     const banner = document.createElement('div')
     banner.id = 'planLimitBanner'
     banner.style.cssText = `position:fixed;top:0;left:0;right:0;z-index:999;background:linear-gradient(90deg,#f05060,#c03040);color:#fff;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:14px;font-weight:500;box-shadow:0 2px 16px rgba(240,80,96,0.5);animation:toast-slide 0.3s ease;`
-    banner.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><span style="font-size:20px">🚫</span><span>Você atingiu o limite de <strong>${messageLimit} mensagens</strong> do plano gratuito. Seu bot está <strong>pausado</strong> — faça upgrade para continuar.</span></div><button onclick="Billing.openCheckout()" style="background:#fff;color:#c03040;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">⚡ Fazer upgrade →</button>`
+    const fallback = messageLimit === null
+      ? 'Seu plano nao esta ativo. Renove para continuar.'
+      : `Voce atingiu o limite de ${messageLimit} mensagens do plano gratuito. Seu bot esta pausado. Faca upgrade para continuar.`
+    banner.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><span style="font-size:20px">!</span><span>${Bots.escape(message || fallback)}</span></div><button onclick="Billing.openCheckout()" style="background:#fff;color:#c03040;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">Fazer upgrade</button>`
     document.body.prepend(banner)
     const main = document.querySelector('.main')
     if (main) main.style.paddingTop = '52px'
@@ -551,12 +558,13 @@ const Auth = {
       if (UI.el('modal-cp-current')) UI.el('modal-cp-current').value = ''
       if (UI.el('modal-cp-new'))     UI.el('modal-cp-new').value     = ''
       if (UI.el('modal-cp-confirm')) UI.el('modal-cp-confirm').value = ''
+      await Dashboard.refresh()
     } catch (err) { toast(err.message, 'error') }
     finally { UI.setLoading('modal-changePassBtn', false) }
   },
   async logout() {
     Connect.cleanup(); PlanLimit.hideBanner()
-    try { if (State.token) await Api.post('/auth/logout') } catch (_) {}
+    try { await Api.post('/auth/logout') } catch (_) {}
     Store.clear(); State.bots = []; State.conversations = []; State.stats = null; State.calendar = null; State.billingStatus = null
     UI.page('landing'); toast('Até logo! 👋', 'info')
   },
@@ -604,10 +612,12 @@ const Dashboard = {
   async enter() {
      UI.page('dashboard'); UI.view('overview'); Dashboard.updateSidebar()
      Demo.applyUI()
+     if (State.user?.mustChangePassword) {
+       setTimeout(() => Modals.open('changePassword'), 500)
+       return
+     }
      await Dashboard.refresh()
      Demo.applyUI()
-
-  if (State.user?.mustChangePassword) setTimeout(() => Modals.open('changePassword'), 500)
    },
   async refresh() {
     try { await Promise.all([Dashboard.loadStats(), Bots.load(), Conversations.load()]) }
@@ -1472,8 +1482,7 @@ const Connect = {
     })
     Connect.cleanup()
 
-    const token  = State.token || ''
-    const source = new EventSource(`${API_URL}/bots/${botId}/events?token=${encodeURIComponent(token)}`)
+    const source = new EventSource(`${API_URL}/bots/${botId}/events`, { withCredentials: true })
     State.sseSource = source
 
     let qrReceived = false, connectedOk = false
@@ -1523,10 +1532,16 @@ const Connect = {
     })
 
     source.addEventListener('plan-limit', (e) => {
-      const { totalMessages, messageLimit } = JSON.parse(e.data)
-      PlanLimit.showBanner(totalMessages, messageLimit)
+      const data = JSON.parse(e.data)
+      if (data.code === 'SUBSCRIPTION_PAST_DUE' || data.subscriptionStatus === 'past_due') {
+        PlanLimit.showExpiredBanner()
+        Dashboard.loadStats()
+        toast(data.message || 'Plano vencido. Renove para reativar seus bots.', 'error')
+        return
+      }
+      PlanLimit.showBanner(data.totalMessages, data.messageLimit, data.message)
       Dashboard.loadStats()
-      toast(`Limite de ${messageLimit} mensagens atingido. Bot pausado.`, 'warning')
+      toast(data.message || `Limite de ${data.messageLimit} mensagens atingido. Bot pausado.`, 'warning')
     })
 
     source.addEventListener('bot', (e) => {
@@ -1757,6 +1772,7 @@ const Settings = {
     UI.setLoading('changePassBtn', true)
     try {
       await Api.post('/auth/change-password', { currentPassword: current, newPassword: next })
+      State.user = { ...State.user, mustChangePassword: false }; Store.save()
       toast('Senha alterada com sucesso! 🔐', 'success')
       if (UI.el('cp-current')) UI.el('cp-current').value = ''
       if (UI.el('cp-new'))     UI.el('cp-new').value     = ''
@@ -2266,17 +2282,15 @@ document.addEventListener('keydown', e => {
     await Dashboard.enter()
     return
   }
-  if (State.token && State.user) {
-    try {
-      const me = await Api.get('/auth/me'); State.user = me; Store.save(); await Dashboard.enter()
-      if (calendarOAuthStatus) {
-        UI.view('settings')
-        const tab = document.querySelector('[data-calendar-tab]')
-        if (tab) UI.tab('t-calendar', tab)
-        Settings.loadCalendar()
-        toast(calendarOAuthStatus === 'connected' ? 'Google Agenda conectado.' : 'Nao foi possivel conectar o Google Agenda.', calendarOAuthStatus === 'connected' ? 'success' : 'error')
-      }
+  try {
+    const me = await Api.get('/auth/me'); State.user = me; Store.save(); await Dashboard.enter()
+    if (calendarOAuthStatus) {
+      UI.view('settings')
+      const tab = document.querySelector('[data-calendar-tab]')
+      if (tab) UI.tab('t-calendar', tab)
+      Settings.loadCalendar()
+      toast(calendarOAuthStatus === 'connected' ? 'Google Agenda conectado.' : 'Nao foi possivel conectar o Google Agenda.', calendarOAuthStatus === 'connected' ? 'success' : 'error')
     }
-    catch (_) { Store.clear(); UI.page('landing') }
-  } else { UI.page('landing') }
+  }
+  catch (_) { Store.clear(); UI.page('landing') }
 })()

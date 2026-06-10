@@ -11,6 +11,7 @@ import { authenticate } from '../middleware/authenticate.js'
 import { validate } from '../middleware/validate.js'
 import { demoReadOnlyGuard } from '../middleware/demoReadOnlyGuard.js'
 import { getPlanConfig, remainingMessages, usagePercent, isMessageLimitReached } from '../utils/planLimits.js'
+import { isSubscriptionBlocked } from '../utils/accessControl.js'
 
 export const usersRouter = Router()
 
@@ -18,6 +19,7 @@ usersRouter.use(authenticate)
 
 function hasPaidAnalytics(user: Awaited<ReturnType<typeof db.findUserById>>) {
   if (!user) return false
+  if (isSubscriptionBlocked(user)) return false
   return user.plan === 'pro' || user.plan === 'enterprise'
 }
 

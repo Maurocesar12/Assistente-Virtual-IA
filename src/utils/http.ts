@@ -6,22 +6,27 @@ export class ApiError extends Error {
   constructor(
     public readonly statusCode: number,
     message: string,
-    public readonly code?: string
+    public readonly code?: string,
+    public readonly data?: unknown
   ) {
     super(message)
     this.name = 'ApiError'
   }
 
-  static badRequest(msg: string, code?: string) {
-    return new ApiError(400, msg, code)
+  static badRequest(msg: string, code?: string, data?: unknown) {
+    return new ApiError(400, msg, code, data)
   }
 
   static unauthorized(msg = 'Unauthorized') {
     return new ApiError(401, msg, 'UNAUTHORIZED')
   }
 
-  static forbidden(msg = 'Forbidden') {
-    return new ApiError(403, msg, 'FORBIDDEN')
+  static forbidden(msg = 'Forbidden', code = 'FORBIDDEN', data?: unknown) {
+    return new ApiError(403, msg, code, data)
+  }
+
+  static paymentRequired(msg: string, code = 'PAYMENT_REQUIRED', data?: unknown) {
+    return new ApiError(402, msg, code, data)
   }
 
   static notFound(msg: string) {
