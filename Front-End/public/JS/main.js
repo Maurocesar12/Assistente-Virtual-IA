@@ -1445,20 +1445,67 @@ const BotAlerts = {
     if (BotAlerts._alerts.has(key)) BotAlerts.dismiss(key)
     const container = UI.el('botAlertsContainer'); if (!container) return
     const STYLES = {
-      connection: { color: 'var(--red)',    bg: 'rgba(240,80,96,0.08)',    border: 'rgba(240,80,96,0.3)',    icon: '📵', btnLabel: '📱 Reconectar', btnAction: `Connect.open('${botId}')` },
-      config:     { color: 'var(--red)',    bg: 'rgba(240,80,96,0.08)',    border: 'rgba(240,80,96,0.3)',    icon: '🔑', btnLabel: '⚙️ API Keys',   btnAction: `UI.view('settings')` },
-      quota:      { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '💳', btnLabel: 'API Keys', btnAction: `UI.view('settings')` },
-      network:    { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '🌐', btnLabel: null, btnAction: null },
-      unknown:    { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '⚠️', btnLabel: null, btnAction: null },
+      connection: { color: 'var(--red)',    bg: 'rgba(240,80,96,0.08)',    border: 'rgba(240,80,96,0.3)',    icon: '📵', btnLabel: '📱 Reconectar', btnFn: () => Connect.open(botId) },
+      config:     { color: 'var(--red)',    bg: 'rgba(240,80,96,0.08)',    border: 'rgba(240,80,96,0.3)',    icon: '🔑', btnLabel: '⚙️ API Keys',   btnFn: () => UI.view('settings') },
+      quota:      { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '💳', btnLabel: 'API Keys',       btnFn: () => UI.view('settings') },
+      network:    { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '🌐', btnLabel: null, btnFn: null },
+      unknown:    { color: 'var(--yellow)', bg: 'rgba(240,179,64,0.08)',   border: 'rgba(240,179,64,0.3)',   icon: '⚠️', btnLabel: null, btnFn: null },
     }
     const s = STYLES[kind] ?? STYLES.unknown
+
     const alertEl = document.createElement('div')
     alertEl.dataset.botAlert = key
     alertEl.style.cssText = `display:flex;align-items:flex-start;gap:14px;padding:16px 18px;margin-bottom:10px;background:${s.bg};border:1px solid ${s.border};border-left:4px solid ${s.color};border-radius:10px;animation:toast-slide 0.3s ease;`
-    const msgHtml   = message   ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;line-height:1.5">${Bots.escape(message)}</div>` : ''
-    const actionHtml = action ? `<div style="font-size:12px;color:#f0c060;font-weight:500">👉 ${Bots.escape(action)}</div>` : ''
-    const actionBtn = s.btnLabel ? `<button class="btn btn-sm" onclick="${s.btnAction}" style="background:${s.color};color:${kind==='connection'?'#fff':'#000'};font-size:11px;padding:5px 10px;border-radius:6px;white-space:nowrap">${s.btnLabel}</button>` : ''
-    alertEl.innerHTML = `<div style="font-size:22px;flex-shrink:0;margin-top:1px">${s.icon}</div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:${s.color};margin-bottom:3px">${Bots.escape(botName)} — ${Bots.escape(title)}</div>${msgHtml}${actionHtml}</div><div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end">${actionBtn}<button class="btn btn-ghost btn-sm" onclick="BotAlerts.dismiss('${key}')" style="font-size:11px;padding:5px 10px">✕</button></div>`
+
+    const iconEl = document.createElement('div')
+    iconEl.style.cssText = 'font-size:22px;flex-shrink:0;margin-top:1px'
+    iconEl.textContent = s.icon
+
+    const bodyEl = document.createElement('div')
+    bodyEl.style.cssText = 'flex:1;min-width:0'
+
+    const titleEl = document.createElement('div')
+    titleEl.style.cssText = `font-size:13px;font-weight:700;color:${s.color};margin-bottom:3px`
+    titleEl.textContent = `${botName} — ${title}`
+
+    bodyEl.appendChild(titleEl)
+
+    if (message) {
+      const msgEl = document.createElement('div')
+      msgEl.style.cssText = 'font-size:12px;color:var(--text-muted);margin-bottom:6px;line-height:1.5'
+      msgEl.textContent = message
+      bodyEl.appendChild(msgEl)
+    }
+
+    if (action) {
+      const actionEl = document.createElement('div')
+      actionEl.style.cssText = 'font-size:12px;color:#f0c060;font-weight:500'
+      actionEl.textContent = `👉 ${action}`
+      bodyEl.appendChild(actionEl)
+    }
+
+    const actionsEl = document.createElement('div')
+    actionsEl.style.cssText = 'display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end'
+
+    if (s.btnLabel && s.btnFn) {
+      const actionBtn = document.createElement('button')
+      actionBtn.className = 'btn btn-sm'
+      actionBtn.style.cssText = `background:${s.color};color:${kind==='connection'?'#fff':'#000'};font-size:11px;padding:5px 10px;border-radius:6px;white-space:nowrap`
+      actionBtn.textContent = s.btnLabel
+      actionBtn.addEventListener('click', s.btnFn)
+      actionsEl.appendChild(actionBtn)
+    }
+
+    const dismissBtn = document.createElement('button')
+    dismissBtn.className = 'btn btn-ghost btn-sm'
+    dismissBtn.style.cssText = 'font-size:11px;padding:5px 10px'
+    dismissBtn.textContent = '✕'
+    dismissBtn.addEventListener('click', () => BotAlerts.dismiss(key))
+    actionsEl.appendChild(dismissBtn)
+
+    alertEl.appendChild(iconEl)
+    alertEl.appendChild(bodyEl)
+    alertEl.appendChild(actionsEl)
     container.appendChild(alertEl)
     BotAlerts._alerts.set(key, alertEl)
   },

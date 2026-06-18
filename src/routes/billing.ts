@@ -116,9 +116,11 @@ billingRouter.post('/webhook', async (req, res) => {
         return res.status(401).json({ ok: false })
       }
       const rawBody = (req as any).rawBody
-      const bodyForSignature = Buffer.isBuffer(rawBody)
-        ? rawBody
-        : Buffer.from(JSON.stringify(req.body))
+      if (!Buffer.isBuffer(rawBody)) {
+        console.warn('[Webhook] rawBody ausente — requisição rejeitada')
+        return res.status(400).json({ ok: false })
+      }
+      const bodyForSignature = rawBody
 
       const expected = crypto
         .createHmac('sha256', secret)

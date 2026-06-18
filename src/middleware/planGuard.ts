@@ -1,18 +1,19 @@
 import type { Request, Response, NextFunction } from 'express'
 import { db } from '../models/database.js'
 import { evaluateAutomationAccess } from '../utils/accessControl.js'
+import { ApiError } from '../utils/http.js';
 
 export async function planGuard(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.userId
-    if (!userId) { next(); return }
+    if (!userId) { next(ApiError.unauthorized()); return }
 
     const [user, stats] = await Promise.all([
       db.findUserById(userId),
       db.getUserStats(userId),
     ])
 
-    if (!user) { next(); return }
+    if (!user) { next(ApiError.unauthorized()); return }
 
     const decision = evaluateAutomationAccess(user, stats)
     if (decision.allowed) { next(); return }
@@ -27,6 +28,6 @@ export async function planGuard(req: Request, res: Response, next: NextFunction)
     })
   } catch (err) {
     console.error('[planGuard] erro ao verificar limite:', err)
-    next()
+    next(ApiError.internal())
   }
 }

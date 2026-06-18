@@ -271,7 +271,12 @@ botsRouter.patch('/:id', demoReadOnlyGuard, validate(updateBotSchema), async (re
       await assertCanActivateBot(req.userId)
     }
 
-    const updated = await db.updateBot(req.params.id, req.body)
+    const allowedFields: (keyof Parameters<typeof db.updateBot>[1])[] = ['name', 'model', 'prompt', 'isActive']
+    const payload: Parameters<typeof db.updateBot>[1] = {}
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) (payload as any)[field] = req.body[field]
+    }
+    const updated = await db.updateBot(req.params.id, payload)
     if (req.body.model !== undefined || req.body.prompt !== undefined) {
       whatsappManager.clearBotContext(bot.id)
     }
